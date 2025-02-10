@@ -18,3 +18,7 @@ provide:
 2. Time Based Regression with Random Assignment (TBR). [Paper](https://research.google/pubs/estimating-ad-effectiveness-using-geo-experiments-in-a-time-based-regression-framework/).
 3. Trimmed Match (TM). [Paper](https://research.google/pubs/trimmed-match-design-for-randomized-paired-geo-experiments/).
 4. Geo Based Regression (GBR). [Paper](https://research.google/pubs/measuring-ad-effectiveness-using-geo-experiments/).
+
+GeoFleX will automatically select the best design and methodology by treating
+it as a hyperparameter optimization problem. It uses google-vizier behind the
+scenes to select the best design to maximize the power on the primary metric.

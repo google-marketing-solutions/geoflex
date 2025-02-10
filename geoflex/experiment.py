@@ -1,22 +1,16 @@
 """The main experiment class for GeoFleX."""
 
-import geoflex.constraints
+from typing import Iterable
 import geoflex.data
-import pydantic
+import geoflex.experiment_design
+import geoflex.methodology
 
-
-class ExperimentDesign(pydantic.BaseModel):
-  """An experiment design for a GeoFleX experiment."""
-
-  design_id: str
-  primary_response_metric: str
-  methodology: str
-  treatment_geos: list[str]
-  control_geos: list[str]
-  runtime_weeks: int
-  target_minimum_detectable_lift: float
-  power_at_minimum_detectable_lift: float
-  alpha: float
+ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
+ExperimentDesignConstraints = (
+    geoflex.experiment_design.ExperimentDesignConstraints
+)
+MethodologyName = geoflex.methodology.MethodologyName
 
 
 class Experiment:
@@ -25,8 +19,8 @@ class Experiment:
   def __init__(
       self,
       name: str,
-      historical_data: geoflex.data.GeoPerformanceDataset,
-      design_constraints: geoflex.constraints.ExperimentDesignConstraints,
+      historical_data: GeoPerformanceDataset,
+      design_constraints: ExperimentDesignConstraints,
   ):
     """Initializes the experiment.
 
@@ -53,6 +47,12 @@ class Experiment:
       primary_response_metric: str = "revenue",
       minimum_detectable_lift: float = 0.05,
       alpha: float = 0.1,
+      eligible_methodologies: Iterable[str] = (
+          MethodologyName.TBR_MM,
+          MethodologyName.TBR,
+          MethodologyName.TM,
+          MethodologyName.GBR,
+      ),
   ) -> None:
     """Explores how the different eligible experiment designs perform.
 
@@ -68,6 +68,8 @@ class Experiment:
       minimum_detectable_lift: The target minimum detectable lift on the primary
         response metric for the experiment.
       alpha: The significance level for the experiment. Defaults to 0.1.
+      eligible_methodologies: The eligible methodologies for the experiment.
+        Defaults to all methodologies except RCT.
     """
 
     raise NotImplementedError()
@@ -130,7 +132,7 @@ class Experiment:
 
   def set_runtime_data(
       self,
-      runtime_data: geoflex.data.GeoPerformanceDataset,
+      runtime_data: GeoPerformanceDataset,
       experiment_start_date: str,
   ) -> None:
     """Sets the runtime data for the experiment.

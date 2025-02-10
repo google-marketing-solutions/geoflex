@@ -10,6 +10,7 @@ dependencies = [
   "scipy",
   "pandas",
   "pydantic",
+  "google-vizier",
 ]
 requires-python = ">=3.8"
 authors = [

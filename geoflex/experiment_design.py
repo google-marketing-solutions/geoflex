@@ -1,6 +1,7 @@
-"""Constraints for a geoflex experiment design."""
+"""A design for a GeoFleX experiment."""
 
 import enum
+from typing import Any
 import pydantic
 
 
@@ -8,20 +9,6 @@ class ExperimentType(enum.StrEnum):
   GO_DARK = "go_dark"
   HEAVY_UP = "heavy_up"
   HOLD_BACK = "hold_back"
-
-
-class Methodology(enum.StrEnum):
-  """Methods for designing geoflex experiments.
-
-  Note: RCT (Randomized Controlled Trial) is not a recommended methodology for
-  geoflex experiments. It is included here for completeness, and for testing.
-  """
-
-  TBR_MM = "TBR_MM"  # Time Based Regression Matched Markets
-  TBR = "TBR"  # Time Based Regression (No Matching)
-  TM = "TM"  # Trimmed Match
-  GBR = "GBR"  # Geo Based Regression
-  RCT = "RCT"  # Randomized Controlled Trial.
 
 
 class ExperimentDesignConstraints(pydantic.BaseModel):
@@ -32,12 +19,6 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
   """
 
   experiment_type: str = ExperimentType
-  eligible_methodologies: list[str] = [
-      Methodology.TBR_MM,
-      Methodology.TBR,
-      Methodology.TM,
-      Methodology.GBR,
-  ]
 
   max_runtime_weeks: int = 8
   min_runtime_weeks: int = 2
@@ -65,3 +46,33 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
           f" {geos_in_both}"
       )
     return self
+
+
+class ExperimentDesignEvaluation(pydantic.BaseModel):
+  """The evaluation results of an experiment design."""
+
+  design_id: str
+  minimum_detectable_effects: dict[str, float]  # One per metric
+  false_positive_rates: dict[str, float]  # One per metric
+  power_at_minimum_detectable_effect: dict[str, float]  # One per metric
+
+
+class GeoAssignment(pydantic.BaseModel):
+  """The geo assignment for a geoflex experiment."""
+
+  control: list[str]
+  treatment: list[str]
+  ignored: list[str]
+
+
+class ExperimentDesign(pydantic.BaseModel):
+  """An experiment design for a GeoFleX experiment."""
+
+  design_id: str
+  primary_response_metric: str
+  methodology: str
+  methodology_parameters: dict[str, Any]
+  runtime_weeks: int
+  alpha: float
+
+  geo_assignment: GeoAssignment | None = None

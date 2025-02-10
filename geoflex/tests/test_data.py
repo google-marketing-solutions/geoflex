@@ -1,12 +1,14 @@
-"""Tests for constraints."""
+"""Tests for the data module."""
 
-from geoflex import data
+import geoflex.data
 import pandas as pd
 import pytest
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
 # pylint: disable=invalid-name
+
+GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 
 
 @pytest.fixture(name="raw_data")
@@ -57,7 +59,7 @@ def test_geo_performance_dataset_raises_exception_if_data_missing_required_colum
 ):
   """Tests that geoflex can be imported."""
   with pytest.raises(ValueError):
-    data.GeoPerformanceDataset(
+    GeoPerformanceDataset(
         data=raw_data.drop(columns=[missing_column]),
         response_columns=["revenue", "clicks"],
     )
@@ -69,7 +71,7 @@ def test_geo_performance_dataset_raises_exception_if_data_has_duplicate_geos_and
   """Tests that geoflex can be imported."""
   duplicate_data = pd.concat([raw_data, raw_data], ignore_index=True)
   with pytest.raises(ValueError):
-    data.GeoPerformanceDataset(
+    GeoPerformanceDataset(
         data=duplicate_data,
         response_columns=["revenue", "clicks"],
     )
@@ -79,7 +81,7 @@ def test_geo_performance_dataset_parses_data_correctly(
     raw_data, expected_parsed_data
 ):
   """Tests that geoflex can be imported."""
-  geo_dataset = data.GeoPerformanceDataset(
+  geo_dataset = GeoPerformanceDataset(
       data=raw_data,
       response_columns=["revenue", "clicks"],
   )
@@ -97,7 +99,7 @@ def test_geo_performance_dataset_fills_missing_data_with_zeros(
   expected_parsed_data.loc[missing_index, "cost"] = 0.0
   expected_parsed_data.loc[missing_index, "clicks"] = 0.0
 
-  geo_dataset = data.GeoPerformanceDataset(
+  geo_dataset = GeoPerformanceDataset(
       data=raw_data.iloc[1:],
       response_columns=["revenue", "clicks"],
   )
@@ -108,7 +110,7 @@ def test_geo_performance_dataset_fills_missing_data_with_zeros(
 
 def test_geo_performance_dataset_returns_geos_correctly(raw_data):
   """Tests that geoflex can be imported."""
-  geo_dataset = data.GeoPerformanceDataset(
+  geo_dataset = GeoPerformanceDataset(
       data=raw_data,
       response_columns=["revenue", "clicks"],
   )
@@ -117,7 +119,7 @@ def test_geo_performance_dataset_returns_geos_correctly(raw_data):
 
 def test_geo_performance_dataset_returns_dates_correctly(raw_data):
   """Tests that geoflex can be imported."""
-  geo_dataset = data.GeoPerformanceDataset(
+  geo_dataset = GeoPerformanceDataset(
       data=raw_data,
       response_columns=["revenue", "clicks"],
   )
@@ -131,7 +133,7 @@ def test_geo_performance_dataset_drops_unnecessary_columns(
     raw_data, expected_parsed_data
 ):
   """Tests that geoflex can be imported."""
-  geo_dataset = data.GeoPerformanceDataset(data=raw_data)
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
   pd.testing.assert_frame_equal(
       geo_dataset.parsed_data,
       expected_parsed_data.drop(columns=["clicks"]),

@@ -1,14 +1,15 @@
 """GeoFleX: A flexible and unified geo-experiment solution."""
 
-import geoflex.constraints
-import geoflex.data
-import geoflex.experiment
+from geoflex import data
+from geoflex import experiment
+from geoflex import experiment_design
+from geoflex import methodology
 
-ExperimentDesignConstraints = geoflex.constraints.ExperimentDesignConstraints
-Methodology = geoflex.constraints.Methodology
-ExperimentType = geoflex.constraints.ExperimentType
-GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
-Experiment = geoflex.experiment.Experiment
-ExperimentDesign = geoflex.experiment.ExperimentDesign
+ExperimentDesignConstraints = experiment_design.ExperimentDesignConstraints
+Methodology = methodology.Methodology
+ExperimentType = experiment_design.ExperimentType
+GeoPerformanceDataset = data.GeoPerformanceDataset
+Experiment = experiment.Experiment
+ExperimentDesign = experiment_design.ExperimentDesign
 
 __version__ = "0.0.1"
