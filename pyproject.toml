@@ -9,6 +9,7 @@ dependencies = [
   "numpy",
   "scipy",
   "pandas",
+  "pydantic",
 ]
 requires-python = ">=3.8"
 authors = [
