@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geoflex"
+version = "0.0.1"
+dependencies = [
+  "numpy",
+  "scipy",
+  "pandas",
+]
+requires-python = ">=3.8"
+authors = [
+  {name = "Sam Bailey"},
+  {name = "Omri Goldstein"},
+  {name = "Wincy Liu"},
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.urls]
+Repository = "https://professional-services.git.corp.google.com/solutions/geoflex"
+
+[tool.setuptools.package-data]
+geoflex = ["tests/*", "tests/**/*"]
+
+[tool.distutils.egg_info]
+egg_base = "../"
