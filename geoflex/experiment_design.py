@@ -11,6 +11,16 @@ class ExperimentType(enum.StrEnum):
   HOLD_BACK = "hold_back"
 
 
+class GeoAssignment(pydantic.BaseModel):
+  """The geo assignment for a geoflex experiment."""
+
+  control: list[str]
+  treatment: list[str]
+
+  def __bool__(self) -> bool:
+    return bool(self.control) or bool(self.treatment)
+
+
 class ExperimentDesignConstraints(pydantic.BaseModel):
   """Constraints for a geoflex experiment design.
 
@@ -22,8 +32,7 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
 
   max_runtime_weeks: int = 8
   min_runtime_weeks: int = 2
-  fixed_treatment_geos: list[str] = []
-  fixed_control_geos: list[str] = []
+  fixed_geos: GeoAssignment | None = None
 
   @pydantic.model_validator(mode="after")
   def check_max_runtime_greater_than_min_runtime(
@@ -39,7 +48,10 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
   def check_geos_not_in_both_fixed_treatment_and_fixed_control(
       self,
   ) -> "ExperimentDesignConstraints":
-    geos_in_both = set(self.fixed_treatment_geos) & set(self.fixed_control_geos)
+    if self.fixed_geos is None:
+      return self
+
+    geos_in_both = set(self.fixed_geos.treatment) & set(self.fixed_geos.control)
     if geos_in_both:
       raise ValueError(
           "Geos cannot be in both fixed_treatment_geos and fixed_control_geos:"
@@ -57,14 +69,6 @@ class ExperimentDesignEvaluation(pydantic.BaseModel):
   power_at_minimum_detectable_effect: dict[str, float]  # One per metric
 
 
-class GeoAssignment(pydantic.BaseModel):
-  """The geo assignment for a geoflex experiment."""
-
-  control: list[str]
-  treatment: list[str]
-  ignored: list[str]
-
-
 class ExperimentDesign(pydantic.BaseModel):
   """An experiment design for a GeoFleX experiment."""
 
@@ -74,5 +78,7 @@ class ExperimentDesign(pydantic.BaseModel):
   methodology_parameters: dict[str, Any]
   runtime_weeks: int
   alpha: float
+  fixed_geos: GeoAssignment | None
 
+  # This is set after the design is created, when the geos are assigned.
   geo_assignment: GeoAssignment | None = None
