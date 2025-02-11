@@ -3,6 +3,7 @@
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
+import numpy as np
 import pandas as pd
 from vizier import pyvizier as vz
 
@@ -71,19 +72,43 @@ class RCT(_base.Methodology):
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
+      rng: np.random.Generator,
   ) -> GeoAssignment:
     """Randomly assigns all geos to the treatment and control groups.
+
+    The treatment propensity is used to determine how many geos should be in
+    the treatment group. The number of geos in the treatment group will be
+    rounded up to the nearest integer, to ensure that the treatment group always
+    has at least one geo, but is capped to ensure there is also always at least
+    one geo in the control group.
 
     Args:
       experiment_design: The experiment design to assign geos for.
       historical_data: The historical data for the experiment. Can be used to
         choose geos that are similar to geos that have been used in the past.
+      rng: The random number generator to use for randomization, if needed.
 
     Returns:
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
-    raise NotImplementedError()
+    treatment_propensity = experiment_design.methodology_parameters[
+        "treatment_propensity"
+    ]
+    n_treatment_geos = int(
+        np.min([
+            np.ceil(len(historical_data.geos) * treatment_propensity),
+            len(historical_data.geos) - 1,
+        ])
+    )
+
+    treatment_geos = rng.choice(
+        historical_data.geos,
+        n_treatment_geos,
+        replace=False,
+    ).tolist()
+    control_geos = list(set(historical_data.geos) - set(treatment_geos))
+    return GeoAssignment(treatment=treatment_geos, control=control_geos)
 
   def analyze_experiment(
       self,

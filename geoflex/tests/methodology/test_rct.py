@@ -1,7 +1,10 @@
 """Tests for the RCT methodology module."""
 
+import geoflex.data
 import geoflex.experiment_design
 import geoflex.methodology.rct
+import numpy as np
+import pandas as pd
 import pytest
 import vizier.pyvizier as vz
 
@@ -11,10 +14,34 @@ ExperimentDesignConstraints = (
 )
 ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
+GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
+ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
 # pylint: disable=invalid-name
+
+
+@pytest.fixture(name="historical_data")
+def historical_data_fixture():
+  """Fixture for historical data."""
+  return GeoPerformanceDataset(
+      data=pd.DataFrame({
+          "geo_id": ["US", "UK", "CA", "AU", "US", "UK", "CA", "AU"],
+          "date": [
+              "2024-01-01",
+              "2024-01-01",
+              "2024-01-01",
+              "2024-01-01",
+              "2024-01-02",
+              "2024-01-02",
+              "2024-01-02",
+              "2024-01-02",
+          ],
+          "revenue": [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0],
+          "cost": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0],
+      })
+  )
 
 
 @pytest.mark.parametrize(
@@ -52,4 +79,28 @@ def test_rct_add_parameters_to_search_space():
   )
   assert set(problem_statement.search_space.parameter_names) == set(
       ["treatment_propensity"]
+  )
+
+
+@pytest.mark.parametrize(
+    "treatment_propensity,expected_treatment_geos",
+    [(0.5, 2), (0.25, 1), (0.75, 3), (0.99, 3), (0.01, 1)],
+)
+def test_rct_assign_geos(
+    historical_data, treatment_propensity, expected_treatment_geos
+):
+  rng = np.random.default_rng(seed=42)
+  experiment_design = ExperimentDesign(
+      primary_response_metric="revenue",
+      methodology="RCT",
+      runtime_weeks=4,
+      alpha=0.1,
+      fixed_geos=None,
+      methodology_parameters={"treatment_propensity": treatment_propensity},
+  )
+  geo_assignment = RCT().assign_geos(experiment_design, historical_data, rng)
+  assert len(geo_assignment.treatment) == expected_treatment_geos
+  assert len(geo_assignment.control) == 4 - expected_treatment_geos
+  assert set(geo_assignment.treatment + geo_assignment.control) == set(
+      historical_data.geos
   )

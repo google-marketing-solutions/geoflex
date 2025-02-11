@@ -3,6 +3,7 @@
 import abc
 import geoflex.data
 import geoflex.experiment_design
+import numpy as np
 import pandas as pd
 from vizier import pyvizier as vz
 
@@ -71,6 +72,7 @@ class Methodology(abc.ABC):
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
+      rng: np.random.Generator,
   ) -> GeoAssignment:
     """Assigns geos to the control and treatment groups.
 
@@ -82,6 +84,7 @@ class Methodology(abc.ABC):
       experiment_design: The experiment design to assign geos for.
       historical_data: The historical data for the experiment. Can be used to
         choose geos that are similar to geos that have been used in the past.
+      rng: The random number generator to use for randomization, if needed.
 
     Returns:
       A GeoAssignment object containing the lists of geos for the control and
