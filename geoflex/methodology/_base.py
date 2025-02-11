@@ -52,10 +52,10 @@ class Methodology(abc.ABC):
     consider the design constraints, so that the parameters are within the
     allowed ranges and are compatible with each other.
 
-    This should include all parameters except for the treatment and control geo
-    assignments, which are handled separately. The parameters should be named
-    based on the names in the ExperimentDesign class, and any parameters with
-    an unknown name will be added to the methodology_parameters dictionary.
+    This should only add the parameters that are specific to this methodology,
+    that will be placed in the ExperimentDesign.methodology_parameters dict.
+    The parameter names must not overlap with any of the other parameter names
+    in the ExperimentDesign object.
 
     For more information on how to define the search space, see
     https://oss-vizier.readthedocs.io/en/latest/guides/user/search_spaces.html

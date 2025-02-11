@@ -61,7 +61,11 @@ class RCT(_base.Methodology):
       design_constraints: The design constraints for the experiment.
       search_space_root: The root of the search space to add the parameters to.
     """
-    raise NotImplementedError()
+    search_space_root.add_float_param(
+        name="treatment_propensity",
+        min_value=0.25,
+        max_value=0.75,
+    )
 
   def assign_geos(
       self,

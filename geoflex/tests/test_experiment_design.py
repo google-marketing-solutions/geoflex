@@ -46,3 +46,24 @@ def test_geo_assignment_evaluates_to_true_if_geos_are_not_empty():
   assert GeoAssignment(control=[], treatment=["US", "UK"])
   assert GeoAssignment(control=["US", "UK"], treatment=["CA", "AU"])
   assert not GeoAssignment(control=[], treatment=[])
+
+
+@pytest.mark.parametrize(
+    "methodology_parameters,expected_pretest_weeks",
+    [
+        ({"pretest_weeks": 4}, 4),
+        ({}, 0),
+    ],
+)
+def test_experiment_design_sets_pretest_weeks_correctly(
+    methodology_parameters, expected_pretest_weeks
+):
+  design = ExperimentDesign(
+      primary_response_metric="revenue",
+      methodology="test_methodology",
+      methodology_parameters=methodology_parameters,
+      runtime_weeks=4,
+      alpha=0.1,
+      fixed_geos=None,
+  )
+  assert design.pretest_weeks == expected_pretest_weeks

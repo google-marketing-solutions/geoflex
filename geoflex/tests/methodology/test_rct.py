@@ -3,6 +3,7 @@
 import geoflex.experiment_design
 import geoflex.methodology.rct
 import pytest
+import vizier.pyvizier as vz
 
 RCT = geoflex.methodology.rct.RCT
 ExperimentDesignConstraints = (
@@ -37,3 +38,18 @@ def test_rct_is_eligible_for_constraints(
       ),
   )
   assert RCT().is_eligible_for_constraints(constraints) == expected_is_eligible
+
+
+def test_rct_add_parameters_to_search_space():
+  problem_statement = vz.ProblemStatement()
+  RCT().add_parameters_to_search_space(
+      ExperimentDesignConstraints(
+          experiment_type=ExperimentType.GO_DARK,
+          max_runtime_weeks=4,
+          min_runtime_weeks=2,
+      ),
+      problem_statement.search_space.root,
+  )
+  assert set(problem_statement.search_space.parameter_names) == set(
+      ["treatment_propensity"]
+  )
