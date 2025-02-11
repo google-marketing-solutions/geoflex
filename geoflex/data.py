@@ -16,7 +16,9 @@ class GeoPerformanceDataset(pydantic.BaseModel):
   cost_column: str = "cost"
   response_columns: list[str] = ["revenue"]
 
-  model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+  model_config = pydantic.ConfigDict(
+      arbitrary_types_allowed=True, extra="forbid"
+  )
 
   @functools.cached_property
   def parsed_data(self) -> pd.DataFrame:

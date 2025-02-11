@@ -18,6 +18,8 @@ class GeoAssignment(pydantic.BaseModel):
   control: list[str]
   treatment: list[str]
 
+  model_config = pydantic.ConfigDict(extra="forbid")
+
   def __bool__(self) -> bool:
     return bool(self.control) or bool(self.treatment)
 
@@ -34,6 +36,8 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
   max_runtime_weeks: int = 8
   min_runtime_weeks: int = 2
   fixed_geos: GeoAssignment | None = None
+
+  model_config = pydantic.ConfigDict(extra="forbid")
 
   @pydantic.model_validator(mode="after")
   def check_max_runtime_greater_than_min_runtime(
@@ -69,6 +73,8 @@ class ExperimentDesignEvaluation(pydantic.BaseModel):
   false_positive_rates: dict[str, float]  # One per metric
   power_at_minimum_detectable_effect: dict[str, float]  # One per metric
 
+  model_config = pydantic.ConfigDict(extra="forbid")
+
 
 class ExperimentDesign(pydantic.BaseModel):
   """An experiment design for a GeoFleX experiment."""
@@ -85,6 +91,8 @@ class ExperimentDesign(pydantic.BaseModel):
 
   # This is set after the design is created, when the geos are assigned.
   geo_assignment: GeoAssignment | None = None
+
+  model_config = pydantic.ConfigDict(extra="forbid")
 
   @property
   def pretest_weeks(self) -> int:
