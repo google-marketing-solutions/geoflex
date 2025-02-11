@@ -45,7 +45,7 @@ class Experiment:
       self,
       max_trials: int = 100,
       primary_response_metric: str = "revenue",
-      minimum_detectable_lift: float = 0.05,
+      alternative_hypthesis: str = "two-sided",
       alpha: float = 0.1,
       eligible_methodologies: Iterable[str] = (
           MethodologyName.TBR_MM,
@@ -65,8 +65,8 @@ class Experiment:
         max_trials eligible experiment designs, they will be randomly sampled.
       primary_response_metric: The primary response metric for the experiment.
         This is the metric that the experiment will be designed for.
-      minimum_detectable_lift: The target minimum detectable lift on the primary
-        response metric for the experiment.
+      alternative_hypthesis: The alternative hypothesis for the experiment. Must
+        be one of "two-sided", "greater", or "less". Defaults to "two-sided".
       alpha: The significance level for the experiment. Defaults to 0.1.
       eligible_methodologies: The eligible methodologies for the experiment.
         Defaults to all methodologies except RCT.

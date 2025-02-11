@@ -78,27 +78,62 @@ def test_rct_is_eligible_for_constraints(
   assert RCT().is_eligible_for_constraints(constraints) == expected_is_eligible
 
 
-def test_rct_add_parameters_to_search_space():
+@pytest.mark.parametrize(
+    "constraints,expected_parameter_names",
+    [
+        ({}, []),
+        ({"trimming_quantile_range": (0.0, 0.5)}, ["trimming_quantile"]),
+        (
+            {
+                "trimming_quantile_range": (0.0, 0.5),
+                "n_geos_ignored_range": (0, 2),
+            },
+            ["trimming_quantile", "n_geos_ignored"],
+        ),
+        (
+            {
+                "trimming_quantile_range": (0.0, 0.5),
+                "n_geos_ignored_range": (0, 2),
+                "geo_treatment_propensity_range": (0.0, 1.0),
+            },
+            ["trimming_quantile", "n_geos_ignored", "treatment_propensity"],
+        ),
+    ],
+)
+def test_rct_add_parameters_to_search_space(
+    constraints, expected_parameter_names
+):
   problem_statement = vz.ProblemStatement()
   RCT().add_parameters_to_search_space(
       ExperimentDesignConstraints(
           experiment_type=ExperimentType.GO_DARK,
           max_runtime_weeks=4,
           min_runtime_weeks=2,
+          **constraints,
       ),
       problem_statement.search_space.root,
   )
   assert set(problem_statement.search_space.parameter_names) == set(
-      ["treatment_propensity"]
+      expected_parameter_names
   )
 
 
 @pytest.mark.parametrize(
-    "treatment_propensity,expected_treatment_geos",
-    [(0.5, 2), (0.25, 1), (0.75, 3), (0.99, 3), (0.01, 1)],
+    "treatment_propensity,n_geos_ignored,expected_treatment_geos",
+    [
+        (0.5, 0, 2),
+        (0.25, 0, 1),
+        (0.75, 0, 3),
+        (0.99, 0, 3),
+        (0.01, 0, 1),
+        (0.5, 2, 1),
+    ],
 )
 def test_rct_assign_geos(
-    performance_data, treatment_propensity, expected_treatment_geos
+    performance_data,
+    treatment_propensity,
+    n_geos_ignored,
+    expected_treatment_geos,
 ):
   rng = np.random.default_rng(seed=42)
   experiment_design = ExperimentDesign(
@@ -107,14 +142,21 @@ def test_rct_assign_geos(
       runtime_weeks=4,
       alpha=0.1,
       fixed_geos=None,
-      methodology_parameters={"treatment_propensity": treatment_propensity},
+      methodology_parameters={
+          "treatment_propensity": treatment_propensity,
+          "n_geos_ignored": n_geos_ignored,
+      },
   )
   geo_assignment = RCT().assign_geos(experiment_design, performance_data, rng)
   assert len(geo_assignment.treatment) == expected_treatment_geos
-  assert len(geo_assignment.control) == 4 - expected_treatment_geos
-  assert set(geo_assignment.treatment + geo_assignment.control) == set(
-      performance_data.geos
+  assert (
+      len(geo_assignment.control)
+      == 4 - n_geos_ignored - expected_treatment_geos
   )
+  if n_geos_ignored == 0:
+    assert set(geo_assignment.treatment + geo_assignment.control) == set(
+        performance_data.geos
+    )
 
 
 def test_rct_analyze_experiment(performance_data):

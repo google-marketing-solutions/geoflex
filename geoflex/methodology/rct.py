@@ -6,6 +6,7 @@ import geoflex.experiment_design
 from geoflex.methodology import _base
 import numpy as np
 import pandas as pd
+import pydantic
 from vizier import pyvizier as vz
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -17,6 +18,24 @@ ExperimentDesignEvaluation = (
     geoflex.experiment_design.ExperimentDesignEvaluation
 )
 GeoAssignment = geoflex.experiment_design.GeoAssignment
+
+
+class RCTParameters(pydantic.BaseModel):
+  """The parameters for the RCT methodology.
+
+  Attributes:
+    treatment_propensity: The propensity of geos to be in the treatment group,
+      out of all the non-ignored geos. Defaults to 0.5 to maximize the power.
+    n_geos_ignored: The number of geos to ignore. Defaults to 0 to maximize the
+      power.
+    trimming_quantile: The quantile to use for trimming. Higher trimming can
+      lead to more power, but will lead to more geos being ignored. Cannot be
+      greater than 0.5. Defaults to 0.0 to not trim any data.
+  """
+
+  treatment_propensity: float = pydantic.Field(default=0.5, gt=0.0, lt=1.0)
+  n_geos_ignored: int = pydantic.Field(default=0, ge=0)
+  trimming_quantile: float = pydantic.Field(default=0.0, ge=0.0, lt=0.5)
 
 
 class RCT(_base.Methodology):
@@ -63,11 +82,26 @@ class RCT(_base.Methodology):
       design_constraints: The design constraints for the experiment.
       search_space_root: The root of the search space to add the parameters to.
     """
-    search_space_root.add_float_param(
-        name="treatment_propensity",
-        min_value=0.25,
-        max_value=0.75,
-    )
+    if design_constraints.geo_treatment_propensity_range is not None:
+      search_space_root.add_float_param(
+          name="treatment_propensity",
+          min_value=design_constraints.geo_treatment_propensity_range[0],
+          max_value=design_constraints.geo_treatment_propensity_range[1],
+      )
+
+    if design_constraints.n_geos_ignored_range is not None:
+      search_space_root.add_int_param(
+          name="n_geos_ignored",
+          min_value=design_constraints.n_geos_ignored_range[0],
+          max_value=design_constraints.n_geos_ignored_range[1],
+      )
+
+    if design_constraints.trimming_quantile_range is not None:
+      search_space_root.add_float_param(
+          name="trimming_quantile",
+          min_value=design_constraints.trimming_quantile_range[0],
+          max_value=design_constraints.trimming_quantile_range[1],
+      )
 
   def assign_geos(
       self,
@@ -77,11 +111,10 @@ class RCT(_base.Methodology):
   ) -> GeoAssignment:
     """Randomly assigns all geos to the treatment and control groups.
 
-    The treatment propensity is used to determine how many geos should be in
-    the treatment group. The number of geos in the treatment group will be
-    rounded up to the nearest integer, to ensure that the treatment group always
-    has at least one geo, but is capped to ensure there is also always at least
-    one geo in the control group.
+    The treatment propensity and number of ignored geos is used to determine
+    how many geos should be in the treatment group. The number of geos in the
+    treatment group will be rounded to the nearest integer and clipped to
+    ensure that at least 1 geo in both the treatment and control groups.
 
     Args:
       experiment_design: The experiment design to assign geos for.
@@ -93,22 +126,30 @@ class RCT(_base.Methodology):
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
-    treatment_propensity = experiment_design.methodology_parameters[
-        "treatment_propensity"
-    ]
-    n_treatment_geos = int(
-        np.min([
-            np.ceil(len(historical_data.geos) * treatment_propensity),
-            len(historical_data.geos) - 1,
-        ])
+    parameters = RCTParameters.model_validate(
+        experiment_design.methodology_parameters
     )
 
-    treatment_geos = rng.choice(
+    n_non_ignored_geos = max(
+        2, len(historical_data.geos) - parameters.n_geos_ignored
+    )
+    n_treatment_geos = int(
+        np.round(n_non_ignored_geos * parameters.treatment_propensity)
+    )
+    n_treatment_geos = max(min(n_treatment_geos, n_non_ignored_geos - 1), 1)
+
+    non_ignored_geos = rng.choice(
         historical_data.geos,
+        n_non_ignored_geos,
+        replace=False,
+    ).tolist()
+    treatment_geos = rng.choice(
+        non_ignored_geos,
         n_treatment_geos,
         replace=False,
     ).tolist()
-    control_geos = list(set(historical_data.geos) - set(treatment_geos))
+
+    control_geos = list(set(non_ignored_geos) - set(treatment_geos))
     return GeoAssignment(treatment=treatment_geos, control=control_geos)
 
   def analyze_experiment(
@@ -140,6 +181,10 @@ class RCT(_base.Methodology):
     Returns:
       A dataframe with the analysis results.
     """
+    parameters = RCTParameters.model_validate(
+        experiment_design.methodology_parameters
+    )
+
     grouped_data = runtime_data.parsed_data.groupby("geo_id")[
         runtime_data.response_columns
     ].sum()
@@ -156,8 +201,9 @@ class RCT(_base.Methodology):
       statistical_results = statistics.yuens_t_test_ind(
           treatment_data[metric].values,
           control_data[metric].values,
-          trimming_quantile=0.0,
+          trimming_quantile=parameters.trimming_quantile,
           alpha=experiment_design.alpha,
+          alternative=experiment_design.alternative_hypothesis,
       )
       results.append({
           "metric": metric,
