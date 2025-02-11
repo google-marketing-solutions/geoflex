@@ -1,5 +1,6 @@
 """The Randomized Controlled Trial (RCT) methodology for GeoFleX."""
 
+from feedx import statistics
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
@@ -135,5 +136,42 @@ class RCT(_base.Methodology):
       runtime_data: The runtime data for the experiment.
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
+
+    Returns:
+      A dataframe with the analysis results.
     """
-    raise NotImplementedError()
+    grouped_data = runtime_data.parsed_data.groupby("geo_id")[
+        runtime_data.response_columns
+    ].sum()
+
+    treatment_data = grouped_data.loc[
+        grouped_data.index.isin(experiment_design.geo_assignment.treatment)
+    ]
+    control_data = grouped_data.loc[
+        grouped_data.index.isin(experiment_design.geo_assignment.control)
+    ]
+
+    results = []
+    for metric in runtime_data.response_columns:
+      statistical_results = statistics.yuens_t_test_ind(
+          treatment_data[metric].values,
+          control_data[metric].values,
+          trimming_quantile=0.0,
+          alpha=experiment_design.alpha,
+      )
+      results.append({
+          "metric": metric,
+          "point_estimate": statistical_results.absolute_difference,
+          "lower_bound": statistical_results.absolute_difference_lower_bound,
+          "upper_bound": statistical_results.absolute_difference_upper_bound,
+          "point_estimate_relative": statistical_results.relative_difference,
+          "lower_bound_relative": (
+              statistical_results.relative_difference_lower_bound
+          ),
+          "upper_bound_relative": (
+              statistical_results.relative_difference_upper_bound
+          ),
+          "p_value": statistical_results.p_value,
+          "is_significant": statistical_results.is_significant,
+      })
+    return pd.DataFrame(results)

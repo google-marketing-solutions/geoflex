@@ -118,5 +118,8 @@ class Methodology(abc.ABC):
       runtime_data: The runtime data for the experiment.
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
+
+    Returns:
+      A dataframe with the analysis results.
     """
     pass
