@@ -15,6 +15,33 @@ ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 # pylint: disable=invalid-name
 
 
+@pytest.mark.parametrize(
+    "treatment,control,exclude",
+    [
+        ([["US", "UK"], []], ["US", "AU"], ["FR"]),  # Treatment control overlap
+        (
+            [["US", "UK"], ["CA", "US"]],
+            ["FR", "AU"],
+            [],
+        ),  # Treatment treatment overlap
+        ([["US", "UK"], []], ["FR", "AU"], ["US"]),  # Treatment exclude overlap
+        ([["US", "UK"], []], ["FR", "AU"], ["AU"]),  # Control exclude overlap
+    ],
+)
+def test_geo_assignment_raises_exception_if_geos_in_multiple_groups(
+    treatment, control, exclude
+):
+  with pytest.raises(ValueError):
+    GeoAssignment(treatment=treatment, control=control, exclude=exclude)
+
+
+def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
+  with pytest.raises(ValueError):
+    # Treatment must be a list of lists to be able to have multiple treatment
+    # arms.
+    GeoAssignment(treatment=["US", "UK"], control=["US", "AU"])
+
+
 def test_constraints_raise_exception_if_max_runtime_less_than_min_runtime():
   with pytest.raises(ValueError):
     ExperimentDesignConstraints(
@@ -24,28 +51,21 @@ def test_constraints_raise_exception_if_max_runtime_less_than_min_runtime():
     )
 
 
-def test_constraints_raise_exception_if_geos_in_both_fixed_treatment_and_fixed_control():
+def test_constraints_raise_exception_if_n_cells_less_than_2():
   with pytest.raises(ValueError):
     ExperimentDesignConstraints(
         experiment_type=ExperimentType.GO_DARK,
-        fixed_geos=GeoAssignment(treatment=["US", "UK"], control=["US", "AU"]),
+        n_cells=1,
     )
 
 
 def test_constraints_can_be_created_with_valid_input():
   ExperimentDesignConstraints(
       experiment_type=ExperimentType.GO_DARK,
-      fixed_geos=GeoAssignment(treatment=["US", "UK"], control=["CA", "AU"]),
+      fixed_geos=GeoAssignment(treatment=[["US", "UK"]], control=["CA", "AU"]),
       max_runtime_weeks=4,
       min_runtime_weeks=2,
   )
-
-
-def test_geo_assignment_evaluates_to_true_if_geos_are_not_empty():
-  assert GeoAssignment(control=["US", "UK"], treatment=[])
-  assert GeoAssignment(control=[], treatment=["US", "UK"])
-  assert GeoAssignment(control=["US", "UK"], treatment=["CA", "AU"])
-  assert not GeoAssignment(control=[], treatment=[])
 
 
 @pytest.mark.parametrize(

@@ -26,17 +26,11 @@ class RCTParameters(pydantic.BaseModel):
   """The parameters for the RCT methodology.
 
   Attributes:
-    treatment_propensity: The propensity of geos to be in the treatment group,
-      out of all the non-ignored geos. Defaults to 0.5 to maximize the power.
-    n_geos_ignored: The number of geos to ignore. Defaults to 0 to maximize the
-      power.
     trimming_quantile: The quantile to use for trimming. Higher trimming can
       lead to more power, but will lead to more geos being ignored. Cannot be
       greater than 0.5. Defaults to 0.0 to not trim any data.
   """
 
-  treatment_propensity: float = pydantic.Field(default=0.5, gt=0.0, lt=1.0)
-  n_geos_ignored: int = pydantic.Field(default=0, ge=0)
   trimming_quantile: float = pydantic.Field(default=0.0, ge=0.0, lt=0.5)
 
 
@@ -61,8 +55,10 @@ class RCT(_base.Methodology):
   ) -> bool:
     """Checks if an RCT is eligible for the given design constraints.
 
-    For a RCT, the only constraints that matter are the fixed geos, which
-    cannot be used in an RCT.
+    For a RCT, the only constraints that matter are the fixed geos. Because the
+    assignment is random, we can only run it if there are no fixed geos in the
+    control or treatment groups. There can be fixed geos in the exclude group,
+    these are excluded pre-randomization.
 
     Args:
       design_constraints: The design constraints to check against.
@@ -71,7 +67,11 @@ class RCT(_base.Methodology):
       True if an RCT is eligible for the given design constraints, False
         otherwise.
     """
-    return not design_constraints.fixed_geos
+    has_fixed_geos = design_constraints.fixed_geos is not None and (
+        design_constraints.fixed_geos.control
+        or any(design_constraints.fixed_geos.treatment)
+    )
+    return not has_fixed_geos
 
   def suggest_methodology_parameters(
       self,
@@ -85,21 +85,9 @@ class RCT(_base.Methodology):
       trial: The Optuna trial to use to suggest the parameters.
 
     Returns:
-      A dictionary of the suggested parameters.
+      A dictionary of parameters that are specific to the RCT methodology.
     """
     parameters = {}
-    if design_constraints.geo_treatment_propensity_range is not None:
-      parameters["treatment_propensity"] = trial.suggest_float(
-          "treatment_propensity",
-          design_constraints.geo_treatment_propensity_range[0],
-          design_constraints.geo_treatment_propensity_range[1],
-      )
-    if design_constraints.n_geos_ignored_range is not None:
-      parameters["n_geos_ignored"] = trial.suggest_int(
-          "n_geos_ignored",
-          design_constraints.n_geos_ignored_range[0],
-          design_constraints.n_geos_ignored_range[1],
-      )
     if design_constraints.trimming_quantile_range is not None:
       parameters["trimming_quantile"] = trial.suggest_float(
           "trimming_quantile",
@@ -131,31 +119,36 @@ class RCT(_base.Methodology):
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
-    parameters = RCTParameters.model_validate(
-        experiment_design.methodology_parameters
-    )
+    if experiment_design.fixed_geos is None:
+      exclude_geos = set()
+    else:
+      exclude_geos = set(experiment_design.fixed_geos.exclude)
+    all_geos = set(historical_data.geos) - exclude_geos
 
-    n_non_ignored_geos = max(
-        2, len(historical_data.geos) - parameters.n_geos_ignored
-    )
-    n_treatment_geos = int(
-        np.round(n_non_ignored_geos * parameters.treatment_propensity)
-    )
-    n_treatment_geos = max(min(n_treatment_geos, n_non_ignored_geos - 1), 1)
+    if experiment_design.n_geos_per_group is None:
+      # If not specified, make an approximate equal split
+      # For example, splitting 10 into 3 groups will give 3, 3, 4.
+      # The order will be randomized, so it could be 4, 3, 3 etc.
+      base = len(all_geos) // experiment_design.n_cells
+      remainder = len(all_geos) % experiment_design.n_cells
+      n_geos_per_group = [base] * experiment_design.n_cells
+      for i in range(remainder):
+        n_geos_per_group[i] += 1
+      rng.shuffle(n_geos_per_group)
+    else:
+      n_geos_per_group = experiment_design.n_geos_per_group
 
-    non_ignored_geos = rng.choice(
-        historical_data.geos,
-        n_non_ignored_geos,
-        replace=False,
-    ).tolist()
-    treatment_geos = rng.choice(
-        non_ignored_geos,
-        n_treatment_geos,
-        replace=False,
-    ).tolist()
+    geo_groups = []
+    for n_geos in n_geos_per_group:
+      new_geo_group = rng.choice(
+          list(all_geos),
+          n_geos,
+          replace=False,
+      ).tolist()
+      all_geos -= set(new_geo_group)
+      geo_groups.append(new_geo_group)
 
-    control_geos = list(set(non_ignored_geos) - set(treatment_geos))
-    return GeoAssignment(treatment=treatment_geos, control=control_geos)
+    return GeoAssignment(treatment=geo_groups[1:], control=geo_groups[0])
 
   def analyze_experiment(
       self,
@@ -190,39 +183,48 @@ class RCT(_base.Methodology):
         experiment_design.methodology_parameters
     )
 
-    grouped_data = runtime_data.parsed_data.groupby("geo_id")[
-        runtime_data.response_columns
-    ].sum()
+    is_during_runtime = (
+        runtime_data.parsed_data["date"] >= experiment_start_date
+    )
+    grouped_data = (
+        runtime_data.parsed_data.loc[is_during_runtime]
+        .groupby("geo_id")[runtime_data.response_columns]
+        .sum()
+    )
 
-    treatment_data = grouped_data.loc[
-        grouped_data.index.isin(experiment_design.geo_assignment.treatment)
-    ]
     control_data = grouped_data.loc[
         grouped_data.index.isin(experiment_design.geo_assignment.control)
     ]
 
     results = []
-    for metric in runtime_data.response_columns:
-      statistical_results = statistics.yuens_t_test_ind(
-          treatment_data[metric].values,
-          control_data[metric].values,
-          trimming_quantile=parameters.trimming_quantile,
-          alpha=experiment_design.alpha,
-          alternative=experiment_design.alternative_hypothesis,
-      )
-      results.append({
-          "metric": metric,
-          "point_estimate": statistical_results.absolute_difference,
-          "lower_bound": statistical_results.absolute_difference_lower_bound,
-          "upper_bound": statistical_results.absolute_difference_upper_bound,
-          "point_estimate_relative": statistical_results.relative_difference,
-          "lower_bound_relative": (
-              statistical_results.relative_difference_lower_bound
-          ),
-          "upper_bound_relative": (
-              statistical_results.relative_difference_upper_bound
-          ),
-          "p_value": statistical_results.p_value,
-          "is_significant": statistical_results.is_significant,
-      })
+    for cell, treatment_group in enumerate(
+        experiment_design.geo_assignment.treatment, 1
+    ):
+      treatment_data = grouped_data.loc[
+          grouped_data.index.isin(treatment_group)
+      ]
+      for metric in runtime_data.response_columns:
+        statistical_results = statistics.yuens_t_test_ind(
+            treatment_data[metric].values,
+            control_data[metric].values,
+            trimming_quantile=parameters.trimming_quantile,
+            alpha=experiment_design.alpha,
+            alternative=experiment_design.alternative_hypothesis,
+        )
+        results.append({
+            "cell": cell,
+            "metric": metric,
+            "point_estimate": statistical_results.absolute_difference,
+            "lower_bound": statistical_results.absolute_difference_lower_bound,
+            "upper_bound": statistical_results.absolute_difference_upper_bound,
+            "point_estimate_relative": statistical_results.relative_difference,
+            "lower_bound_relative": (
+                statistical_results.relative_difference_lower_bound
+            ),
+            "upper_bound_relative": (
+                statistical_results.relative_difference_upper_bound
+            ),
+            "p_value": statistical_results.p_value,
+            "is_significant": statistical_results.is_significant,
+        })
     return pd.DataFrame(results)
