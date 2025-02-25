@@ -1,13 +1,15 @@
 """The Randomized Controlled Trial (RCT) methodology for GeoFleX."""
 
+from typing import Any
 from feedx import statistics
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
 import numpy as np
+import optuna as op
 import pandas as pd
 import pydantic
-from vizier import pyvizier as vz
+
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 ExperimentDesignConstraints = (
@@ -71,37 +73,40 @@ class RCT(_base.Methodology):
     """
     return not design_constraints.fixed_geos
 
-  def add_parameters_to_search_space(
+  def suggest_methodology_parameters(
       self,
       design_constraints: ExperimentDesignConstraints,
-      search_space_root: vz.SearchSpaceSelector,
-  ) -> None:
-    """Defines the parameter search space for the RCT methodology.
+      trial: op.Trial,
+  ) -> dict[str, Any]:
+    """Suggests the parameters for this trial.
 
     Args:
       design_constraints: The design constraints for the experiment.
-      search_space_root: The root of the search space to add the parameters to.
+      trial: The Optuna trial to use to suggest the parameters.
+
+    Returns:
+      A dictionary of the suggested parameters.
     """
+    parameters = {}
     if design_constraints.geo_treatment_propensity_range is not None:
-      search_space_root.add_float_param(
-          name="treatment_propensity",
-          min_value=design_constraints.geo_treatment_propensity_range[0],
-          max_value=design_constraints.geo_treatment_propensity_range[1],
+      parameters["treatment_propensity"] = trial.suggest_float(
+          "treatment_propensity",
+          design_constraints.geo_treatment_propensity_range[0],
+          design_constraints.geo_treatment_propensity_range[1],
       )
-
     if design_constraints.n_geos_ignored_range is not None:
-      search_space_root.add_int_param(
-          name="n_geos_ignored",
-          min_value=design_constraints.n_geos_ignored_range[0],
-          max_value=design_constraints.n_geos_ignored_range[1],
+      parameters["n_geos_ignored"] = trial.suggest_int(
+          "n_geos_ignored",
+          design_constraints.n_geos_ignored_range[0],
+          design_constraints.n_geos_ignored_range[1],
       )
-
     if design_constraints.trimming_quantile_range is not None:
-      search_space_root.add_float_param(
-          name="trimming_quantile",
-          min_value=design_constraints.trimming_quantile_range[0],
-          max_value=design_constraints.trimming_quantile_range[1],
+      parameters["trimming_quantile"] = trial.suggest_float(
+          "trimming_quantile",
+          design_constraints.trimming_quantile_range[0],
+          design_constraints.trimming_quantile_range[1],
       )
+    return parameters
 
   def assign_geos(
       self,

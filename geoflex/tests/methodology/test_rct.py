@@ -4,9 +4,9 @@ import geoflex.data
 import geoflex.experiment_design
 import geoflex.methodology.rct
 import numpy as np
+import optuna as op
 import pandas as pd
 import pytest
-import vizier.pyvizier as vz
 
 RCT = geoflex.methodology.rct.RCT
 ExperimentDesignConstraints = (
@@ -100,22 +100,21 @@ def test_rct_is_eligible_for_constraints(
         ),
     ],
 )
-def test_rct_add_parameters_to_search_space(
+def test_rct_suggest_methodology_parameters(
     constraints, expected_parameter_names
 ):
-  problem_statement = vz.ProblemStatement()
-  RCT().add_parameters_to_search_space(
+  study = op.create_study()
+  trial = study.ask()
+  parameters = RCT().suggest_methodology_parameters(
       ExperimentDesignConstraints(
           experiment_type=ExperimentType.GO_DARK,
           max_runtime_weeks=4,
           min_runtime_weeks=2,
           **constraints,
       ),
-      problem_statement.search_space.root,
+      trial,
   )
-  assert set(problem_statement.search_space.parameter_names) == set(
-      expected_parameter_names
-  )
+  assert set(parameters.keys()) == set(expected_parameter_names)
 
 
 @pytest.mark.parametrize(

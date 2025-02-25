@@ -1,11 +1,12 @@
 """The base class for all methodologies, to ensure a unified interface."""
 
 import abc
+from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 import numpy as np
+import optuna as op
 import pandas as pd
-from vizier import pyvizier as vz
 
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -42,16 +43,15 @@ class Methodology(abc.ABC):
     pass
 
   @abc.abstractmethod
-  def add_parameters_to_search_space(
+  def suggest_methodology_parameters(
       self,
       design_constraints: ExperimentDesignConstraints,
-      search_space_root: vz.SearchSpaceSelector,
-  ) -> None:
-    """Defines the parameter search space for this methodology.
+      trial: op.Trial,
+  ) -> dict[str, Any]:
+    """Suggests the parameters for this trial.
 
-    This is done by adding the parameters to the search space root. It must
-    consider the design constraints, so that the parameters are within the
-    allowed ranges and are compatible with each other.
+    It must consider the design constraints, so that the parameters are within
+    the allowed ranges and are compatible with each other.
 
     This should only add the parameters that are specific to this methodology,
     that will be placed in the ExperimentDesign.methodology_parameters dict.
@@ -63,7 +63,10 @@ class Methodology(abc.ABC):
 
     Args:
       design_constraints: The design constraints for the experiment.
-      search_space_root: The root of the search space to add the parameters to.
+      trial: The Optuna trial to use to suggest the parameters.
+
+    Returns:
+      A dictionary of the suggested parameters.
     """
     pass
 

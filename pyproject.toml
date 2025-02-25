@@ -10,7 +10,7 @@ dependencies = [
   "scipy",
   "pandas",
   "pydantic",
-  "google-vizier",
+  "optuna",
   "feedx",
 ]
 requires-python = ">=3.8"
