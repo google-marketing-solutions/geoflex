@@ -2,9 +2,15 @@
 
 **Disclaimer: This is not an official Google product.**
 
-GeoFleX is a unified python package, from which a range of geo experiment
-methodologies and designs can be evaluated and used. It provides a standard
-interface to:
+## Introduction
+
+TODO: Add general intro
+
+## GeoFleX Python Package
+
+GeoFleX can be used as a unified python package, from which a range of geo
+experiment methodologies and designs can be evaluated and used. It provides a
+standard interface to:
 
 1. **Design** a geo-experiment.
 2. **Evaluate** the design of a geo-experiment.

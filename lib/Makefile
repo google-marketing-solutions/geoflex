@@ -11,7 +11,7 @@ test: $(VENV_PATH)
 				$(VENV_PATH)/bin/pytest -p no:cacheprovider
 clean:
 				@echo "Cleaning up virtual environment at $(VENV_PATH)..."
-				rm -rf $(VENV_PATH) ../$(PROJECT_NAME).egg-info
+				rm -rf $(VENV_PATH) ../../$(PROJECT_NAME).egg-info
 				@echo "Virtual environment removed."
 # This rule ensures that if you call make test without the venv existing, it will be created
 $(VENV_PATH):

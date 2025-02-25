@@ -32,4 +32,4 @@ Repository = "https://professional-services.git.corp.google.com/solutions/geofle
 geoflex = ["tests/*", "tests/**/*"]
 
 [tool.distutils.egg_info]
-egg_base = "../"
+egg_base = "../../"
