@@ -1,0 +1,6 @@
+.quasar/
+.venv/
+.vscode/
+dist/
+node_modules/
+server/
