@@ -2,14 +2,7 @@
   <q-layout view="hHh Lpr lFf">
     <q-header elevated>
       <q-toolbar>
-        <q-btn
-          flat
-          dense
-          round
-          icon="menu"
-          aria-label="Menu"
-          @click="toggleLeftDrawer"
-        />
+        <q-btn flat dense round icon="menu" aria-label="Menu" @click="toggleLeftDrawer" />
 
         <q-toolbar-title>
           <router-link to="/" style="text-decoration: none; color: white"
@@ -27,9 +20,7 @@
       <router-view />
     </q-page-container>
 
-    <div class="text-body1 text-center q-ma-sm">
-      &copy;&nbsp;Google gTech Ads, 2025.
-    </div>
+    <div class="text-body1 text-center q-ma-sm">&copy;&nbsp;Google gTech Ads, 2025.</div>
   </q-layout>
 </template>
 
