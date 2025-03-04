@@ -5,5 +5,18 @@
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.codeActionsOnSave": ["source.fixAll.eslint"],
   "eslint.validate": ["javascript", "javascriptreact", "typescript", "vue"],
-  "typescript.tsdk": "node_modules/typescript/lib"
+  "clang-format.style": "{BasedOnStyle: google}",
+  "files.trimTrailingWhitespace": true,
+  "[python]": {
+    "editor.defaultFormatter": "eeyore.yapf"
+  },
+  "yapf.args": ["--style", "{based_on_style: yapf, indent_width: 2}"],
+  "[sql]": {
+    "editor.rulers": [100]
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "search.exclude": {
+    ".work/": true,
+    "**/.venv/": true
+  }
 }

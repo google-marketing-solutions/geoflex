@@ -12,18 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 """Handling environment specific."""
+
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import
 import os
 
-
-def get_val(envvar):
-  if envvar == 0:
-    return envvar
-  if not envvar or envvar == 'None':
-    return ''
-  return envvar
-
-
-IS_GAE = bool(get_val(os.getenv('GAE_APPLICATION')))
+IS_GAE = bool(os.getenv('GAE_APPLICATION'))
 """True if the app is inside AppEngine"""
 
 GAE_LOCATION = os.getenv('GAE_LOCATION')

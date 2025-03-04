@@ -13,167 +13,175 @@
 # limitations under the License.
 """Application server."""
 
-from typing import Any, Callable
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import
+from typing import Any
 import json
 import os
 import math
 import traceback
-from flask import Flask, request, jsonify, send_from_directory
-from flask.json.provider import DefaultJSONProvider
-from google.appengine.api import wrap_wsgi_app
-from flask_cors import CORS
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import uvicorn
 
 from env import IS_GAE
 from logger import logger
 
-# make linter happy (avoid import-member)
-# date = datetime.date
-# timedelta = datetime.timedelta
-# datetime = datetime.datetime
+# Initialize FastAPI app
+app = FastAPI()
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 
-class JsonEncoder(json.JSONEncoder):
-  """A custom JSON encoder to support serialization of Audience objects."""
-  flask_default: Callable[[Any], Any]
+class CustomJSONEncoder(json.JSONEncoder):
+  """A custom JSON encoder to support serialization of special objects."""
 
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, **kwargs)
-    self.flask_default = DefaultJSONProvider.default
-
-  def default(self, o):
-    # Handle numpy types first
-    # if isinstance(o, np.floating):
-    #   if np.isfinite(o):
-    #     return float(o)
-    #   if np.isinf(o):
-    #     return 'Infinity' if o > 0 else '-Infinity'
-    #   if np.isnan(o):
-    #     return 'NaN'
-
+  def default(self, o: Any):
     # Handle regular Python floats
     if isinstance(o, float):
       if math.isinf(o):
-        return 'Infinity' if o > 0 else '-Infinity'
+        return "Infinity" if o > 0 else "-Infinity"
       if math.isnan(o):
-        return 'NaN'
+        return "NaN"
 
-    # Handle numpy arrays
-    # if isinstance(o, np.ndarray):
-    #   return o.tolist()
-
-    # if isinstance(o, (models.FeatureMetrics, models.DistributionData)):
-    #   # Convert to dict and recursively handle numpy values
-    #   return {
-    #       k: self.default(v) if isinstance(v, (np.floating, np.ndarray)) else v
-    #       for k, v in o.__dict__.items()
-    #   }
-
-    # if isinstance(o, models.Audience):
-    #   return o.to_dict()
-    return self.flask_default(o)
+      # For other types, use default serialization
+      return super().default(o)
 
 
-class JSONProvider(DefaultJSONProvider):
-  """A JSON provider to replace JsonEncoder used by Flask."""
+class CustomJSONResponse(JSONResponse):
+  """Custom JSON response using our JSON encoder."""
 
-  def dumps(self, obj: Any, **kwargs: Any) -> str:
-    """Serialize data as JSON to a string.
-
-    Keyword arguments are passed to :func:`json.dumps`. Sets some
-    parameter defaults from the :attr:`default`,
-    :attr:`ensure_ascii`, and :attr:`sort_keys` attributes.
-
-    :param obj: The data to serialize.
-    :param kwargs: Passed to :func:`json.dumps`.
-    """
-    kwargs.setdefault('cls', JsonEncoder)
-    kwargs.setdefault('default', None)
-    return DefaultJSONProvider.dumps(self, obj, **kwargs)
+  def render(self, content: Any) -> bytes:
+    return json.dumps(
+        content,
+        ensure_ascii=False,
+        allow_nan=True,
+        indent=None,
+        separators=(",", ":"),
+        cls=CustomJSONEncoder,
+    ).encode("utf-8")
 
 
-STATIC_DIR = (os.getenv('STATIC_DIR') or '../dist'
+STATIC_DIR = (os.getenv("STATIC_DIR") or "../dist"
              )  # folder for static content relative to the current module
-
-Flask.json_provider_class = JSONProvider
-app = Flask(__name__)
-app.wsgi_app = wrap_wsgi_app(app.wsgi_app)
-
-CORS(app)
-
-#args = parse_arguments(only_known=True)
+# Calculate the absolute path based on the current file location
+STATIC_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), STATIC_DIR))
 
 
-def _get_req_arg_str(name: str):
-  arg = request.args.get(name)
-  if not arg or arg == 'null' or arg == 'undefined':
-    return None
-  return str(arg)
+def safe_remove_header(headers, header_name):
+  if header_name in headers:
+    headers.remove(header_name)
 
 
-@app.route('/api/datasources', methods=['GET'])
-def get_configuration():
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str) -> Response:
+  """Serve static files or SPA index.html."""
+  # Handle API paths
+  if full_path.startswith("api/"):
+    raise StarletteHTTPException(
+        status_code=404, detail="API endpoint not found")
 
-  return jsonify({})
+  # Check if the requested file exists
+  file_path = os.path.join(STATIC_PATH, full_path)
 
+  if os.path.isfile(file_path):
+    # Serve the file directly
+    response = FileResponse(file_path)
 
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def catch_all(path):
-  # NOTE: we don't use Flask standard support for static files
-  # (static_folder option and send_static_file method)
-  # because they can't distinguish requests for static files (js/css)
-  # and client routes (like /products)
-  file_requested = os.path.join(app.root_path, STATIC_DIR, path)
-  if not os.path.isfile(file_requested):
-    path = 'index.html'
-  max_age = 0 if path == 'index.html' else None
-  response = send_from_directory(STATIC_DIR, path, max_age=max_age)
-  # There is a "feature" in GAE - all files have zeroed timestamp
-  # ("Tue, 01 Jan 1980 00:00:01 GMT")
+    # Handle GAE timestamp issues
+    if IS_GAE:
+      safe_remove_header(response.headers, "last-modified")
+
+    return response
+
+  # If file not found, serve index.html (SPA behavior)
+  index_path = os.path.join(STATIC_PATH, "index.html")
+
+  if not os.path.exists(index_path):
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Frontend application files not found: " + index_path
+        })
+
+  response = FileResponse(index_path)
+
+  safe_remove_header(response.headers, "etag")
+  response.headers["Cache-Control"] = "no-cache, no-store"
+
   if IS_GAE:
-    response.headers.remove('Last-Modified')
-  if path == 'index.html':
-    response.headers.remove('ETag')
-  response.cache_control.no_cache = True
-  response.cache_control.no_store = True
-  logger.debug('Static file request %s processed', path)
+    safe_remove_header(response.headers, "last-modified")
+
   return response
 
 
-@app.errorhandler(Exception)
-def handle_exception(e: Exception):
-  logger.exception(e)
-  if getattr(e, 'errors', None):
-    logger.error(e.errors)
-  if request.accept_mimetypes.accept_json and request.path.startswith('/api/'):
-    # NOTE: not all exceptions can be serialized
-    error_type = type(e).__name__
-    error_message = str(e)
-
-    # format the error message with the traceback
-    debug_info = ''
-    if app.config['DEBUG']:
-      debug_info = ''.join(traceback.format_tb(e.__traceback__))
-
-    # create and return the JSON response
-    response = jsonify({
-        'error': {
-            'type': error_type,
-            'message': f'{error_type}: {error_message}',
-            'debugInfo': debug_info,
-        }
-    })
-    response.status_code = 500
-    return response
-    # try:
-    #   return jsonify({"error": e}), 500
-    # except:
-    #   return jsonify({"error": str(e)}), 500
-  return e
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request,
+                                       exc: RequestValidationError) -> Response:
+  """Handle validation errors."""
+  logger.error("Validation error: %s", exc)
+  return JSONResponse(
+      status_code=422,
+      content={"error": {
+          "type": "ValidationError",
+          "message": str(exc)
+      }},
+  )
 
 
-if __name__ == '__main__':
-  # This is used when running locally only. When deploying to Google App
-  # Engine, a webserver process such as Gunicorn will serve the app. This
-  # can be configured by adding an `entrypoint` to app.yaml.
-  app.run(host='127.0.0.1', port=8080, debug=True)
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(_: Request,
+                                 exc: StarletteHTTPException) -> Response:
+  """Handle HTTP exceptions."""
+  logger.error("HTTP exception: %s", exc.detail)
+  return JSONResponse(
+      status_code=exc.status_code,
+      content={"error": {
+          "type": "HTTPException",
+          "message": exc.detail
+      }},
+  )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(_: Request, exc: Exception) -> Response:
+  """Handle all other exceptions."""
+  logger.exception(exc)
+
+  error_type = type(exc).__name__
+  error_message = str(exc)
+
+  is_debug = os.getenv("DEBUG", "False").lower() in ("true", "1", "on")
+
+  return JSONResponse(
+      status_code=500,
+      content={
+          "error": {
+              "type":
+                  error_type,
+              "message":
+                  f"{error_type}: {error_message}",
+              "debugInfo":
+                  "".join(traceback.format_tb(exc.__traceback__))
+                  if is_debug else "Enable DEBUG mode to see traceback",
+          }
+      })
+
+
+if __name__ == "__main__":
+  # Run the server when executed directly
+  uvicorn.run(
+      "server:app",
+      host="127.0.0.1",
+      port=8080,
+      reload=os.getenv("DEBUG", "False").lower() in ("true", "1", "on"))
