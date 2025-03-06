@@ -1,9 +1,11 @@
 PROJECT_NAME := geoflex
-VENV_PATH ?= ~/.testing_envs/$(PROJECT_NAME)_venv
+VENV_BASE_PATH ?= ~/.testing_envs
+VENV_PATH ?= $(VENV_BASE_PATH)/$(PROJECT_NAME)_venv
 
 .PHONY: venv test clean
 venv:
 				@echo "Creating virtual environment at $(VENV_PATH)..."
+				mkdir -p $(VENV_BASE_PATH)
 				python3 -m venv $(VENV_PATH)
 				$(VENV_PATH)/bin/pip install -e '.[dev]'
 test: $(VENV_PATH)
