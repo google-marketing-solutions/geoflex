@@ -1,4 +1,4 @@
-import { RouteRecordRaw } from 'vue-router';
+import type { RouteRecordRaw } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -6,6 +6,10 @@ const routes: RouteRecordRaw[] = [
     component: () => import('layouts/MainLayout.vue'),
     children: [
       { path: '', component: () => import('pages/IndexPage.vue') },
+      {
+        path: 'configuration',
+        component: () => import('pages/ConfigurationPage.vue'),
+      },
       {
         path: 'datasources',
         component: () => import('pages/DataSourcesPage.vue'),

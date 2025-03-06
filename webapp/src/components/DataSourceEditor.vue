@@ -323,7 +323,8 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { parse } from 'csv-parse/browser/esm';
-import { useDataSourcesStore, DataSourceType, DataSource, DataRow } from 'stores/datasources';
+import type { DataSource, DataRow } from 'stores/datasources';
+import { useDataSourcesStore, DataSourceType } from 'stores/datasources';
 import { v4 as uuidv4 } from 'uuid';
 
 // Props and emits
@@ -542,7 +543,7 @@ onMounted(async () => {
         }
       }
     } catch (error) {
-      showError('Failed to load data source details');
+      showError('Failed to load data source details: ' + error);
     } finally {
       loading.value = false;
     }
@@ -766,7 +767,7 @@ async function testExternalConnection() {
     // Auto-detect columns
     autoDetectColumns();
   } catch (error) {
-    showError('Failed to connect to external source');
+    showError('Failed to connect to external source: ' + error);
   } finally {
     testingConnection.value = false;
   }
@@ -801,7 +802,7 @@ async function saveDataSource() {
     // Emit saved event
     emit('saved');
   } catch (error) {
-    showError('Failed to save data source');
+    showError('Failed to save data source: ' + error);
   } finally {
     saving.value = false;
   }

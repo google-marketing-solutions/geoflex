@@ -17,6 +17,16 @@
   <div>
     <q-separator height="3" />
     <q-list separator>
+      <q-item clickable v-ripple to="/configuration">
+        <q-item-section>
+          <q-item-label>Configuration</q-item-label>
+          <q-item-label caption lines="2">Manage configuration</q-item-label>
+        </q-item-section>
+        <q-item-section side>
+          <q-icon name="cog" />
+        </q-item-section>
+      </q-item>
+
       <q-item clickable v-ripple to="/datasources">
         <q-item-section>
           <q-item-label>Data Sources</q-item-label>

@@ -14,23 +14,45 @@
 """Application server."""
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import
-from typing import Any
 import json
-import os
 import math
+import os
 import traceback
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
+from contextlib import asynccontextmanager
+from typing import Any, Callable
 import uvicorn
-
+from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from config import get_config
 from env import IS_GAE
 from logger import logger
+from routes import config_router, datasources_router
+
+
+# Lifespan context manager for startup/shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+  # Startup: Initialize services
+  from services.datasources import DataSourceService
+  datasource_service = DataSourceService()
+
+  try:
+    await datasource_service.initialize_master_spreadsheet()
+    app.state.datasource_service = datasource_service
+
+    yield  # This is where the app runs
+  finally:
+    # Shutdown: Clean up resources if needed
+    # For example: close connections, etc.
+    pass
+
 
 # Initialize FastAPI app
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
@@ -40,6 +62,27 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+
+class IAPMiddleware(BaseHTTPMiddleware):
+
+  async def dispatch(self, request: Request, call_next: Callable):
+    # Extract the user's email from IAP headers
+    email_header = request.headers.get("X-Goog-Authenticated-User-Email")
+    iap_user = None
+    if email_header:
+      iap_user = email_header.split(":")[-1]
+    request.state.iap_user = iap_user
+    response = await call_next(request)
+    return response
+
+
+# Add the middleware to the FastAPI application
+app.add_middleware(IAPMiddleware)
+
+# Include routers
+app.include_router(datasources_router)
+app.include_router(config_router)
 
 
 class CustomJSONEncoder(json.JSONEncoder):
