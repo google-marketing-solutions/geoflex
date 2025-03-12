@@ -81,6 +81,7 @@ def test_experiment_design_sets_pretest_weeks_correctly(
   design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
+      secondary_metrics=["conversions"],
       methodology="test_methodology",
       methodology_parameters=methodology_parameters,
       runtime_weeks=4,
@@ -88,3 +89,16 @@ def test_experiment_design_sets_pretest_weeks_correctly(
       fixed_geos=None,
   )
   assert design.pretest_weeks == expected_pretest_weeks
+
+
+def test_metric_names_must_be_unique():
+  with pytest.raises(ValueError):
+    ExperimentDesign(
+        experiment_type=ExperimentType.GO_DARK,
+        primary_metric="revenue",
+        secondary_metrics=["revenue", "conversions"],
+        methodology="test_methodology",
+        runtime_weeks=4,
+        alpha=0.1,
+        fixed_geos=None,
+    )

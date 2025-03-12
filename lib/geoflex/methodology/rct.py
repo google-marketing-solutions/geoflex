@@ -20,6 +20,7 @@ ExperimentDesignEvaluation = (
     geoflex.experiment_design.ExperimentDesignEvaluation
 )
 GeoAssignment = geoflex.experiment_design.GeoAssignment
+ExperimentType = geoflex.experiment_design.ExperimentType
 
 
 class RCTParameters(pydantic.BaseModel):
@@ -186,9 +187,13 @@ class RCT(_base.Methodology):
     is_during_runtime = (
         runtime_data.parsed_data["date"] >= experiment_start_date
     )
+    all_metric_columns = runtime_data.response_columns
+    if runtime_data.cost_column:
+      all_metric_columns.append(runtime_data.cost_column)
+
     grouped_data = (
         runtime_data.parsed_data.loc[is_during_runtime]
-        .groupby("geo_id")[runtime_data.response_columns]
+        .groupby("geo_id")[all_metric_columns]
         .sum()
     )
 
@@ -197,33 +202,76 @@ class RCT(_base.Methodology):
     ]
 
     results = []
+    all_metrics = [
+        experiment_design.primary_metric
+    ] + experiment_design.secondary_metrics
     for cell, treatment_group in enumerate(
         experiment_design.geo_assignment.treatment, 1
     ):
       treatment_data = grouped_data.loc[
           grouped_data.index.isin(treatment_group)
       ]
-      for metric in runtime_data.response_columns:
+      for metric in all_metrics:
         statistical_results = statistics.yuens_t_test_ind(
-            treatment_data[metric].values,
-            control_data[metric].values,
+            treatment_data[metric.column].values,
+            control_data[metric.column].values,
             trimming_quantile=parameters.trimming_quantile,
             alpha=experiment_design.alpha,
             alternative=experiment_design.alternative_hypothesis,
         )
+
+        # To estimate the cost change I just look at the point estimate of the
+        # cost change. This is not accurate because it means we don't take into
+        # account the variance of the cost change.
+        # DO NOT USE THIS IN REAL EXPERIMENTS.
+        absolute_cost_change = (
+            treatment_data[runtime_data.cost_column].mean()
+            - control_data[runtime_data.cost_column].mean()
+        )
+
+        point_estimate = statistical_results.absolute_difference
+        lower_bound = statistical_results.absolute_difference_lower_bound
+        upper_bound = statistical_results.absolute_difference_upper_bound
+        point_estimate_relative = statistical_results.relative_difference
+        lower_bound_relative = (
+            statistical_results.relative_difference_lower_bound
+        )
+        upper_bound_relative = (
+            statistical_results.relative_difference_upper_bound
+        )
+        if metric.metric_per_cost:
+          point_estimate = point_estimate / absolute_cost_change
+          lower_bound = lower_bound / absolute_cost_change
+          upper_bound = upper_bound / absolute_cost_change
+          # Cannot calculate relative differences if it's metric per cost.
+          point_estimate_relative = pd.NA
+          lower_bound_relative = pd.NA
+          upper_bound_relative = pd.NA
+        elif metric.cost_per_metric:
+          point_estimate = absolute_cost_change / point_estimate
+          lower_bound = absolute_cost_change / lower_bound
+          upper_bound = absolute_cost_change / upper_bound
+          # Cannot calculate relative differences if it's cost per metric.
+          point_estimate_relative = pd.NA
+          lower_bound_relative = pd.NA
+          upper_bound_relative = pd.NA
+
+        # For cost per metric or metric per cost, if the cost and/or metric is
+        # negative, then the lower and upper bound can be flipped. Here I just
+        # force them to be in the correct order.
+        if lower_bound > upper_bound:
+          lower_bound, upper_bound = upper_bound, lower_bound
+
         results.append({
             "cell": cell,
-            "metric": metric,
-            "point_estimate": statistical_results.absolute_difference,
-            "lower_bound": statistical_results.absolute_difference_lower_bound,
-            "upper_bound": statistical_results.absolute_difference_upper_bound,
-            "point_estimate_relative": statistical_results.relative_difference,
-            "lower_bound_relative": (
-                statistical_results.relative_difference_lower_bound
-            ),
-            "upper_bound_relative": (
-                statistical_results.relative_difference_upper_bound
-            ),
+            "metric": metric.name,
+            "is_primary_metric": metric == experiment_design.primary_metric,
+            "point_estimate": point_estimate,
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+            "point_estimate_relative": point_estimate_relative,
+            "lower_bound_relative": lower_bound_relative,
+            "upper_bound_relative": upper_bound_relative,
             "p_value": statistical_results.p_value,
             "is_significant": statistical_results.is_significant,
         })

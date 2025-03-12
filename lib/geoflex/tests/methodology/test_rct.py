@@ -3,6 +3,7 @@
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.methodology.rct
+import geoflex.metrics
 import numpy as np
 import optuna as op
 import pandas as pd
@@ -40,7 +41,7 @@ def performance_data_fixture():
           ],
           "revenue": [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0],
           "cost": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0],
-          "clicks": [
+          "conversions": [
               8000.0,
               10000.0,
               12000.0,
@@ -51,7 +52,7 @@ def performance_data_fixture():
               1000.0,
           ],
       }),
-      response_columns=["revenue", "clicks"],
+      response_columns=["revenue", "conversions"],
   )
 
 
@@ -157,7 +158,8 @@ def test_rct_assign_geos(
 def test_rct_analyze_experiment(performance_data):
   experiment_design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
-      primary_metric="revenue",
+      primary_metric=geoflex.metrics.ROAS(),
+      secondary_metrics=[geoflex.metrics.CPA(), "revenue", "conversions"],
       methodology="RCT",
       runtime_weeks=4,
       alpha=0.1,
@@ -172,16 +174,17 @@ def test_rct_analyze_experiment(performance_data):
   )
 
   expected_results = pd.DataFrame({
-      "cell": [1, 1],
-      "metric": ["revenue", "clicks"],
-      "point_estimate": [-400.0, 13950.0],
-      "lower_bound": [-812.948321, 3905.762437],
-      "upper_bound": [12.948321, 23994.237563],
-      "point_estimate_relative": [-0.363636, 1.029520],
-      "lower_bound_relative": [-0.645294, 0.239739],
-      "upper_bound_relative": [0.014503, 2.470856],
-      "p_value": [0.105573, 0.061079],
-      "is_significant": [False, True],
+      "cell": [1, 1, 1, 1],
+      "metric": ["ROAS", "CPA", "revenue", "conversions"],
+      "is_primary_metric": [True, False, False, False],
+      "point_estimate": [10.0, -0.002867, -400.0, 13950.0],
+      "lower_bound": [-0.323708, -0.010241, -812.948321, 3905.762437],
+      "upper_bound": [20.323708, -0.001667, 12.948321, 23994.237563],
+      "point_estimate_relative": [pd.NA, pd.NA, -0.363636, 1.029520],
+      "lower_bound_relative": [pd.NA, pd.NA, -0.645294, 0.239739],
+      "upper_bound_relative": [pd.NA, pd.NA, 0.014503, 2.470856],
+      "p_value": [0.105573, 0.061079, 0.105573, 0.061079],
+      "is_significant": [False, True, False, True],
   })
   pd.testing.assert_frame_equal(
       analysis_results, expected_results, check_like=True, atol=1e-6

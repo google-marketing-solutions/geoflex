@@ -230,3 +230,13 @@ class ExperimentDesign(pydantic.BaseModel):
             "The number of geos per group does not match the number of cells."
         )
     return self
+
+  @pydantic.model_validator(mode="after")
+  def check_metric_names_do_not_overlap(
+      self,
+  ) -> "ExperimentDesign":
+    all_metrics = [self.primary_metric] + self.secondary_metrics
+    metric_names = [metric.name for metric in all_metrics]
+    if len(metric_names) != len(set(metric_names)):
+      raise ValueError("Metric names must be unique.")
+    return self
