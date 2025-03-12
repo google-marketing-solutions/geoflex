@@ -79,6 +79,7 @@ def test_experiment_design_sets_pretest_weeks_correctly(
     methodology_parameters, expected_pretest_weeks
 ):
   design = ExperimentDesign(
+      experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       methodology="test_methodology",
       methodology_parameters=methodology_parameters,
