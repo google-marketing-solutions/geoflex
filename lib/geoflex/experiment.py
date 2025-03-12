@@ -4,6 +4,7 @@ from typing import Iterable
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.methodology
+import geoflex.metrics
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
@@ -11,6 +12,7 @@ ExperimentDesignConstraints = (
     geoflex.experiment_design.ExperimentDesignConstraints
 )
 MethodologyName = geoflex.methodology.MethodologyName
+Metric = geoflex.metrics.Metric
 
 
 class Experiment:
@@ -44,7 +46,7 @@ class Experiment:
   def explore_experiment_designs(
       self,
       max_trials: int = 100,
-      primary_response_metric: str = "revenue",
+      primary_response_metric: Metric | str = "revenue",
       alternative_hypthesis: str = "two-sided",
       alpha: float = 0.1,
       eligible_methodologies: Iterable[str] = (

@@ -3,7 +3,10 @@
 import enum
 from typing import Any
 import uuid
+import geoflex.metrics
 import pydantic
+
+Metric = geoflex.metrics.Metric
 
 
 class ExperimentType(enum.StrEnum):
@@ -126,9 +129,9 @@ class ExperimentDesignEvaluation(pydantic.BaseModel):
   """The evaluation results of an experiment design."""
 
   design_id: str
-  minimum_detectable_effects: dict[str, float]  # One per metric
-  false_positive_rates: dict[str, float]  # One per metric
-  power_at_minimum_detectable_effect: dict[str, float]  # One per metric
+  minimum_detectable_effects: dict[Metric, float]  # One per metric
+  false_positive_rates: dict[Metric, float]  # One per metric
+  power_at_minimum_detectable_effect: dict[Metric, float]  # One per metric
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -158,7 +161,7 @@ class ExperimentDesign(pydantic.BaseModel):
       design is created, when the geos are assigned.
   """
 
-  primary_response_metric: str
+  primary_response_metric: Metric
   methodology: str
   runtime_weeks: int
   n_cells: int = 2
