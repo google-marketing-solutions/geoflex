@@ -127,7 +127,7 @@ def test_rct_assign_geos(
 ):
   rng = np.random.default_rng(seed=42)
   experiment_design = ExperimentDesign(
-      primary_response_metric="revenue",
+      primary_metric="revenue",
       methodology="RCT",
       runtime_weeks=4,
       n_cells=n_cells,
@@ -155,7 +155,7 @@ def test_rct_assign_geos(
 
 def test_rct_analyze_experiment(performance_data):
   experiment_design = ExperimentDesign(
-      primary_response_metric="revenue",
+      primary_metric="revenue",
       methodology="RCT",
       runtime_weeks=4,
       alpha=0.1,

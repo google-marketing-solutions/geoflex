@@ -46,7 +46,8 @@ class Experiment:
   def explore_experiment_designs(
       self,
       max_trials: int = 100,
-      primary_response_metric: Metric | str = "revenue",
+      primary_metric: Metric | str = "revenue",
+      secondary_metrics: list[Metric | str] | None = None,
       alternative_hypthesis: str = "two-sided",
       alpha: float = 0.1,
       eligible_methodologies: Iterable[str] = (
@@ -65,8 +66,11 @@ class Experiment:
     Args:
       max_trials: The maximum number of trials to run. If there are more than
         max_trials eligible experiment designs, they will be randomly sampled.
-      primary_response_metric: The primary response metric for the experiment.
-        This is the metric that the experiment will be designed for.
+      primary_metric: The primary response metric for the experiment. This is
+        the metric that the experiment will be designed for.
+      secondary_metrics: The secondary response metrics for the experiment.
+        These are the metrics that the experiment will also measure, but are not
+        as important as the primary metric.
       alternative_hypthesis: The alternative hypothesis for the experiment. Must
         be one of "two-sided", "greater", or "less". Defaults to "two-sided".
       alpha: The significance level for the experiment. Defaults to 0.1.

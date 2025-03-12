@@ -23,10 +23,14 @@ class Metric(pydantic.BaseModel):
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
-  def __init__(self, name: str, **data: dict[str, Any]) -> None:
-    if not data.get("column"):
-      data["column"] = name
-    super().__init__(name=name, **data)
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def override_column_with_name_if_not_set(
+      cls, values: dict[str, Any]
+  ) -> dict[str, Any]:
+    if not values.get("column"):
+      values["column"] = values["name"]
+    return values
 
 
 class ROAS(Metric):
