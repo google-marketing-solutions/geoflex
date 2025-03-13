@@ -185,7 +185,8 @@ class RCT(_base.Methodology):
     )
 
     is_during_runtime = (
-        runtime_data.parsed_data["date"] >= experiment_start_date
+        runtime_data.parsed_data[runtime_data.date_column]
+        >= experiment_start_date
     )
 
     all_metrics = [

@@ -9,7 +9,7 @@ import pytest
 
 
 def test_can_instantiate_metric():
-  """Tests that geoflex can be imported."""
+  """Tests that a metric can be instantiated."""
   metric = geoflex.metrics.Metric(name="test_metric", column="test_column")
   assert metric.name == "test_metric"
   assert metric.column == "test_column"
