@@ -28,16 +28,14 @@ class Methodology(abc.ABC):
   """
 
   @abc.abstractmethod
-  def is_eligible_for_constraints(
-      self, design_constraints: ExperimentDesignConstraints
-  ) -> bool:
-    """Checks if this methodology is eligible for the given design constraints.
+  def is_eligible_for_design(self, design: ExperimentDesign) -> bool:
+    """Checks if this methodology is eligible for the given design.
 
     Args:
-      design_constraints: The design constraints to check against.
+      design: The design to check against.
 
     Returns:
-      True if this methodology is eligible for the given design constraints,
+      True if this methodology is eligible for the given design,
       False otherwise.
     """
     pass

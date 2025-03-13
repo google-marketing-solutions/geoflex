@@ -56,29 +56,73 @@ def performance_data_fixture():
 
 
 @pytest.mark.parametrize(
-    "fixed_control_geos,fixed_treatment_geos,exclude_geos,expected_is_eligible",
+    "design,expected_is_eligible",
     [
-        (["US", "UK"], [["CA", "AU"]], [], False),
-        (["US", "UK"], [[]], [], False),
-        ([], [["CA", "AU"]], [], False),
-        ([], [[]], [], True),
-        ([], [[]], ["US"], True),
+        (
+            ExperimentDesign(
+                experiment_type=ExperimentType.GO_DARK,
+                primary_metric="revenue",
+                methodology="RCT",
+                runtime_weeks=4,
+                fixed_geos=GeoAssignment(
+                    control=["US", "UK"], treatment=[["CA", "AU"]]
+                ),
+            ),
+            False,
+        ),
+        (
+            ExperimentDesign(
+                experiment_type=ExperimentType.GO_DARK,
+                primary_metric="revenue",
+                methodology="RCT",
+                runtime_weeks=4,
+                fixed_geos=GeoAssignment(control=["US", "UK"]),
+            ),
+            False,
+        ),
+        (
+            ExperimentDesign(
+                experiment_type=ExperimentType.GO_DARK,
+                primary_metric="revenue",
+                methodology="RCT",
+                runtime_weeks=4,
+                fixed_geos=GeoAssignment(treatment=[["CA", "AU"]]),
+            ),
+            False,
+        ),
+        (
+            ExperimentDesign(
+                experiment_type=ExperimentType.GO_DARK,
+                primary_metric="revenue",
+                methodology="RCT",
+                runtime_weeks=4,
+                fixed_geos=None,
+            ),
+            True,
+        ),
+        (
+            ExperimentDesign(
+                experiment_type=ExperimentType.GO_DARK,
+                primary_metric="revenue",
+                methodology="RCT",
+                runtime_weeks=4,
+                fixed_geos=GeoAssignment(exclude=["US"]),
+            ),
+            True,
+        ),
+        (
+            ExperimentDesign(
+                experiment_type=ExperimentType.GO_DARK,
+                primary_metric="revenue",
+                methodology="Something Else",
+                runtime_weeks=4,
+            ),
+            False,
+        ),
     ],
 )
-def test_rct_is_eligible_for_constraints(
-    fixed_control_geos, fixed_treatment_geos, exclude_geos, expected_is_eligible
-):
-  constraints = ExperimentDesignConstraints(
-      experiment_type=ExperimentType.GO_DARK,
-      max_runtime_weeks=4,
-      min_runtime_weeks=2,
-      fixed_geos=GeoAssignment(
-          control=fixed_control_geos,
-          treatment=fixed_treatment_geos,
-          exclude=exclude_geos,
-      ),
-  )
-  assert RCT().is_eligible_for_constraints(constraints) == expected_is_eligible
+def test_rct_is_eligible_for_design(design, expected_is_eligible):
+  assert RCT().is_eligible_for_design(design) == expected_is_eligible
 
 
 @pytest.mark.parametrize(

@@ -51,10 +51,8 @@ class RCT(_base.Methodology):
     The evaluation is done with a simple t-test on each test statistic.
   """
 
-  def is_eligible_for_constraints(
-      self, design_constraints: ExperimentDesignConstraints
-  ) -> bool:
-    """Checks if an RCT is eligible for the given design constraints.
+  def is_eligible_for_design(self, design: ExperimentDesign) -> bool:
+    """Checks if an RCT is eligible for the given design.
 
     For a RCT, the only constraints that matter are the fixed geos. Because the
     assignment is random, we can only run it if there are no fixed geos in the
@@ -62,15 +60,17 @@ class RCT(_base.Methodology):
     these are excluded pre-randomization.
 
     Args:
-      design_constraints: The design constraints to check against.
+      design: The design to check against.
 
     Returns:
-      True if an RCT is eligible for the given design constraints, False
+      True if an RCT is eligible for the given design, False
         otherwise.
     """
-    has_fixed_geos = design_constraints.fixed_geos is not None and (
-        design_constraints.fixed_geos.control
-        or any(design_constraints.fixed_geos.treatment)
+    if design.methodology != "RCT":
+      return False
+
+    has_fixed_geos = design.fixed_geos is not None and (
+        design.fixed_geos.control or any(design.fixed_geos.treatment)
     )
     return not has_fixed_geos
 
