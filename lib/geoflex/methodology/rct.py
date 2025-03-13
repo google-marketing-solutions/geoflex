@@ -187,9 +187,17 @@ class RCT(_base.Methodology):
     is_during_runtime = (
         runtime_data.parsed_data["date"] >= experiment_start_date
     )
-    all_metric_columns = runtime_data.response_columns
-    if runtime_data.cost_column:
-      all_metric_columns.append(runtime_data.cost_column)
+
+    all_metrics = [
+        experiment_design.primary_metric
+    ] + experiment_design.secondary_metrics
+
+    all_metric_columns = set()
+    for metric in all_metrics:
+      all_metric_columns.add(metric.column)
+      if metric.cost_column:
+        all_metric_columns.add(metric.cost_column)
+    all_metric_columns = list(all_metric_columns)
 
     grouped_data = (
         runtime_data.parsed_data.loc[is_during_runtime]
@@ -202,9 +210,7 @@ class RCT(_base.Methodology):
     ]
 
     results = []
-    all_metrics = [
-        experiment_design.primary_metric
-    ] + experiment_design.secondary_metrics
+
     for cell, treatment_group in enumerate(
         experiment_design.geo_assignment.treatment, 1
     ):
@@ -220,15 +226,6 @@ class RCT(_base.Methodology):
             alternative=experiment_design.alternative_hypothesis,
         )
 
-        # To estimate the cost change I just look at the point estimate of the
-        # cost change. This is not accurate because it means we don't take into
-        # account the variance of the cost change.
-        # DO NOT USE THIS IN REAL EXPERIMENTS.
-        absolute_cost_change = (
-            treatment_data[runtime_data.cost_column].mean()
-            - control_data[runtime_data.cost_column].mean()
-        )
-
         point_estimate = statistical_results.absolute_difference
         lower_bound = statistical_results.absolute_difference_lower_bound
         upper_bound = statistical_results.absolute_difference_upper_bound
@@ -239,17 +236,35 @@ class RCT(_base.Methodology):
         upper_bound_relative = (
             statistical_results.relative_difference_upper_bound
         )
+
+        # To estimate the cost change I just look at the point estimate of the
+        # cost change. This is not accurate because it means we don't take into
+        # account the variance of the cost change.
+        # DO NOT USE THIS IN REAL EXPERIMENTS.
         if metric.metric_per_cost:
+          absolute_cost_change = (
+              treatment_data[metric.cost_column].mean()
+              - control_data[metric.cost_column].mean()
+          )
+
           point_estimate = point_estimate / absolute_cost_change
           lower_bound = lower_bound / absolute_cost_change
           upper_bound = upper_bound / absolute_cost_change
+
           # Cannot calculate relative differences if it's metric per cost.
           point_estimate_relative = pd.NA
           lower_bound_relative = pd.NA
           upper_bound_relative = pd.NA
+
         elif metric.cost_per_metric:
+          absolute_cost_change = (
+              treatment_data[metric.cost_column].mean()
+              - control_data[metric.cost_column].mean()
+          )
+
           point_estimate = absolute_cost_change / point_estimate
           lower_bound = absolute_cost_change / lower_bound
+
           upper_bound = absolute_cost_change / upper_bound
           # Cannot calculate relative differences if it's cost per metric.
           point_estimate_relative = pd.NA

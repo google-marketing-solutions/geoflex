@@ -51,8 +51,7 @@ def performance_data_fixture():
               100.0,
               1000.0,
           ],
-      }),
-      response_columns=["revenue", "conversions"],
+      })
   )
 
 

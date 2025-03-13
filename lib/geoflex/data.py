@@ -13,8 +13,6 @@ class GeoPerformanceDataset(pydantic.BaseModel):
   data: pd.DataFrame
   geo_id_column: str = "geo_id"
   date_column: str = "date"
-  cost_column: str = "cost"
-  response_columns: list[str] = ["revenue"]
 
   model_config = pydantic.ConfigDict(
       arbitrary_types_allowed=True, extra="forbid"
@@ -36,7 +34,12 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         columns=[self.geo_id_column, self.date_column],
     )
 
-    all_metric_columns = [self.cost_column] + self.response_columns
+    all_metric_columns = (  # Automatically find all metric columns.
+        self.data.select_dtypes("number").columns.values.tolist()
+    )
+    if not all_metric_columns:
+      raise ValueError("No metric columns found in the data.")
+
     all_columns = [
         self.geo_id_column,
         self.date_column,
@@ -84,9 +87,8 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     """Checks that the data has the required columns."""
     required_columns = [
         self.geo_id_column,
-        self.date_column,
-        self.cost_column,
-    ] + self.response_columns
+        self.date_column
+    ]
     if not all(column in self.data.columns for column in required_columns):
       required_columns_str = ", ".join(required_columns)
       raise ValueError(
