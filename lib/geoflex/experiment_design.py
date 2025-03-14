@@ -65,22 +65,33 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
       will choose the best configuration from this list. The inner lists must
       have the length of n_cells. If None, then the number of geos per group
       will be unconstrained.
-    trimming_quantile_range: The range of trimming quantiles to use for the
-      experiment. The trimming quantile is used to trim the tails of the
-      distribution of the response metric before calculating the confidence
-      interval.
+    trimming_quantile_candidates: The candidates for the trimming quantiles to
+      use for the experiment. The trimming quantile is used to trim the tails of
+      the distribution of the response metric before calculating the confidence
+      interval. Defaults to [0.0] (no trimming).
   """
 
-  experiment_type: str = ExperimentType
+  experiment_type: ExperimentType
 
   max_runtime_weeks: int = 8
   min_runtime_weeks: int = 2
   n_cells: int = 2
-  fixed_geos: GeoAssignment | None = None
-  n_geos_per_group_candidates: list[list[int]] | None = None
-  trimming_quantile_range: tuple[float, float] | None = None
+  fixed_geos: GeoAssignment
+  n_geos_per_group_candidates: list[list[int] | None] = [None]
+  trimming_quantile_candidates: list[float] = [0.0]
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def cast_fixed_geos(cls, values: dict[str, Any]) -> dict[str, Any]:
+    if values.get("fixed_geos") is None:
+      values["fixed_geos"] = GeoAssignment(
+          control=[],
+          treatment=[[]] * (values.get("n_cells", 2) - 1),
+          exclude=[],
+      )
+    return values
 
   @pydantic.model_validator(mode="after")
   def check_max_runtime_greater_than_min_runtime(
@@ -104,13 +115,14 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
   def check_n_geos_per_group_candidates_match_n_cells(
       self,
   ) -> "ExperimentDesignConstraints":
-    if self.n_geos_per_group_candidates is not None:
-      for candidate in self.n_geos_per_group_candidates:
-        if len(candidate) != self.n_cells:
-          raise ValueError(
-              "One of the candiades for the number of geos per group does not"
-              " match the number of cells."
-          )
+    for candidate in self.n_geos_per_group_candidates:
+      if candidate is None:
+        continue
+      if len(candidate) != self.n_cells:
+        raise ValueError(
+            "One of the candiades for the number of geos per group does not"
+            " match the number of cells."
+        )
     return self
 
   @pydantic.model_validator(mode="after")

@@ -84,8 +84,11 @@ def test_rct_is_eligible_for_constraints(
 @pytest.mark.parametrize(
     "constraints,expected_parameter_names",
     [
-        ({}, []),
-        ({"trimming_quantile_range": (0.0, 0.5)}, ["trimming_quantile"]),
+        ({}, ["trimming_quantile"]),
+        (
+            {"trimming_quantile_candidates": [0.0, 0.1, 0.2]},
+            ["trimming_quantile"],
+        ),
     ],
 )
 def test_rct_suggest_methodology_parameters(

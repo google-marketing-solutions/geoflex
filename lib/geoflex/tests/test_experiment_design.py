@@ -42,29 +42,50 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
     GeoAssignment(treatment=["US", "UK"], control=["US", "AU"])
 
 
-def test_constraints_raise_exception_if_max_runtime_less_than_min_runtime():
+@pytest.mark.parametrize(
+    "invalid_args",
+    [
+        pytest.param(
+            {"max_runtime_weeks": 1, "min_runtime_weeks": 2},
+            id="min_runtime_weeks_greater_than_max_runtime_weeks",
+        ),
+        pytest.param(
+            {"n_cells": 1},
+            id="max_cells_less_than_2",
+        ),
+        pytest.param(
+            {"n_geos_per_group_candidates": [[5, 1]], "n_cells": 3},
+            id="n_geos_per_group_does_not_match_n_cells",
+        ),
+    ],
+)
+def test_constraints_raise_exception_inputs_are_invalid(invalid_args):
   with pytest.raises(ValueError):
     ExperimentDesignConstraints(
-        experiment_type=ExperimentType.GO_DARK,
-        max_runtime_weeks=1,
-        min_runtime_weeks=2,
+        experiment_type=ExperimentType.GO_DARK, **invalid_args
     )
 
 
-def test_constraints_raise_exception_if_n_cells_less_than_2():
-  with pytest.raises(ValueError):
-    ExperimentDesignConstraints(
-        experiment_type=ExperimentType.GO_DARK,
-        n_cells=1,
-    )
-
-
-def test_constraints_can_be_created_with_valid_input():
+@pytest.mark.parametrize(
+    "valid_args",
+    [
+        {
+            "fixed_geos": GeoAssignment(
+                treatment=[["US", "UK"]], control=["CA", "AU"]
+            ),
+            "max_runtime_weeks": 4,
+            "min_runtime_weeks": 2,
+        },
+        {},
+        {"fixed_geos": None},
+        {"n_geos_per_group_candidates": [[2, 2], [1, 5], None]},
+        {"trimming_quantile_candidates": [0.0, 0.5]},
+        {"n_cells": 3},
+    ],
+)
+def test_constraints_can_be_created_with_valid_input(valid_args):
   ExperimentDesignConstraints(
-      experiment_type=ExperimentType.GO_DARK,
-      fixed_geos=GeoAssignment(treatment=[["US", "UK"]], control=["CA", "AU"]),
-      max_runtime_weeks=4,
-      min_runtime_weeks=2,
+      experiment_type=ExperimentType.GO_DARK, **valid_args
   )
 
 

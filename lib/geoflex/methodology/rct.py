@@ -89,12 +89,9 @@ class RCT(_base.Methodology):
       A dictionary of parameters that are specific to the RCT methodology.
     """
     parameters = {}
-    if design_constraints.trimming_quantile_range is not None:
-      parameters["trimming_quantile"] = trial.suggest_float(
-          "trimming_quantile",
-          design_constraints.trimming_quantile_range[0],
-          design_constraints.trimming_quantile_range[1],
-      )
+    parameters["trimming_quantile"] = trial.suggest_categorical(
+        "trimming_quantile", design_constraints.trimming_quantile_candidates
+    )
     return parameters
 
   def assign_geos(
