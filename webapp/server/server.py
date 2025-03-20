@@ -13,13 +13,13 @@
 # limitations under the License.
 """Application server."""
 
-# pylint: disable=C0330, g-bad-import-order, g-multiple-import
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import json
 import math
 import os
 import traceback
 from contextlib import asynccontextmanager
-from typing import Any, Callable
+from typing import Any, Callable, Awaitable
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -27,27 +27,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from config import get_config
 from env import IS_GAE
 from logger import logger
 from routes import config_router, datasources_router
 
 
-# Lifespan context manager for startup/shutdown events
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(application: FastAPI):
+  """Lifespan context manager for startup/shutdown events."""
   # Startup: Initialize services
+  # pylint: disable=C0415, g-import-not-at-top
   from services.datasources import DataSourceService
   datasource_service = DataSourceService()
 
   try:
     await datasource_service.initialize_master_spreadsheet()
-    app.state.datasource_service = datasource_service
+    application.state.datasource_service = datasource_service
 
     yield  # This is where the app runs
   finally:
     # Shutdown: Clean up resources if needed
-    # For example: close connections, etc.
     pass
 
 
@@ -57,21 +56,22 @@ app = FastAPI(lifespan=lifespan)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=['*'],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=['*'],  # Allows all methods
+    allow_headers=['*'],  # Allows all headers
 )
 
 
 class IAPMiddleware(BaseHTTPMiddleware):
 
-  async def dispatch(self, request: Request, call_next: Callable):
+  async def dispatch(self, request: Request,
+                     call_next: Callable[[Request], Awaitable[Response]]):
     # Extract the user's email from IAP headers
-    email_header = request.headers.get("X-Goog-Authenticated-User-Email")
+    email_header = request.headers.get('X-Goog-Authenticated-User-Email')
     iap_user = None
     if email_header:
-      iap_user = email_header.split(":")[-1]
+      iap_user = email_header.split(':')[-1]
     request.state.iap_user = iap_user
     response = await call_next(request)
     return response
@@ -92,9 +92,9 @@ class CustomJSONEncoder(json.JSONEncoder):
     # Handle regular Python floats
     if isinstance(o, float):
       if math.isinf(o):
-        return "Infinity" if o > 0 else "-Infinity"
+        return 'Infinity' if o > 0 else '-Infinity'
       if math.isnan(o):
-        return "NaN"
+        return 'NaN'
 
       # For other types, use default serialization
       return super().default(o)
@@ -109,12 +109,12 @@ class CustomJSONResponse(JSONResponse):
         ensure_ascii=False,
         allow_nan=True,
         indent=None,
-        separators=(",", ":"),
+        separators=(',', ':'),
         cls=CustomJSONEncoder,
-    ).encode("utf-8")
+    ).encode('utf-8')
 
 
-STATIC_DIR = (os.getenv("STATIC_DIR") or "../dist"
+STATIC_DIR = (os.getenv('STATIC_DIR') or '../dist'
              )  # folder for static content relative to the current module
 # Calculate the absolute path based on the current file location
 STATIC_PATH = os.path.abspath(
@@ -126,13 +126,13 @@ def safe_remove_header(headers, header_name):
     headers.remove(header_name)
 
 
-@app.get("/{full_path:path}")
+@app.get('/{full_path:path}')
 async def catch_all(full_path: str) -> Response:
   """Serve static files or SPA index.html."""
   # Handle API paths
-  if full_path.startswith("api/"):
+  if full_path.startswith('api/'):
     raise StarletteHTTPException(
-        status_code=404, detail="API endpoint not found")
+        status_code=404, detail='API endpoint not found')
 
   # Check if the requested file exists
   file_path = os.path.join(STATIC_PATH, full_path)
@@ -143,27 +143,27 @@ async def catch_all(full_path: str) -> Response:
 
     # Handle GAE timestamp issues
     if IS_GAE:
-      safe_remove_header(response.headers, "last-modified")
+      safe_remove_header(response.headers, 'last-modified')
 
     return response
 
   # If file not found, serve index.html (SPA behavior)
-  index_path = os.path.join(STATIC_PATH, "index.html")
+  index_path = os.path.join(STATIC_PATH, 'index.html')
 
   if not os.path.exists(index_path):
     return JSONResponse(
         status_code=404,
         content={
-            "error": "Frontend application files not found: " + index_path
+            'error': 'Frontend application files not found: ' + index_path
         })
 
   response = FileResponse(index_path)
 
-  safe_remove_header(response.headers, "etag")
-  response.headers["Cache-Control"] = "no-cache, no-store"
+  safe_remove_header(response.headers, 'etag')
+  response.headers['Cache-Control'] = 'no-cache, no-store'
 
   if IS_GAE:
-    safe_remove_header(response.headers, "last-modified")
+    safe_remove_header(response.headers, 'last-modified')
 
   return response
 
@@ -172,12 +172,12 @@ async def catch_all(full_path: str) -> Response:
 async def validation_exception_handler(_: Request,
                                        exc: RequestValidationError) -> Response:
   """Handle validation errors."""
-  logger.error("Validation error: %s", exc)
+  logger.error('Validation error: %s', exc)
   return JSONResponse(
       status_code=422,
-      content={"error": {
-          "type": "ValidationError",
-          "message": str(exc)
+      content={'error': {
+          'type': 'ValidationError',
+          'message': str(exc)
       }},
   )
 
@@ -186,12 +186,12 @@ async def validation_exception_handler(_: Request,
 async def http_exception_handler(_: Request,
                                  exc: StarletteHTTPException) -> Response:
   """Handle HTTP exceptions."""
-  logger.error("HTTP exception: %s", exc.detail)
+  logger.error('HTTP exception: %s', exc.detail)
   return JSONResponse(
       status_code=exc.status_code,
-      content={"error": {
-          "type": "HTTPException",
-          "message": exc.detail
+      content={'error': {
+          'type': 'HTTPException',
+          'message': exc.detail
       }},
   )
 
@@ -204,27 +204,27 @@ async def general_exception_handler(_: Request, exc: Exception) -> Response:
   error_type = type(exc).__name__
   error_message = str(exc)
 
-  is_debug = os.getenv("DEBUG", "False").lower() in ("true", "1", "on")
+  is_debug = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'on')
 
   return JSONResponse(
       status_code=500,
       content={
-          "error": {
-              "type":
+          'error': {
+              'type':
                   error_type,
-              "message":
-                  f"{error_type}: {error_message}",
-              "debugInfo":
-                  "".join(traceback.format_tb(exc.__traceback__))
-                  if is_debug else "Enable DEBUG mode to see traceback",
+              'message':
+                  f'{error_type}: {error_message}',
+              'debugInfo':
+                  ''.join(traceback.format_tb(exc.__traceback__))
+                  if is_debug else 'Enable DEBUG mode to see traceback',
           }
       })
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   # Run the server when executed directly
   uvicorn.run(
-      "server:app",
-      host="127.0.0.1",
+      'server:app',
+      host='127.0.0.1',
       port=8080,
-      reload=os.getenv("DEBUG", "False").lower() in ("true", "1", "on"))
+      reload=os.getenv('DEBUG', 'False').lower() in ('true', '1', 'on'))
