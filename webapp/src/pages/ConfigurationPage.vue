@@ -1,10 +1,10 @@
 <template>
   <q-page padding>
-    <q-card class="configuration-card" >
+    <q-card class="configuration-card">
       <q-card-section>
         <div class="text-h5 q-mb-md">Application Configuration</div>
 
-        <q-form @submit="updateConfiguration" class="q-gutter-md" >
+        <q-form @submit="updateConfiguration" class="q-gutter-md">
           <!-- Master Spreadsheet ID -->
           <q-input
             v-model="masterSpreadsheetId"
@@ -247,8 +247,8 @@ async function createSpreadsheet() {
 }
 
 // Reset form to original values
-function reload() {
-  loadConfiguration();
+async function reload() {
+  await loadConfiguration();
 }
 
 // Show error notification
