@@ -9,6 +9,14 @@
             >GeoFlex Testing Platform</router-link
           ></q-toolbar-title
         >
+
+        <q-btn
+          :icon="$q.dark.isActive ? 'light_mode' : 'dark_mode'"
+          flat
+          round
+          @click="$q.dark.toggle()"
+          aria-label="Toggle dark mode"
+        />
       </q-toolbar>
     </q-header>
 
