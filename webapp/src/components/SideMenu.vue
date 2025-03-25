@@ -36,6 +36,16 @@
           <q-icon name="source" />
         </q-item-section>
       </q-item>
+
+      <q-item clickable v-ripple to="/experiments">
+        <q-item-section>
+          <q-item-label>Experiments</q-item-label>
+          <q-item-label caption lines="2">Design and manage geo experiments</q-item-label>
+        </q-item-section>
+        <q-item-section side>
+          <q-icon name="science" />
+        </q-item-section>
+      </q-item>
     </q-list>
   </div>
 </template>
