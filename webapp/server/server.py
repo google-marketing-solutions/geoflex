@@ -29,7 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from env import IS_GAE
 from logger import logger
-from routes import config_router, datasources_router
+from routes import config_router, datasources_router, experiments_router
 
 
 @asynccontextmanager
@@ -83,6 +83,7 @@ app.add_middleware(IAPMiddleware)
 # Include routers
 app.include_router(datasources_router)
 app.include_router(config_router)
+app.include_router(experiments_router)
 
 
 class CustomJSONEncoder(json.JSONEncoder):

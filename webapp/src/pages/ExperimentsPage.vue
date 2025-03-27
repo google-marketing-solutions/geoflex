@@ -683,25 +683,78 @@
                         </q-list>
                       </div>
 
-                      <!-- Groups Summary -->
+                      <!-- Statistical Properties -->
                       <div class="col-12 col-md-6">
-                        <div class="text-subtitle2">Groups Summary</div>
-                        <q-list dense>
-                          <q-item v-for="(group, groupName) in design.groups" :key="groupName">
-                            <q-item-section>
-                              <q-item-label caption>{{ groupName }}</q-item-label>
-                              <q-item-label
-                                >{{ group.geoCount }} geos,
-                                {{ formatNumber(group.conversionTotal) }} conversions</q-item-label
+                        <div class="text-subtitle2">Statistical Properties</div>
+                        <div class="row q-col-gutter-md">
+                          <div class="col-6">
+                            <q-item dense>
+                              <q-item-section>
+                                <q-item-label caption>Power</q-item-label>
+                                <q-item-label class="text-primary text-weight-bold"
+                                  >{{ design.power.toFixed(1) }}%</q-item-label
+                                >
+                              </q-item-section>
+                            </q-item>
+                          </div>
+                          <div class="col-6">
+                            <q-item dense>
+                              <q-item-section>
+                                <q-item-label caption
+                                  >MDE ({{ design.parameters.primary_metric }})</q-item-label
+                                >
+                                <q-item-label class="text-primary text-weight-bold"
+                                  >{{ (design.mde * 100).toFixed(1) }}%</q-item-label
+                                >
+                              </q-item-section>
+                            </q-item>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Groups Summary -->
+                    <div class="q-mt-md">
+                      <div class="text-subtitle2">Groups</div>
+                      <div class="row q-col-gutter-md">
+                        <div
+                          v-for="(geos, groupName) in design.groups"
+                          :key="groupName as string"
+                          class="col-12 col-md-6"
+                        >
+                          <q-card flat bordered>
+                            <q-card-section class="q-py-sm bg-primary text-white">
+                              <div class="text-subtitle2">
+                                {{ groupName }} ({{ geos.length }} geos)
+                              </div>
+                            </q-card-section>
+                            <q-card-section class="q-pa-sm">
+                              <div
+                                class="geo-chips-container"
+                                style="max-height: 200px; overflow-y: auto"
                               >
-                            </q-item-section>
-                          </q-item>
-                        </q-list>
+                                <q-chip
+                                  v-for="geo in geos"
+                                  :key="geo"
+                                  :color="
+                                    isFixedGeo(geo, groupName as string) ? 'orange' : 'primary'
+                                  "
+                                  text-color="white"
+                                  size="sm"
+                                  class="q-ma-xs"
+                                >
+                                  {{ geo }}
+                                </q-chip>
+                              </div>
+                            </q-card-section>
+                          </q-card>
+                        </div>
                       </div>
                     </div>
                   </q-card-section>
 
                   <!-- Expandable section with charts -->
+                  <!--
                   <q-expansion-item
                     icon="analytics"
                     label="View metrics"
@@ -710,13 +763,13 @@
                     <q-card-section>
                       <div class="row q-col-gutter-md">
                         <div class="col-12 col-md-6">
-                          <!-- Placeholder for chart component -->
+                          !-- Placeholder for chart component --
                           <div class="bg-grey-3 flex flex-center" style="height: 200px">
                             Group Balance Chart
                           </div>
                         </div>
                         <div class="col-12 col-md-6">
-                          <!-- Placeholder for chart component -->
+                          !-- Placeholder for chart component --
                           <div class="bg-grey-3 flex flex-center" style="height: 200px">
                             Time Series Comparison
                           </div>
@@ -724,6 +777,7 @@
                       </div>
                     </q-card-section>
                   </q-expansion-item>
+                  -->
                 </q-card>
               </div>
             </q-card>
@@ -777,10 +831,10 @@
                     <div class="text-caption">Duration</div>
                     <div class="text-h5">{{ selectedDesign.duration }} wks</div>
                   </div>
-                  <div class="col-6 col-md-3">
+                  <!-- <div class="col-6 col-md-3">
                     <div class="text-caption">Pre-test Period</div>
                     <div class="text-h5">{{ selectedDesign.parameters.pretestPeriod }} wks</div>
-                  </div>
+                  </div> -->
                 </div>
               </q-card>
 
@@ -826,10 +880,10 @@
                           <q-item>
                             <q-item-section>
                               <q-item-label caption>Geo Count</q-item-label>
-                              <q-item-label>{{ group.geoCount }}</q-item-label>
+                              <q-item-label>{{ group.length }}</q-item-label>
                             </q-item-section>
                           </q-item>
-                          <q-item>
+                          <!-- <q-item>
                             <q-item-section>
                               <q-item-label caption>Total Conversions</q-item-label>
                               <q-item-label>{{ formatNumber(group.conversionTotal) }}</q-item-label>
@@ -840,7 +894,7 @@
                               <q-item-label caption>Average Per Geo</q-item-label>
                               <q-item-label>{{ formatNumber(group.conversionAvg) }}</q-item-label>
                             </q-item-section>
-                          </q-item>
+                          </q-item> -->
                         </q-list>
                       </q-card>
                     </div>
@@ -858,7 +912,7 @@
                   <q-card class="q-pa-md q-mt-md">
                     <div class="text-subtitle1">Geo Units</div>
                     <q-table
-                      :rows="group.geos"
+                      :rows="group"
                       :columns="geoDetailColumns"
                       row-key="geo"
                       dense
@@ -889,6 +943,8 @@
 import { ref, computed, reactive, watch } from 'vue';
 import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
 import type { QTableColumn } from 'quasar';
+import { postApiUi } from 'src/boot/axios';
+import type { ExperimentDesign, ExperimentExploreResponse } from 'src/components/models';
 
 const dataSourcesStore = useDataSourcesStore();
 
@@ -914,6 +970,49 @@ async function loadDataSourcesOnOpen() {
   if (!dataSourcesStore.isLoaded && !dataSourcesStore.loading) {
     await dataSourcesStore.loadDataSources();
   }
+}
+
+// Data source handling
+const handleDataSourceChange = async (dataSource) => {
+  if (!dataSource) {
+    dataSourceLoaded.value = false;
+    return;
+  }
+
+  try {
+    if (!dataSource.data) {
+      await dataSourcesStore.loadDataSourceData(dataSource);
+    }
+
+    dataSourceLoaded.value = true;
+
+    // Set default metric
+    if (dataSource.columns.metricColumns.length > 0) {
+      selectedMetric.value = dataSource.columns.metricColumns[0];
+    }
+
+    // Populate geo units
+    if (dataSource.data && dataSource.data.geoUnits) {
+      populateGeoUnits(dataSource);
+    }
+  } catch (error) {
+    console.error('Error loading data source:', error);
+  }
+};
+
+function populateGeoUnits(dataSource) {
+  const { geoColumn } = dataSource.columns;
+  const geoGroups = {};
+  dataSource.data.rawRows.forEach((row) => {
+    const geo = row[geoColumn];
+    geoGroups[geo] = {};
+  });
+  geoUnits.value = Object.keys(geoGroups).map((geo) => {
+    return {
+      geo,
+      assignment: 'auto',
+    };
+  });
 }
 
 const datePeriod = computed(() => {
@@ -1086,17 +1185,17 @@ const hypothesisOptionsDetailed = [
 const treatmentOptionsDetailed = [
   {
     label: 'Holdback (new campaign)',
-    value: 'holdback',
+    value: 'hold_back',
     desc: 'Withhold advertising from control to measure true incremental impact',
   },
   {
     label: 'Go Dark (existing campaign)',
-    value: 'go-dark',
+    value: 'go_dark',
     desc: 'Stop or reduce advertising in selected areas to determine baseline performance',
   },
   {
     label: 'Heavy Up (existing campaign)',
-    value: 'heavy-up',
+    value: 'heavy_up',
     desc: 'Increase advertising in test units to measure response to intensified media pressure',
   },
 ];
@@ -1139,7 +1238,7 @@ const DEFAULT_PARAMETERS = {
   durationMin: 4,
   durationMax: 8,
 
-  experimentType: 'holdback',
+  experimentType: 'hold_back',
   alpha: 0.05,
   hypothesisType: 'one-sided',
   pretestPeriod: 4,
@@ -1209,9 +1308,9 @@ const sortOptions = [
 
 // Test designs
 const isExplored = ref(false);
-const testDesigns = ref([]);
+const testDesigns = ref([] as ExperimentDesign[]);
 const sortBy = ref(sortOptions[0]);
-const sortedDesigns = computed(() => {
+const sortedDesigns = computed<ExperimentDesign[]>(() => {
   const designs = [...testDesigns.value];
   const field = sortBy.value.value;
 
@@ -1226,13 +1325,10 @@ const sortedDesigns = computed(() => {
 
 // Design detail dialog
 const designDetailDialog = ref(false);
-const selectedDesign = ref(null);
+const selectedDesign = ref<ExperimentDesign>(null);
 const groupTab = ref('Control');
 const geoDetailColumns: QTableColumn[] = [
-  { name: 'geo', label: 'Geo Unit', field: 'geo', align: 'left' },
-  { name: 'conversions', label: 'Conversions', field: 'conversions', align: 'right' },
-  { name: 'cost', label: 'Cost', field: 'cost', align: 'right' },
-  { name: 'roas', label: 'ROAS', field: 'roas', align: 'right' },
+  { name: 'geo', label: 'Geo Unit', field: (row) => row, align: 'left' },
 ];
 
 // Format helpers
@@ -1246,51 +1342,93 @@ const formatKey = (key) => {
     .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
 };
 
-// Data source handling
-const handleDataSourceChange = async (dataSource) => {
-  if (!dataSource) {
-    dataSourceLoaded.value = false;
-    return;
-  }
+let lastRequest;
 
-  try {
-    if (!dataSource.data) {
-      await dataSourcesStore.loadDataSourceData(dataSource);
-    }
+async function runExploration() {
+  // TODO:
+  const request = {
+    // Datasource ID from the selected datasource
+    datasource_id: selectedDataSource.value?.id,
 
-    dataSourceLoaded.value = true;
+    // Core parameters
+    experiment_type: parameters.experimentType,
+    primary_metric: selectedMetric.value,
+    //secondary_metrics: [],
 
-    // Set default metric
-    if (dataSource.columns.metricColumns.length > 0) {
-      selectedMetric.value = dataSource.columns.metricColumns[0];
-    }
+    // Test parameters
+    n_cells: parameters.structure === 'multi-cell' ? parameters.testGroups : 2,
+    alpha: parameters.alpha,
+    alternative_hypothesis: parameters.hypothesisType,
 
-    // Populate geo units
-    if (dataSource.data && dataSource.data.geoUnits) {
-      populateGeoUnits(dataSource);
-    }
-  } catch (error) {
-    console.error('Error loading data source:', error);
-  }
-};
+    // Duration parameters
+    min_runtime_weeks: parameters.durationMin,
+    max_runtime_weeks: parameters.durationMax,
 
-function populateGeoUnits(dataSource) {
-  const { geoColumn } = dataSource.columns;
-  const geoGroups = {};
-  dataSource.data.rawRows.forEach((row) => {
-    const geo = row[geoColumn];
-    geoGroups[geo] = {};
-  });
-  geoUnits.value = Object.keys(geoGroups).map((geo) => {
-    return {
-      geo,
-      assignment: 'auto',
-    };
-  });
+    // Methodology options (empty means explore all)
+    methodologies: parameters.methodology.length > 0 ? parameters.methodology : [],
+
+    // Optimization target
+    optimization_target: parameters.optimizationTarget,
+    target_power: parameters.optimizationTarget === 'power' ? parameters.power : null,
+    target_mde: parameters.optimizationTarget === 'mde' ? parameters.mde : null,
+
+    // Geo assignments from user selections
+    fixed_geos: getGeoAssignments(geoUnits.value),
+
+    pretest_weeks: parameters.pretestPeriod,
+    // TODO:
+    //trimming_quantile_candidates: List[float] = [0.0]
+  };
+  lastRequest = request;
+
+  const response = await postApiUi<ExperimentExploreResponse>(
+    'experiments/explore',
+    request,
+    'Running exploration',
+  );
+  if (!response) return;
+  // Process the response
+  testDesigns.value = response.data.designs;
+  isExplored.value = true;
+
+  // Navigate to designs tab
+  activeTab.value = 'designs';
 }
 
-function runExploration() {
-  // TODO:
+// Helper function to format geo assignments from UI selections
+function getGeoAssignments(geoUnits) {
+  // Start with empty groups
+  const assignments = {
+    control: [],
+    treatment: [[]], // Start with one treatment group for single-cell
+    exclude: [],
+  };
+
+  // Process multi-cell test if needed
+  if (parameters.structure === 'multi-cell' && parameters.testGroups > 1) {
+    // Initialize the right number of treatment groups
+    assignments.treatment = Array.from({ length: parameters.testGroups }, () => []);
+  }
+
+  // Process each geo unit
+  geoUnits.forEach((unit) => {
+    if (unit.assignment === 'control') {
+      assignments.control.push(unit.geo);
+    } else if (unit.assignment === 'exclude') {
+      assignments.exclude.push(unit.geo);
+    } else if (unit.assignment === 'test') {
+      // Default test group (group 0)
+      assignments.treatment[0].push(unit.geo);
+    } else if (unit.assignment.startsWith('test-')) {
+      // Handle test-2, test-3, etc. for multi-cell
+      const groupIndex = parseInt(unit.assignment.split('-')[1]) - 1;
+      if (groupIndex >= 0 && groupIndex < assignments.treatment.length) {
+        assignments.treatment[groupIndex].push(unit.geo);
+      }
+    }
+  });
+
+  return assignments;
 }
 
 function downloadDesign(design) {
@@ -1323,5 +1461,30 @@ function viewDesign(design) {
   selectedDesign.value = design;
   groupTab.value = 'Control'; // Reset to first tab
   designDetailDialog.value = true;
+}
+
+// Helper function to check if a geo was fixed in the assignment
+function isFixedGeo(geo: string, groupName: string): boolean {
+  if (!lastRequest.fixed_geos) return false;
+
+  if (groupName === 'Control' && lastRequest.fixed_geos.control?.includes(geo)) {
+    return true;
+  }
+
+  if (groupName.startsWith('Test')) {
+    // For multi-cell tests, need to check the right treatment group
+    const groupIndex =
+      groupName === 'Test' ? 0 : Number(groupName.replace('Test ', '').charCodeAt(0) - 65); // 'Test A' -> 0, 'Test B' -> 1
+
+    if (
+      groupIndex >= 0 &&
+      lastRequest.fixed_geos.treatment &&
+      lastRequest.fixed_geos.treatment[groupIndex]?.includes(geo)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 </script>
