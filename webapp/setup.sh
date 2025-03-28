@@ -122,6 +122,43 @@ deploy_files() {
 }
 
 
+build_library() {
+  echo -e "${COLOR}Building geoflex library wheel package...${NC}"
+  cd ../lib
+  python -m build --wheel
+
+  # Get the filename of the newly built wheel
+  WHEEL_FILE=$(ls -t dist/*.whl | head -1)
+  WHEEL_FILENAME=$(basename "$WHEEL_FILE")
+
+  # Create vendor directory if it doesn't exist
+  mkdir -p ../webapp/vendor
+
+  # Remove old wheel files
+  rm -f ../webapp/vendor/*.whl
+
+  # Copy the wheel file to webapp/vendor
+  cp "$WHEEL_FILE" "../webapp/vendor/"
+
+  # Update requirements.txt to reference the new wheel
+  # Create a temporary file for safety
+  TEMP_FILE=$(mktemp)
+
+  # Remove any existing vendor wheel references and keep other requirements
+  grep -v "./vendor/" "../webapp/requirements.txt" > "$TEMP_FILE"
+
+  # Add the new reference
+  echo "./vendor/$WHEEL_FILENAME" >> "$TEMP_FILE"
+
+  # Replace the original file
+  mv "$TEMP_FILE" "../webapp/requirements.txt"
+
+  # Return to original directory
+  cd - > /dev/null
+
+  echo -e "${COLOR}Library wheel package built and referenced successfully in requirements.txt${NC}"
+}
+
 build_app() {
   echo -e "${COLOR}Building app...${NC}"
   npm i

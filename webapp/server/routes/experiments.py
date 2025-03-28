@@ -14,15 +14,9 @@
 """API routes for working with experiments."""
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
-import os
-import sys
 from typing import List, Optional, Any
 import pydantic
-from fastapi import APIRouter, HTTPException, Depends, Request
-
-vendor_dir = os.path.join(os.path.dirname(__file__), '../lib')
-if vendor_dir not in sys.path:
-  sys.path.insert(0, vendor_dir)
+from fastapi import APIRouter, Depends, Request
 
 from geoflex.experiment_design import ExperimentDesign, ExperimentType, GeoAssignment, ExperimentDesignConstraints
 from geoflex.metrics import Metric
@@ -110,7 +104,7 @@ async def explore_experiment_designs(
   This endpoint takes the datasource and experiment parameters and returns
   a list of possible experiment designs, ranked by their statistical power.
   """
-
+  logger.debug('Generating test designs')
   # Get datasource
   datasource = await ds_service.get_datasource_by_id(request.datasource_id)
   datasource_data = await ds_service.load_datasource_data(datasource.id)
