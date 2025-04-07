@@ -1,7 +1,9 @@
 """Tests for the experiment design module."""
 
 import geoflex.experiment_design
+import pandas as pd
 import pytest
+
 
 ExperimentDesignConstraints = (
     geoflex.experiment_design.ExperimentDesignConstraints
@@ -9,6 +11,7 @@ ExperimentDesignConstraints = (
 ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+GeoEligibility = geoflex.experiment_design.GeoEligibility
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -31,8 +34,14 @@ ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 def test_geo_assignment_raises_exception_if_geos_in_multiple_groups(
     treatment, control, exclude
 ):
-  with pytest.raises(ValueError):
-    GeoAssignment(treatment=treatment, control=control, exclude=exclude)
+  treatment_sets = [set(arm) for arm in treatment]
+  control_set = set(control)
+  exclude_set = set(exclude)
+  with pytest.raises(ValueError, match="multiple groups"):
+    GeoAssignment(
+        treatment=treatment_sets,
+        control=control_set,
+        exclude=exclude_set)
 
 
 def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
@@ -51,12 +60,17 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
         ),
         pytest.param(
             {"n_cells": 1},
-            id="max_cells_less_than_2",
+            id="n_cells_less_than_2",
         ),
         pytest.param(
             {"n_geos_per_group_candidates": [[5, 1]], "n_cells": 3},
             id="n_geos_per_group_does_not_match_n_cells",
         ),
+        pytest.param(
+            {"n_cells": 3,
+             "geo_eligibility": GeoEligibility(treatment=[{"US"}])},
+            id="geo_eligibility_does_not_match_n_cells",
+        )
     ],
 )
 def test_constraints_raise_exception_inputs_are_invalid(invalid_args):
@@ -123,3 +137,159 @@ def test_metric_names_must_be_unique():
         alpha=0.1,
         fixed_geos=None,
     )
+
+
+def test_geoeligibilty_inflexible_2cell():
+  eligibility = GeoEligibility(
+      control={"g1", "g2"},
+      treatment=[{"g3"}],  # 1 treatment arm, 2 cells total
+      exclude={"g4"},
+      all_geos={"g1", "g2", "g3", "g4", "g5"},
+      flexible=False
+  )
+  data_frames = eligibility.data
+
+  # check there is only 1 dataframe
+  assert isinstance(data_frames, list)
+  assert len(data_frames) == 1
+  df = data_frames[0]
+
+  assert isinstance(df, pd.DataFrame)
+  assert df.index.name == "geo"
+  assert df.columns.to_list() == ["control", "treatment", "exclude"]
+  assert set(df.index) == {"g1", "g2", "g3", "g4", "g5"}
+
+  # check values of specific geos
+  assert df.loc["g1"].equals(
+      pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g1")
+      )
+  assert df.loc["g2"].equals(
+      pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g2")
+      )
+  assert df.loc["g3"].equals(
+      pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="g3")
+      )
+  assert df.loc["g4"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="g4")
+      )
+  # g5 is not explicitly defined and flexible=False -> should be all 0s
+  assert df.loc["g5"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="g5")
+      )
+
+
+def test_geoeligibility_flexible_2cell():
+  eligibility = GeoEligibility(
+      control={"g4", "g3"},  # out of order numbers
+      treatment=[{"g2"}],
+      exclude={"g5"},
+      all_geos={"g1", "g2", "g3", "g4", "g5", "g6"},
+      flexible=True
+  )
+  data_frames = eligibility.data
+
+  # check there is only 1 dataframe
+  assert isinstance(data_frames, list)
+  assert len(data_frames) == 1
+  df = data_frames[0]
+
+  assert isinstance(df, pd.DataFrame)
+  assert df.index.name == "geo"
+  assert df.columns.to_list() == ["control", "treatment", "exclude"]
+  assert set(df.index) == {"g1", "g2", "g3", "g4", "g5", "g6"}
+
+  # check values of specific geos
+  # g1 is not defined and flexible=True -> flexible control and treatment
+  assert df.loc["g1"].equals(
+      pd.Series({"control": 1, "treatment": 1, "exclude": 0}, name="g1")
+      )
+  assert df.loc["g2"].equals(
+      pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="g2")
+      )
+  assert df.loc["g3"].equals(
+      pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g3")
+      )
+  assert df.loc["g4"].equals(
+      pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g4")
+      )
+  assert df.loc["g5"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="g5")
+      )
+  # g6 is not defined and flexible=True -> flexible control and treatment
+  assert df.loc["g6"].equals(
+      pd.Series({"control": 1, "treatment": 1, "exclude": 0}, name="g6")
+      )
+
+
+def test_geoeligibility_multiarm_3cell():
+  eligibililty = GeoEligibility(
+      control={"c1"},
+      treatment=[
+          {"t1", "t3"},
+          {"t2", "t3"}
+      ],
+      exclude={"e1"},
+      all_geos={"c1", "t1", "t2", "t3", "e1", "u1"},
+      flexible=False
+  )
+  data_frames = eligibililty.data
+
+  # check there are 2 dataframes
+  assert isinstance(data_frames, list)
+  assert len(data_frames) == 2
+  df_arm1 = data_frames[0]
+  df_arm2 = data_frames[1]
+
+  assert isinstance(df_arm1, pd.DataFrame)
+  assert isinstance(df_arm2, pd.DataFrame)
+  expected_geos = {"c1", "t1", "t2", "t3", "e1", "u1"}
+  assert set(df_arm1.index) == expected_geos
+  assert set(df_arm2.index) == expected_geos
+
+  # check eligibility for t1 which is only eligible for treatment in arm1
+  assert df_arm1.loc["t1"].equals(
+      pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t1")
+      )
+  assert df_arm2.loc["t1"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="t1")
+      )
+
+  # check eligibility for t2 which is only eligible for treatment in arm2
+  assert df_arm1.loc["t2"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="t2")
+      )
+  assert df_arm2.loc["t2"].equals(
+      pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t2")
+      )
+
+  # check eligibility for t3 which is eligible for treatment in both arms
+  assert df_arm1.loc["t3"].equals(
+      pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t3")
+      )
+  assert df_arm2.loc["t3"].equals(
+      pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t3")
+      )
+
+  # check eligibility for c1 which is only eligible for control
+  assert df_arm1.loc["c1"].equals(
+      pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="c1")
+      )
+  assert df_arm2.loc["c1"].equals(
+      pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="c1")
+      )
+
+  # check eligibility for e1 which is only eligible for exclude
+  assert df_arm1.loc["e1"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="e1")
+      )
+  assert df_arm2.loc["e1"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="e1")
+      )
+
+  # check eligibility for u1 which is not defined and flexible=False
+  assert df_arm1.loc["u1"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="u1")
+      )
+  assert df_arm2.loc["u1"].equals(
+      pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="u1")
+      )
