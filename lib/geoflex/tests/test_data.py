@@ -51,6 +51,58 @@ def expected_parsed_data_fixture():
   )
 
 
+@pytest.fixture(name="raw_data_na_geo")
+def raw_data_na_geo_fixture():
+  """Fixture for test data with NA geo IDs."""
+  return pd.DataFrame({
+      "geo_id": ["US", None, "CA", "CA"],
+      "date": ["2024-01-01", "2024-01-02", "2024-01-01", "2024-01-02"],
+      "revenue": [100, 200, 300, 400]
+  })
+
+
+@pytest.fixture(name="raw_data_gaps")
+def raw_data_gaps_fixture():
+  """Fixture for test data with gaps."""
+  return pd.DataFrame({
+      "geo_id": ["US", "US", "US", "CA", "CA", "CA"],
+      "date": [
+          "2024-01-01",
+          "2024-01-02",  # day 2
+          "2024-01-04",  # day 4 (gap after Day 2)
+          "2024-01-01",
+          "2024-01-02",
+          "2024-01-04",
+      ],
+      "revenue": [100, 200, 300, 400, 500, 600],
+  })
+
+
+@pytest.fixture(name="raw_data_weekly")
+def raw_data_weekly_fixture():
+  """Fixture for test data with weekly frequency."""
+  return pd.DataFrame({
+      "geo_id": ["US", "US", "CA", "CA"],
+      "date": [
+          "2024-01-01",  # week 1
+          "2024-01-08",  # week 2
+          "2024-01-01",
+          "2024-01-08",
+          ],
+      "revenue": [100, 200, 300, 400],
+  })
+
+
+@pytest.fixture(name="raw_data_int_geos")
+def raw_data_int_geos_fixture():
+  """Fixture for test data with integer geo IDs."""
+  return pd.DataFrame({
+      "geo_id": [10, 10, 20, 20],  # integer geo IDs
+      "date": ["2024-01-01", "2024-01-02", "2024-01-01", "2024-01-02"],
+      "revenue": [100, 200, 300, 400],
+  })
+
+
 @pytest.mark.parametrize(
     "missing_column",
     ["geo_id", "date"],
@@ -77,6 +129,13 @@ def test_geo_performance_dataset_raises_exception_if_data_has_duplicate_geos_and
   duplicate_data = pd.concat([raw_data, raw_data], ignore_index=True)
   with pytest.raises(ValueError):
     GeoPerformanceDataset(data=duplicate_data)
+
+
+def test_geo_performance_dataset_raises_exception_if_geo_id_has_na(
+    raw_data_na_geo
+):
+  with pytest.raises(ValueError, match="non-NA values in the geo_id column"):
+    GeoPerformanceDataset(data=raw_data_na_geo)
 
 
 def test_geo_performance_dataset_parses_data_correctly(
@@ -113,3 +172,81 @@ def test_geo_performance_dataset_returns_dates_correctly(raw_data):
       pd.to_datetime("2024-01-01"),
       pd.to_datetime("2024-01-02"),
   ]
+
+
+def test_geo_performance_dataset_handles_integer_geo_ids(raw_data_int_geos):
+  geo_dataset = GeoPerformanceDataset(data=raw_data_int_geos)
+  assert geo_dataset.geos == ["10", "20"]  # check conversion to str and sorted
+  assert "10" in geo_dataset.parsed_data["geo_id"].unique()
+  assert "20" in geo_dataset.parsed_data["geo_id"].unique()
+  assert geo_dataset.geomapping_str_to_int == {"10": 1, "20": 2}
+
+
+def test_data_freq_days_detects_daily(raw_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
+  assert geo_dataset.data_freq_days == 1
+
+
+def test_data_freq_days_detects_weekly(raw_data_weekly):
+  geo_dataset = GeoPerformanceDataset(data=raw_data_weekly)
+  assert geo_dataset.data_freq_days == 7
+
+
+def test_data_freq_days_raises_error_for_less_than_two_dates(raw_data):
+  one_date_data = raw_data[raw_data["date"] == "2024-01-01"]
+  geo_dataset = GeoPerformanceDataset(data=one_date_data)
+  with pytest.raises(ValueError, match="at least 2 unique dates"):
+    _ = geo_dataset.data_freq_days
+
+
+def test_data_freq_days_raises_error_for_ambiguous_freq(raw_data_gaps):
+  geo_dataset = GeoPerformanceDataset(data=raw_data_gaps)
+  with pytest.raises(ValueError, match="Cannot determine data frequency"):
+    _ = geo_dataset.data_freq_days
+
+
+def test_check_date_gaps_raises_error_on_gaps_by_default(raw_data_gaps):
+  with pytest.raises(
+      ValueError,
+      match="Gaps found.*Check these dates.*allow_missing_dates=True"
+      ):
+    GeoPerformanceDataset(data=raw_data_gaps, allow_missing_dates=False)
+
+
+def test_check_date_gaps_warns_on_gaps_when_allowed(raw_data_gaps):
+  with pytest.warns(UserWarning, match="Gaps found.*Check these dates"):
+    GeoPerformanceDataset(data=raw_data_gaps, allow_missing_dates=True)
+
+
+def test_geo_mappings_are_correct(raw_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
+  # geos should be sorted alphabetically: CA, US
+  expected_str_to_int = {"CA": 1, "US": 2}
+  expected_int_to_str = {1: "CA", 2: "US"}
+  expected_geos_int = {1, 2}
+
+  assert geo_dataset.geomapping_str_to_int == expected_str_to_int
+  assert geo_dataset.geomapping_int_to_str == expected_int_to_str
+  assert geo_dataset.geos_int == expected_geos_int
+
+
+def test_parsed_data_int_geos_correct(raw_data, expected_parsed_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
+  parsed_int = geo_dataset.parsed_data_int_geos
+
+  # create expected parsed data with integer geo IDs
+  expected_int = expected_parsed_data.copy()
+  geo_map = {"CA": 1, "US": 2}  # explicitly define what mapping should be
+  expected_int["geo_id"] = expected_int["geo_id"].map(geo_map).astype(int)
+  expected_int = expected_int.sort_values(by=["geo_id", "date"])
+
+  # check geo_id column is an integer and has expected values
+  assert pd.api.types.is_integer_dtype(parsed_int["geo_id"])
+  assert set(parsed_int["geo_id"].unique()) == {1, 2}
+
+  # check the entire parsed data frame is correct
+  pd.testing.assert_frame_equal(
+      parsed_int.sort_values(by=["geo_id", "date"]),
+      expected_int,  # already sorted above
+      check_like=True  # handles potential column order differences
+  )
