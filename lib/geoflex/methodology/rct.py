@@ -41,9 +41,7 @@ class RCT(_base.Methodology):
   comparison.
 
   Design:
-    Geos are split randomly into treatment and control groups. The treatment
-    group will receive the treatment, and the control group will not. We will
-    try multiple random splits and pick the best one with the lowest variance.
+    Geos are split randomly into treatment and control groups.
 
   Evaluation:
     The evaluation is done with a simple t-test on each test statistic.
