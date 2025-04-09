@@ -1,6 +1,7 @@
 """GeoFleX: A flexible and unified geo-experiment solution."""
 
 from geoflex import data
+from geoflex import evaluation
 from geoflex import experiment
 from geoflex import experiment_design
 from geoflex import methodology
