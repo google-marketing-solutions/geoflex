@@ -13,5 +13,7 @@ ExperimentType = experiment_design.ExperimentType
 GeoPerformanceDataset = data.GeoPerformanceDataset
 Experiment = experiment.Experiment
 ExperimentDesign = experiment_design.ExperimentDesign
+ExperimentBudget = experiment_design.ExperimentBudget
+ExperimentBudgetType = experiment_design.ExperimentBudgetType
 
 __version__ = "0.0.1"

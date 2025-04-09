@@ -132,6 +132,65 @@ class GeoAssignment(GeoEligibility):
     return self
 
 
+class ExperimentBudgetType(enum.StrEnum):
+  PERCENTAGE_CHANGE = "percentage_change"
+  DAILY_BUDGET = "daily_budget"
+  TOTAL_BUDGET = "total_budget"
+
+
+class ExperimentBudget(pydantic.BaseModel):
+  """The budget for an experiment.
+
+  The budget is the amount of money that can be spent on the experiment, and
+  can be specified in different ways:
+
+  - Budget type = percentage_change: The budget is a percentage change in the
+      business as usual (BAU) spend. For example, a budget of 10% means that
+      the experiment can spend 10% more than the BAU spend.
+  - Budget type = daily_budget: The budget is a daily budget for the experiment.
+      For example, a budget of $100,000 means that the experiment can spend
+      $100,000 per day. Note that for a heavy-up experiment this is the
+      incremental budget, meaning the increase on top of the BAU spend, not the
+      total budget.
+  - Budget type = total_budget: The budget is a total budget for the experiment.
+      For example, a budget of $100,000 means that the experiment can spend
+      $100,000 over the course of the experiment. Note that for a heavy-up
+      experiment this is the incremental budget, meaning the increase on top of
+      the BAU spend, not the total budget.
+
+  For a Go-Dark experiment, the budget value should be negative, and is usually
+  defined as a negative percentage change.
+
+  For a Heavy-Up or Hold-Back experiment, the budget value should be positive,
+  and is usually defined as a daily budget or a total budget.
+
+  For a multi-cell test, the budget is the budget for each cell. For example, if
+  the experiment has 3 cells and a budget of $100,000, then each treatment cell
+  spend $100,000.
+
+  Attributes:
+    value: The value of the budget.
+    budget_type: The type of the budget, one of "percentage_change",
+      "daily_budget", or "total_budget".
+  """
+
+  value: float
+  budget_type: ExperimentBudgetType
+
+  @pydantic.model_validator(mode="after")
+  def check_percentage_change_is_not_below_minus_1(
+      self,
+  ) -> "ExperimentBudget":
+    if (
+        self.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE
+        and self.value < -1.0
+    ):
+      raise ValueError(
+          "Cannot have a percentage change budget below -1.0 (-100%)."
+      )
+    return self
+
+
 class ExperimentDesignSpec(pydantic.BaseModel):
   """All the inputs needed for geoflex to design an experiment.
 
@@ -144,6 +203,14 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     experiment_type: The type of experiment to run.
     primary_metric: The primary response metric for the experiment. This is the
       metric that the experiment will be designed for.
+    experiment_budget_candidates: The candidates for the experiment budget. The
+      experiment design will choose the best configuration from this list. For a
+      go-dark experiment, the budget value should be negative and is usually
+      defined as a negative percentage change. For a heavy-up or hold-back
+      experiment, the budget value should be positive and is usually defined as
+      a daily budget or a total budget. For a heavy-up experiment, this is the
+      incremental budget, meaning the increase on top of the BAU spend, not the
+      total budget.
     secondary_metrics: The secondary response metrics for the experiment. These
       are the metrics that the experiment will also measure, but are not as
       important as the primary metric.
@@ -174,6 +241,7 @@ class ExperimentDesignSpec(pydantic.BaseModel):
 
   experiment_type: ExperimentType
   primary_metric: Metric
+  experiment_budget_candidates: list[ExperimentBudget]
   secondary_metrics: list[Metric] = []
   alternative_hypothesis: str = "two-sided"
   alpha: float = 0.1
@@ -187,6 +255,44 @@ class ExperimentDesignSpec(pydantic.BaseModel):
   random_seeds: list[int] = [0]
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @pydantic.model_validator(mode="after")
+  def check_experiment_budget_candidates_are_valid(
+      self,
+  ) -> "ExperimentDesignSpec":
+    for budget in self.experiment_budget_candidates:
+      # Go dark experiment budgets must be a negative percentage change.
+      if self.experiment_type == ExperimentType.GO_DARK:
+        if budget.value >= 0:
+          raise ValueError(
+              "The percentage change budget must be negative for a go-dark"
+              " experiment."
+          )
+        if budget.budget_type != ExperimentBudgetType.PERCENTAGE_CHANGE:
+          raise ValueError(
+              "The budget type must be 'percentage_change' for a go-dark"
+              " experiment."
+          )
+
+      # Heavy-up and hold-back experiment budgets must be positive.
+      if self.experiment_type in [
+          ExperimentType.HEAVY_UP,
+          ExperimentType.HOLD_BACK,
+      ]:
+        if budget.value <= 0:
+          raise ValueError(
+              "The daily budget must be positive for a heavy-up or hold-back"
+              " experiment."
+          )
+
+      # Hold-back experiment budgets cannot be a percentage change.
+      if self.experiment_type == ExperimentType.HOLD_BACK:
+        if budget.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
+          raise ValueError(
+              "The budget type cannot be 'percentage_change' for a hold-back"
+              " experiment."
+          )
+    return self
 
   @pydantic.field_validator("alpha", mode="after")
   @classmethod
@@ -358,6 +464,13 @@ class ExperimentDesign(pydantic.BaseModel):
     primary_metric: The primary response metric for the experiment. This is the
       metric that the experiment will be designed to measure, and should be the
       main decision making metric.
+    experiment_budget: The experiment budget for the experiment. This can be a
+      percentage change, daily budget, or total budget. For a go-dark
+      experiment, the budget value should be a negative percentage change. For a
+      heavy-up or hold-back experiment, the budget value should be positive and
+      is usually defined as a daily budget or a total budget. For a heavy-up
+      experiment, this is the incremental budget, meaning the increase on top of
+      the BAU spend, not the total budget.
     secondary_metrics: The secondary response metrics for the experiment. These
       are the metrics that the experiment will also measure, but are not as
       important as the primary metric.
@@ -382,6 +495,7 @@ class ExperimentDesign(pydantic.BaseModel):
   """
   experiment_type: ExperimentType
   primary_metric: Metric
+  experiment_budget: ExperimentBudget
   secondary_metrics: list[Metric] = []
   methodology: str
   runtime_weeks: int
@@ -481,4 +595,47 @@ class ExperimentDesign(pydantic.BaseModel):
     metric_names = [metric.name for metric in all_metrics]
     if len(metric_names) != len(set(metric_names)):
       raise ValueError("Metric names must be unique.")
+    return self
+
+  @pydantic.model_validator(mode="after")
+  def check_experiment_budget_is_valid(
+      self,
+  ) -> "ExperimentDesign":
+    # Go dark experiment budgets must be a negative percentage change.
+    if self.experiment_type == ExperimentType.GO_DARK:
+      if self.experiment_budget.value >= 0:
+        raise ValueError(
+            "The percentage change budget must be negative for a go-dark"
+            " experiment."
+        )
+      if (
+          self.experiment_budget.budget_type
+          != ExperimentBudgetType.PERCENTAGE_CHANGE
+      ):
+        raise ValueError(
+            "The budget type must be 'percentage_change' for a go-dark"
+            " experiment."
+        )
+
+    # Heavy-up and hold-back experiment budgets must be positive.
+    if self.experiment_type in [
+        ExperimentType.HEAVY_UP,
+        ExperimentType.HOLD_BACK,
+    ]:
+      if self.experiment_budget.value <= 0:
+        raise ValueError(
+            "The daily budget must be positive for a heavy-up or hold-back"
+            " experiment."
+        )
+
+    # Hold-back experiment budgets cannot be a percentage change.
+    if self.experiment_type == ExperimentType.HOLD_BACK:
+      if (
+          self.experiment_budget.budget_type
+          == ExperimentBudgetType.PERCENTAGE_CHANGE
+      ):
+        raise ValueError(
+            "The budget type cannot be 'percentage_change' for a hold-back"
+            " experiment."
+        )
     return self

@@ -16,6 +16,8 @@ GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoEligibility = geoflex.experiment_design.GeoEligibility
+ExperimentBudget = geoflex.experiment_design.ExperimentBudget
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -61,6 +63,10 @@ def performance_data_fixture():
             ExperimentDesign(
                 experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
+                experiment_budget=ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
                 methodology="RCT",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(
@@ -73,6 +79,10 @@ def performance_data_fixture():
             ExperimentDesign(
                 experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
+                experiment_budget=ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
                 methodology="RCT",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(control={"US", "UK"}),
@@ -83,6 +93,10 @@ def performance_data_fixture():
             ExperimentDesign(
                 experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
+                experiment_budget=ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
                 methodology="RCT",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(treatment=[{"CA", "AU"}]),
@@ -93,6 +107,10 @@ def performance_data_fixture():
             ExperimentDesign(
                 experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
+                experiment_budget=ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
                 methodology="RCT",
                 runtime_weeks=4,
                 geo_eligibility=None,
@@ -103,6 +121,10 @@ def performance_data_fixture():
             ExperimentDesign(
                 experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
+                experiment_budget=ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
                 methodology="RCT",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(exclude={"US"}),
@@ -113,6 +135,10 @@ def performance_data_fixture():
             ExperimentDesign(
                 experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
+                experiment_budget=ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
                 methodology="Something Else",
                 runtime_weeks=4,
             ),
@@ -143,6 +169,12 @@ def test_rct_suggest_methodology_parameters(
       ExperimentDesignSpec(
           experiment_type=ExperimentType.GO_DARK,
           primary_metric="revenue",
+          experiment_budget_candidates=[
+              ExperimentBudget(
+                  value=-1,
+                  budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+              )
+          ],
           max_runtime_weeks=4,
           min_runtime_weeks=2,
           **design_spec,
@@ -176,6 +208,10 @@ def test_rct_assign_geos(
   experiment_design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
       methodology="RCT",
       runtime_weeks=4,
       n_cells=n_cells,
@@ -205,6 +241,10 @@ def test_rct_analyze_experiment(performance_data):
   experiment_design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
       primary_metric=geoflex.metrics.ROAS(),
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
       secondary_metrics=[geoflex.metrics.CPA(), "revenue", "conversions"],
       methodology="RCT",
       runtime_weeks=4,

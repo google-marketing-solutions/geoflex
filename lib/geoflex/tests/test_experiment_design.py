@@ -10,6 +10,8 @@ ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoEligibility = geoflex.experiment_design.GeoEligibility
+ExperimentBudget = geoflex.experiment_design.ExperimentBudget
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -73,15 +75,106 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
             },
             id="geo_eligibility_does_not_match_n_cells",
         ),
+        pytest.param(
+            {"alternative_hypothesis": "something_else"},
+            id="alternative_hypothesis_is_invalid",
+        ),
+        pytest.param(
+            {"alpha": 1.1},
+            id="alpha_is_greater_than_1",
+        ),
+        pytest.param(
+            {"alpha": -0.1},
+            id="alpha_is_less_than_0",
+        ),
+        pytest.param(
+            {
+                "fixed_geo_candidates": [
+                    GeoAssignment(treatment=[["US", "UK"], ["CA"]])
+                ]
+            },
+            id="fixed_geo_candidates_does_not_match_n_cells",
+        ),
+        pytest.param(
+            {"secondary_metrics": ["revenue", "conversions"]},
+            id="secondary_metrics_contains_duplicate_names",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.HEAVY_UP,
+                "experiment_budget_candidates": ExperimentBudget(
+                    value=-10,
+                    budget_type=ExperimentBudgetType.DAILY_BUDGET,
+                ),
+            },
+            id="heavy_up_experiment_must_have_positive_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.HOLD_BACK,
+                "experiment_budget_candidates": ExperimentBudget(
+                    value=0,
+                    budget_type=ExperimentBudgetType.DAILY_BUDGET,
+                ),
+            },
+            id="hold_back_experiment_must_have_positive_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.HOLD_BACK,
+                "experiment_budget_candidates": ExperimentBudget(
+                    value=0.5,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
+            },
+            id="hold_back_experiment_cannot_have_percentage_change_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.GO_DARK,
+                "experiment_budget_candidates": ExperimentBudget(
+                    value=0.5,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                ),
+            },
+            id="go_dark_experiment_cannot_have_positive_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.GO_DARK,
+                "experiment_budget_candidates": ExperimentBudget(
+                    value=-0.5,
+                    budget_type=ExperimentBudgetType.DAILY_BUDGET,
+                ),
+            },
+            id="go_dark_experiment_cannot_have_daily_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.GO_DARK,
+                "experiment_budget_candidates": ExperimentBudget(
+                    value=-0.5,
+                    budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+                ),
+            },
+            id="go_dark_experiment_cannot_have_total_budget",
+        ),
     ],
 )
 def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
+  default_args = {
+      "experiment_type": ExperimentType.GO_DARK,
+      "primary_metric": "revenue",
+      "experiment_budget_candidates": [
+          ExperimentBudget(
+              value=-0.1,
+              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+          )
+      ],
+  }
+  default_args.update(invalid_args)
   with pytest.raises(ValueError):
-    ExperimentDesignSpec(
-        experiment_type=ExperimentType.GO_DARK,
-        primary_metric="revenue",
-        **invalid_args,
-    )
+    ExperimentDesignSpec(**default_args)
 
 
 @pytest.mark.parametrize(
@@ -106,6 +199,12 @@ def test_design_spec_can_be_created_with_valid_input(valid_args):
   ExperimentDesignSpec(
       experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
+      experiment_budget_candidates=[
+          ExperimentBudget(
+              value=-0.1,
+              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+          )
+      ],
       **valid_args,
   )
 
@@ -123,6 +222,10 @@ def test_experiment_design_sets_pretest_weeks_correctly(
   design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
       secondary_metrics=["conversions"],
       methodology="test_methodology",
       methodology_parameters=methodology_parameters,
@@ -138,6 +241,10 @@ def test_metric_names_must_be_unique():
     ExperimentDesign(
         experiment_type=ExperimentType.GO_DARK,
         primary_metric="revenue",
+        experiment_budget=ExperimentBudget(
+            value=-0.1,
+            budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+        ),
         secondary_metrics=["revenue", "conversions"],
         methodology="test_methodology",
         runtime_weeks=4,
