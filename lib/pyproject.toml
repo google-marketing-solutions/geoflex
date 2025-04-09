@@ -12,6 +12,7 @@ dependencies = [
   "pydantic",
   "optuna",
   "feedx",
+  "statsmodels",
 ]
 requires-python = ">=3.8"
 authors = [
