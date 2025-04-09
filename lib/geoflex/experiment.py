@@ -1,18 +1,11 @@
 """The main experiment class for GeoFleX."""
 
-from typing import Iterable
 import geoflex.data
 import geoflex.experiment_design
-import geoflex.methodology
-import geoflex.metrics
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
-ExperimentDesignConstraints = (
-    geoflex.experiment_design.ExperimentDesignConstraints
-)
-MethodologyName = geoflex.methodology.MethodologyName
-Metric = geoflex.metrics.Metric
+ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
 
 
 class Experiment:
@@ -22,7 +15,7 @@ class Experiment:
       self,
       name: str,
       historical_data: GeoPerformanceDataset,
-      design_constraints: ExperimentDesignConstraints,
+      design_spec: ExperimentDesignSpec,
   ):
     """Initializes the experiment.
 
@@ -31,11 +24,11 @@ class Experiment:
         unique name for the experiment. It will be used when saving and loading
         from Google Drive, so it must be unique.
       historical_data: The historical data for the experiment.
-      design_constraints: The constraints for the experiment.
+      design_spec: The specification for the experiment.
     """
     self.name = name
     self.historical_data = historical_data
-    self.design_constraints = design_constraints
+    self.design_spec = design_spec
     self.runtime_data = None
     self.experiment_start_date = None
 
@@ -43,39 +36,16 @@ class Experiment:
     self._eligible_experiment_designs = {}  # Maps design_id to ExperimentDesign
     self._selected_design_id = None
 
-  def explore_experiment_designs(
-      self,
-      max_trials: int = 100,
-      primary_metric: Metric | str = "revenue",
-      secondary_metrics: list[Metric | str] | None = None,
-      alternative_hypthesis: str = "two-sided",
-      alpha: float = 0.1,
-      eligible_methodologies: Iterable[str] = (
-          MethodologyName.TBR_MM,
-          MethodologyName.TBR,
-          MethodologyName.TM,
-          MethodologyName.GBR,
-      ),
-  ) -> None:
+  def explore_experiment_designs(self, max_trials: int = 100) -> None:
     """Explores how the different eligible experiment designs perform.
 
-    Given your data and the constraints, this function will explore how the
-    different eligible experiment designs perform. The results can then be
-    retrieved using the `get_top_designs()` function.
+    Given your data and the experiment design spec, this function will explore
+    how the different eligible experiment designs perform. The results can then
+    be retrieved using the `get_top_designs()` function.
 
     Args:
       max_trials: The maximum number of trials to run. If there are more than
         max_trials eligible experiment designs, they will be randomly sampled.
-      primary_metric: The primary response metric for the experiment. This is
-        the metric that the experiment will be designed for.
-      secondary_metrics: The secondary response metrics for the experiment.
-        These are the metrics that the experiment will also measure, but are not
-        as important as the primary metric.
-      alternative_hypthesis: The alternative hypothesis for the experiment. Must
-        be one of "two-sided", "greater", or "less". Defaults to "two-sided".
-      alpha: The significance level for the experiment. Defaults to 0.1.
-      eligible_methodologies: The eligible methodologies for the experiment.
-        Defaults to all methodologies except RCT.
     """
 
     raise NotImplementedError()

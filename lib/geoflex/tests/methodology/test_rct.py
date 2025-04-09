@@ -10,13 +10,12 @@ import pandas as pd
 import pytest
 
 RCT = geoflex.methodology.rct.RCT
-ExperimentDesignConstraints = (
-    geoflex.experiment_design.ExperimentDesignConstraints
-)
+ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
 ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+GeoEligibility = geoflex.experiment_design.GeoEligibility
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -64,8 +63,8 @@ def performance_data_fixture():
                 primary_metric="revenue",
                 methodology="RCT",
                 runtime_weeks=4,
-                fixed_geos=GeoAssignment(
-                    control=["US", "UK"], treatment=[["CA", "AU"]]
+                geo_eligibility=GeoEligibility(
+                    control=["US", "UK"], treatment=[{"CA", "AU"}]
                 ),
             ),
             False,
@@ -76,7 +75,7 @@ def performance_data_fixture():
                 primary_metric="revenue",
                 methodology="RCT",
                 runtime_weeks=4,
-                fixed_geos=GeoAssignment(control=["US", "UK"]),
+                geo_eligibility=GeoEligibility(control={"US", "UK"}),
             ),
             False,
         ),
@@ -86,7 +85,7 @@ def performance_data_fixture():
                 primary_metric="revenue",
                 methodology="RCT",
                 runtime_weeks=4,
-                fixed_geos=GeoAssignment(treatment=[["CA", "AU"]]),
+                geo_eligibility=GeoEligibility(treatment=[{"CA", "AU"}]),
             ),
             False,
         ),
@@ -96,7 +95,7 @@ def performance_data_fixture():
                 primary_metric="revenue",
                 methodology="RCT",
                 runtime_weeks=4,
-                fixed_geos=None,
+                geo_eligibility=None,
             ),
             True,
         ),
@@ -106,7 +105,7 @@ def performance_data_fixture():
                 primary_metric="revenue",
                 methodology="RCT",
                 runtime_weeks=4,
-                fixed_geos=GeoAssignment(exclude=["US"]),
+                geo_eligibility=GeoEligibility(exclude={"US"}),
             ),
             True,
         ),
@@ -126,7 +125,7 @@ def test_rct_is_eligible_for_design(design, expected_is_eligible):
 
 
 @pytest.mark.parametrize(
-    "constraints,expected_parameter_names",
+    "design_spec,expected_parameter_names",
     [
         ({}, ["trimming_quantile"]),
         (
@@ -136,16 +135,17 @@ def test_rct_is_eligible_for_design(design, expected_is_eligible):
     ],
 )
 def test_rct_suggest_methodology_parameters(
-    constraints, expected_parameter_names
+    design_spec, expected_parameter_names
 ):
   study = op.create_study()
   trial = study.ask()
   parameters = RCT().suggest_methodology_parameters(
-      ExperimentDesignConstraints(
+      ExperimentDesignSpec(
           experiment_type=ExperimentType.GO_DARK,
+          primary_metric="revenue",
           max_runtime_weeks=4,
           min_runtime_weeks=2,
-          **constraints,
+          **design_spec,
       ),
       trial,
   )
@@ -180,7 +180,7 @@ def test_rct_assign_geos(
       runtime_weeks=4,
       n_cells=n_cells,
       alpha=0.1,
-      fixed_geos=GeoAssignment(exclude=exclude_geos),
+      geo_eligibility=GeoEligibility(exclude=set(exclude_geos)),
       n_geos_per_group=n_geos_per_group,
   )
   geo_assignment = RCT().assign_geos(experiment_design, performance_data, rng)
@@ -196,7 +196,7 @@ def test_rct_assign_geos(
 
   eligible_geos = set(performance_data.geos) - set(exclude_geos)
   used_geos = set(geo_assignment.control) | set(
-      sum(geo_assignment.treatment, [])
+      sum(map(list, geo_assignment.treatment), [])
   )
   assert used_geos == eligible_geos
 
@@ -209,7 +209,7 @@ def test_rct_analyze_experiment(performance_data):
       methodology="RCT",
       runtime_weeks=4,
       alpha=0.1,
-      fixed_geos=None,
+      geo_eligibility=None,
   )
   experiment_design.geo_assignment = GeoAssignment(
       treatment=[["US", "UK"]], control=["CA", "AU"]

@@ -5,9 +5,7 @@ import pandas as pd
 import pytest
 
 
-ExperimentDesignConstraints = (
-    geoflex.experiment_design.ExperimentDesignConstraints
-)
+ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
 ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -77,10 +75,12 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
         ),
     ],
 )
-def test_constraints_raise_exception_inputs_are_invalid(invalid_args):
+def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
   with pytest.raises(ValueError):
-    ExperimentDesignConstraints(
-        experiment_type=ExperimentType.GO_DARK, **invalid_args
+    ExperimentDesignSpec(
+        experiment_type=ExperimentType.GO_DARK,
+        primary_metric="revenue",
+        **invalid_args,
     )
 
 
@@ -99,11 +99,14 @@ def test_constraints_raise_exception_inputs_are_invalid(invalid_args):
         {"n_geos_per_group_candidates": [[2, 2], [1, 5], None]},
         {"trimming_quantile_candidates": [0.0, 0.5]},
         {"n_cells": 3},
+        {"secondary_metrics": ["conversions"]},
     ],
 )
-def test_constraints_can_be_created_with_valid_input(valid_args):
-  ExperimentDesignConstraints(
-      experiment_type=ExperimentType.GO_DARK, **valid_args
+def test_design_spec_can_be_created_with_valid_input(valid_args):
+  ExperimentDesignSpec(
+      experiment_type=ExperimentType.GO_DARK,
+      primary_metric="revenue",
+      **valid_args,
   )
 
 
@@ -125,7 +128,7 @@ def test_experiment_design_sets_pretest_weeks_correctly(
       methodology_parameters=methodology_parameters,
       runtime_weeks=4,
       alpha=0.1,
-      geo_eligibility_candidates=[None],
+      geo_eligibility=None,
   )
   assert design.pretest_weeks == expected_pretest_weeks
 
@@ -139,7 +142,7 @@ def test_metric_names_must_be_unique():
         methodology="test_methodology",
         runtime_weeks=4,
         alpha=0.1,
-        geo_eligibility_candidates=[None],
+        geo_eligibility=None,
     )
 
 

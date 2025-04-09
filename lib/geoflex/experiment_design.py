@@ -132,11 +132,26 @@ class GeoAssignment(GeoEligibility):
     return self
 
 
-class ExperimentDesignConstraints(pydantic.BaseModel):
-  """Defines constraints for an experiment design.
+class ExperimentDesignSpec(pydantic.BaseModel):
+  """All the inputs needed for geoflex to design an experiment.
+
+  This includes some parameters of the experiment, such as the experiment type
+  and the metrics. It also includes constraints on the design, such as the
+  maximum and minimum number of weeks, the number of cells, and the number of
+  geos per group.
 
   Attributes:
     experiment_type: The type of experiment to run.
+    primary_metric: The primary response metric for the experiment. This is the
+      metric that the experiment will be designed for.
+    secondary_metrics: The secondary response metrics for the experiment. These
+      are the metrics that the experiment will also measure, but are not as
+      important as the primary metric.
+    alternative_hypothesis: The alternative hypothesis for the experiment. Must
+      be one of "two-sided", "greater", or "less". Defaults to "two-sided".
+    alpha: The significance level for the experiment. Defaults to 0.1.
+    eligible_methodologies: The eligible methodologies for the experiment.
+      Defaults to all methodologies except RCT.
     max_runtime_weeks: The maximum number of weeks the experiment can run.
     min_runtime_weeks: The minimum number of weeks the experiment can run.
     n_cells: The number of cells to use for the experiment. Must be at least 2.
@@ -154,17 +169,57 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
     treatment_geos_range: (Optional) Min/max number of geos per treatment group.
     control_geos_range: (Optional) Min/max number of geos for the control group.
   """
+
   experiment_type: ExperimentType
+  primary_metric: Metric
+  secondary_metrics: list[Metric] = []
+  alternative_hypothesis: str = "two-sided"
+  alpha: float = 0.1
+  eligible_methodologies: list[str] = ("TBR_MM", "TBR", "TM", "GBR")
   max_runtime_weeks: int = 8
   min_runtime_weeks: int = 2
   n_cells: int = 2
-  n_geos_per_group_candidates: list[list[int]] | None = None
+  n_geos_per_group_candidates: list[list[int] | None] = [None]
   trimming_quantile_candidates: list[float] = [0.0]
   geo_eligibility_candidates: list[GeoEligibility] = [None]
   treatment_geos_range: tuple[int, int] | None = None
   control_geos_range: tuple[int, int] | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @pydantic.field_validator("alpha", mode="after")
+  @classmethod
+  def check_alpha_is_between_0_and_1(cls, alpha: float) -> float:
+    if alpha < 0 or alpha > 1:
+      raise ValueError("alpha must be between 0 and 1")
+    return alpha
+
+  @pydantic.field_validator("alternative_hypothesis", mode="after")
+  @classmethod
+  def check_alternative_hypothesis_is_valid(
+      cls, alternative_hypothesis: str
+  ) -> str:
+    if alternative_hypothesis not in ["two-sided", "greater", "less"]:
+      raise ValueError(
+          "alternative_hypothesis must be one of 'two-sided', 'greater', or"
+          " 'less'"
+      )
+    return alternative_hypothesis
+
+  @pydantic.field_validator("primary_metric", mode="before")
+  @classmethod
+  def cast_primary_metric(cls, metric: Metric | str) -> Metric:
+    if isinstance(metric, str):
+      return Metric(name=metric)
+    return metric
+
+  @pydantic.field_validator("secondary_metrics", mode="before")
+  @classmethod
+  def cast_secondary_metrics(cls, metrics: list[Metric | str]) -> list[Metric]:
+    return [
+        Metric(name=metric) if isinstance(metric, str) else metric
+        for metric in metrics
+    ]
 
   @pydantic.model_validator(mode="before")
   @classmethod
@@ -182,9 +237,11 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
     )
 
     if raw_geo_eligibility_candidates is None:
-      values["fixed_geo_candidates"] = [unconstrained_fixed_geos.model_copy()]
+      values["geo_eligibility_candidates"] = [
+          unconstrained_fixed_geos.model_copy()
+      ]
     else:
-      values["fixed_geo_candidates"] = [
+      values["geo_eligibility_candidates"] = [
           fixed_geos
           if fixed_geos is not None
           else unconstrained_fixed_geos.model_copy()
@@ -224,6 +281,7 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
       raise ValueError("n_cells must be greater than or equal to 2")
     return self
 
+  @pydantic.model_validator(mode="after")
   def check_n_geos_per_group_candidates_match_n_cells(
       self,
   ) -> "ExperimentDesignConstraints":
@@ -236,8 +294,8 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
     Returns:
         The ExperimentDesignConstraints object.
     """
-    if self.n_geos_per_group_candidates:
-      for candidate in self.n_geos_per_group_candidates:
+    for candidate in self.n_geos_per_group_candidates:
+      if candidate is not None:
         if len(candidate) != self.n_cells:
           raise ValueError(
               "The number of geos per group does not match the number of cells."
@@ -258,6 +316,16 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
             "The number of treatment arms in the geo eligibility does not match"
             " the number of cells."
         )
+    return self
+
+  @pydantic.model_validator(mode="after")
+  def check_metric_names_do_not_overlap(
+      self,
+  ) -> "ExperimentDesignSpec":
+    all_metrics = [self.primary_metric] + self.secondary_metrics
+    metric_names = [metric.name for metric in all_metrics]
+    if len(metric_names) != len(set(metric_names)):
+      raise ValueError("Metric names must be unique.")
     return self
 
 
@@ -288,10 +356,13 @@ class ExperimentDesign(pydantic.BaseModel):
     methodology: The methodology to use for the experiment.
     methodology_parameters: The parameters specific to the methodology.
     runtime_weeks: The number of weeks to run the experiment.
-    n_cells: The number of cells to use for the experiment.
-      This must be at least 2.
+    n_cells: The number of cells to use for the experiment. This must be at
+      least 2.
     alpha: The significance level for the experiment.
     alternative_hypothesis: The alternative hypothesis for the experiment.
+    geo_eligibility: The geo eligibility for the experiment. This is used to
+      specify which geos are eligible to be in which groups in the experiment.
+      If None, then all geos are eligible for all groups.
     n_geos_per_group: The number of geos per group. The first group will be the
       control group, and all subsequent groups will be the treatment groups.
       Defaults to None, which means it is flexible.
@@ -307,6 +378,7 @@ class ExperimentDesign(pydantic.BaseModel):
   n_cells: int = 2
   alpha: float = 0.1
   alternative_hypothesis: str = "two-sided"
+  geo_eligibility: GeoEligibility = None
   methodology_parameters: dict[str, Any] = {}
 
   # The design id is autogenerated for a new design.
@@ -335,22 +407,20 @@ class ExperimentDesign(pydantic.BaseModel):
 
   @pydantic.field_validator("primary_metric", mode="before")
   @classmethod
-  def cast_metric(cls, metric: Metric | str) -> Metric:
+  def cast_primary_metric(cls, metric: Metric | str) -> Metric:
     if isinstance(metric, str):
-      return geoflex.metrics.Metric(name=metric)
+      return Metric(name=metric)
     return metric
 
   @pydantic.field_validator("secondary_metrics", mode="before")
   @classmethod
-  def cast_metrics(cls, metrics: list[Metric | str]) -> list[Metric]:
+  def cast_secondary_metrics(cls, metrics: list[Metric | str]) -> list[Metric]:
     return [
-        geoflex.metrics.Metric(name=metric)
-        if isinstance(metric, str)
-        else metric
+        Metric(name=metric) if isinstance(metric, str) else metric
         for metric in metrics
     ]
 
-  @pydantic.field_validator(mode="after")
+  @pydantic.model_validator(mode="after")
   def check_n_geos_per_group_matches_n_cells(self) -> "ExperimentDesign":
     """Checks that the number of geos per group matches the number of cells."""
     if self.n_geos_per_group is not None:
@@ -361,7 +431,7 @@ class ExperimentDesign(pydantic.BaseModel):
         )
     return self
 
-  @pydantic.field_validator(mode="after")
+  @pydantic.model_validator(mode="after")
   def check_geoassignment_matches_n_cells(self) -> "ExperimentDesign":
     """Checks if number of treatment arms in geoassignment matches n_cells."""
     if self.geo_assignment is not None:
@@ -375,4 +445,29 @@ class ExperimentDesign(pydantic.BaseModel):
             f"in geo_assignment (based on n_cells={self.n_cells}), "
             f"but found {num_treatment_arms_in_assignment}."
         )
+    return self
+
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def cast_geo_eligibility(cls, values: dict[str, Any]) -> dict[str, Any]:
+    raw_geo_eligibility = values.get("geo_eligibility")
+    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
+    n_treatment_groups = n_cells - 1
+
+    if raw_geo_eligibility is None:
+      values["geo_eligibility"] = GeoEligibility(
+          control=[],
+          treatment=[set()] * n_treatment_groups,
+          exclude=[],
+      )
+    return values
+
+  @pydantic.model_validator(mode="after")
+  def check_metric_names_do_not_overlap(
+      self,
+  ) -> "ExperimentDesign":
+    all_metrics = [self.primary_metric] + self.secondary_metrics
+    metric_names = [metric.name for metric in all_metrics]
+    if len(metric_names) != len(set(metric_names)):
+      raise ValueError("Metric names must be unique.")
     return self

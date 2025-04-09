@@ -12,9 +12,7 @@ import pydantic
 
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
-ExperimentDesignConstraints = (
-    geoflex.experiment_design.ExperimentDesignConstraints
-)
+ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesignEvaluation = (
     geoflex.experiment_design.ExperimentDesignEvaluation
@@ -69,20 +67,20 @@ class RCT(_base.Methodology):
     if design.methodology != "RCT":
       return False
 
-    has_fixed_geos = design.fixed_geos is not None and (
-        design.fixed_geos.control or any(design.fixed_geos.treatment)
+    has_geo_eligibility_constraints = design.geo_eligibility is not None and (
+        design.geo_eligibility.control or any(design.geo_eligibility.treatment)
     )
-    return not has_fixed_geos
+    return not has_geo_eligibility_constraints
 
   def suggest_methodology_parameters(
       self,
-      design_constraints: ExperimentDesignConstraints,
+      design_spec: ExperimentDesignSpec,
       trial: op.Trial,
   ) -> dict[str, Any]:
     """Suggests the parameters for this trial.
 
     Args:
-      design_constraints: The design constraints for the experiment.
+      design_spec: The design specification for the experiment.
       trial: The Optuna trial to use to suggest the parameters.
 
     Returns:
@@ -90,7 +88,7 @@ class RCT(_base.Methodology):
     """
     parameters = {}
     parameters["trimming_quantile"] = trial.suggest_categorical(
-        "trimming_quantile", design_constraints.trimming_quantile_candidates
+        "trimming_quantile", design_spec.trimming_quantile_candidates
     )
     return parameters
 
@@ -117,10 +115,10 @@ class RCT(_base.Methodology):
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
-    if experiment_design.fixed_geos is None:
+    if experiment_design.geo_eligibility is None:
       exclude_geos = set()
     else:
-      exclude_geos = set(experiment_design.fixed_geos.exclude)
+      exclude_geos = set(experiment_design.geo_eligibility.exclude)
     all_geos = set(historical_data.geos) - exclude_geos
 
     if experiment_design.n_geos_per_group is None:

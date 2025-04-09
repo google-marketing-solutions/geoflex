@@ -10,9 +10,7 @@ import pandas as pd
 
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
-ExperimentDesignConstraints = (
-    geoflex.experiment_design.ExperimentDesignConstraints
-)
+ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesignEvaluation = (
     geoflex.experiment_design.ExperimentDesignEvaluation
@@ -43,12 +41,12 @@ class Methodology(abc.ABC):
   @abc.abstractmethod
   def suggest_methodology_parameters(
       self,
-      design_constraints: ExperimentDesignConstraints,
+      design_spec: ExperimentDesignSpec,
       trial: op.Trial,
   ) -> dict[str, Any]:
     """Suggests the parameters for this trial.
 
-    It must consider the design constraints, so that the parameters are within
+    It must consider the design specification, so that the parameters are within
     the allowed ranges and are compatible with each other.
 
     This should only add the parameters that are specific to this methodology,
@@ -60,7 +58,7 @@ class Methodology(abc.ABC):
     https://oss-vizier.readthedocs.io/en/latest/guides/user/search_spaces.html
 
     Args:
-      design_constraints: The design constraints for the experiment.
+      design_spec: The design specification for the experiment.
       trial: The Optuna trial to use to suggest the parameters.
 
     Returns:
