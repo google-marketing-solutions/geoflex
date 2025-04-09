@@ -149,7 +149,8 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
       use for the experiment. The trimming quantile is used to trim the tails of
       the distribution of the response metric before calculating the confidence
       interval. Defaults to [0.0] (no trimming).
-    geo_eligibility: The geo eligibility constraints for the experiment.
+    geo_eligibility_candidates: The geo eligibility candidates for the
+      experiment.
     treatment_geos_range: (Optional) Min/max number of geos per treatment group.
     control_geos_range: (Optional) Min/max number of geos for the control group.
   """
@@ -159,11 +160,37 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
   n_cells: int = 2
   n_geos_per_group_candidates: list[list[int]] | None = None
   trimming_quantile_candidates: list[float] = [0.0]
-  geo_eligibility: GeoEligibility | None = None
+  geo_eligibility_candidates: list[GeoEligibility] = [None]
   treatment_geos_range: tuple[int, int] | None = None
   control_geos_range: tuple[int, int] | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def cast_geo_eligibility_candidates(
+      cls, values: dict[str, Any]
+  ) -> dict[str, Any]:
+    raw_geo_eligibility_candidates = values.get("geo_eligibility_candidates")
+    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
+    n_treatment_groups = n_cells - 1
+
+    unconstrained_fixed_geos = GeoEligibility(
+        control=[],
+        treatment=[set()] * n_treatment_groups,
+        exclude=[],
+    )
+
+    if raw_geo_eligibility_candidates is None:
+      values["fixed_geo_candidates"] = [unconstrained_fixed_geos.model_copy()]
+    else:
+      values["fixed_geo_candidates"] = [
+          fixed_geos
+          if fixed_geos is not None
+          else unconstrained_fixed_geos.model_copy()
+          for fixed_geos in raw_geo_eligibility_candidates
+      ]
+    return values
 
   @pydantic.model_validator(mode="after")
   def check_max_runtime_greater_than_min_runtime(
@@ -222,8 +249,8 @@ class ExperimentDesignConstraints(pydantic.BaseModel):
       self
   ) -> "ExperimentDesignConstraints":
     """Checks if number of treamtment arms matches n_cells."""
-    if self.geo_eligibility is not None:
-      num_treatment_arms_in_geoeligibility = len(self.geo_eligibility.treatment)
+    for geo_eligibility in self.geo_eligibility_candidates:
+      num_treatment_arms_in_geoeligibility = len(geo_eligibility.treatment)
       expected_num_treatment_arms = self.n_cells - 1
 
       if num_treatment_arms_in_geoeligibility != expected_num_treatment_arms:

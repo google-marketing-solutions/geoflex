@@ -4,6 +4,7 @@ from geoflex import data
 from geoflex import experiment
 from geoflex import experiment_design
 from geoflex import methodology
+from geoflex import metrics
 
 ExperimentDesignConstraints = experiment_design.ExperimentDesignConstraints
 Methodology = methodology.Methodology

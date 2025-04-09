@@ -67,10 +67,14 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
             id="n_geos_per_group_does_not_match_n_cells",
         ),
         pytest.param(
-            {"n_cells": 3,
-             "geo_eligibility": GeoEligibility(treatment=[{"US"}])},
+            {
+                "n_cells": 3,
+                "geo_eligibility_candidates": [
+                    GeoEligibility(treatment=[{"US"}])
+                ],
+            },
             id="geo_eligibility_does_not_match_n_cells",
-        )
+        ),
     ],
 )
 def test_constraints_raise_exception_inputs_are_invalid(invalid_args):
@@ -84,14 +88,14 @@ def test_constraints_raise_exception_inputs_are_invalid(invalid_args):
     "valid_args",
     [
         {
-            "fixed_geos": GeoAssignment(
-                treatment=[["US", "UK"]], control=["CA", "AU"]
-            ),
+            "geo_eligibility_candidates": [
+                GeoAssignment(treatment=[["US", "UK"]], control=["CA", "AU"])
+            ],
             "max_runtime_weeks": 4,
             "min_runtime_weeks": 2,
         },
         {},
-        {"fixed_geos": None},
+        {"geo_eligibility_candidates": [None]},
         {"n_geos_per_group_candidates": [[2, 2], [1, 5], None]},
         {"trimming_quantile_candidates": [0.0, 0.5]},
         {"n_cells": 3},
@@ -121,7 +125,7 @@ def test_experiment_design_sets_pretest_weeks_correctly(
       methodology_parameters=methodology_parameters,
       runtime_weeks=4,
       alpha=0.1,
-      fixed_geos=None,
+      geo_eligibility_candidates=[None],
   )
   assert design.pretest_weeks == expected_pretest_weeks
 
@@ -135,7 +139,7 @@ def test_metric_names_must_be_unique():
         methodology="test_methodology",
         runtime_weeks=4,
         alpha=0.1,
-        fixed_geos=None,
+        geo_eligibility_candidates=[None],
     )
 
 
