@@ -1,7 +1,9 @@
 """Tests for the data module."""
 
+import datetime as dt
 import re
 import geoflex.data
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -10,6 +12,12 @@ import pytest
 # pylint: disable=invalid-name
 
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
+ExperimentBudget = geoflex.experiment_design.ExperimentBudget
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
+ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+ExperimentType = geoflex.experiment_design.ExperimentType
+GeoAssignment = geoflex.experiment_design.GeoAssignment
+Metric = geoflex.metrics.Metric
 
 
 @pytest.fixture(name="raw_data")
@@ -289,3 +297,406 @@ def test_geo_performance_dataset_from_pivoted_data_returns_correct_data(
   pd.testing.assert_frame_equal(
       geo_dataset.parsed_data, expected_parsed_data, check_like=True
   )
+
+
+@pytest.fixture(name="default_design")
+def default_design_fixture():
+  """Fixture for a default experiment design."""
+  return ExperimentDesign(
+      geo_assignment=GeoAssignment(
+          treatment=[["US", "CA"], ["DE", "FR"]],
+          control=["UK", "NL"],
+      ),
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+          value=0.1,
+      ),
+      primary_metric=Metric(
+          name="ROAS",
+          column="revenue",
+          cost_column="cost",
+          metric_per_cost=True,
+      ),
+      secondary_metrics=[
+          Metric(
+              name="Campaign ROAS",
+              column="revenue",
+              cost_column="campaign_cost",
+              metric_per_cost=True,
+          )
+      ],
+      experiment_type=ExperimentType.HEAVY_UP,
+      runtime_weeks=4,
+      methodology="test_methodology",
+      n_cells=3,
+  )
+
+
+@pytest.fixture(name="experiment_start_date")
+def default_start_date_fixture():
+  """Fixture for a default experiment start date."""
+  return pd.to_datetime("2024-02-01")
+
+
+@pytest.fixture(name="big_raw_data")
+def big_raw_data_fixture():
+  """Fixture for a big raw data."""
+  rng = np.random.default_rng(seed=42)
+  data = pd.DataFrame({
+      "geo_id": (
+          ["US"] * 100
+          + ["UK"] * 100
+          + ["NL"] * 100
+          + ["CA"] * 100
+          + ["DE"] * 100
+          + ["FR"] * 100
+      ),
+      "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 6,
+      "revenue": rng.random(size=600),
+      "campaign_cost": rng.random(size=600),
+      "cost": rng.random(size=600),
+  })
+  data["date"] = data["date"].dt.strftime("%Y-%m-%d")
+  return data
+
+
+@pytest.fixture(name="big_raw_data_zero_costs")
+def big_raw_data_fixture_zero_costs(big_raw_data):
+  """Fixture for a big raw data with zero costs for testing hold back."""
+  big_raw_data_zero_cost = big_raw_data.copy()
+  big_raw_data_zero_cost["cost"] = 0.0
+  big_raw_data_zero_cost["campaign_cost"] = 0.0
+  return big_raw_data_zero_cost
+
+
+def test_simulate_experiment_raises_error_for_non_zero_treatment_effect(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  with pytest.raises(NotImplementedError):
+    geo_dataset.simulate_experiment(
+        experiment_start_date=experiment_start_date,
+        design=default_design,
+        treatment_effect_size=0.1,
+    )
+
+
+def test_simulate_experiment_raises_error_for_hold_back_experiment_with_cost_metric(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.model_copy(
+      update=dict(
+          experiment_type=ExperimentType.HOLD_BACK,
+      )
+  )
+  with pytest.raises(ValueError):
+    geo_dataset.simulate_experiment(
+        experiment_start_date=experiment_start_date,
+        design=design,
+        treatment_effect_size=0.0,
+    )
+
+
+def test_simulate_experiment_returns_correct_data_for_heavy_up_percentage_change(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=default_design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=default_design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA", "DE", "FR"]) & is_experiment_date,
+      ["cost", "campaign_cost"],
+  ] *= 1.1
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, expected_data, check_like=True
+  )
+
+
+def test_simulate_experiment_returns_correct_data_for_heavy_up_total_budget(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.model_copy(
+      update=dict(
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+              value=100,
+          ),
+      )
+  )
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  cost_diff = (
+      simulated_dataset.parsed_data[["cost", "campaign_cost"]]
+      - expected_data[["cost", "campaign_cost"]]
+  )
+  runtime_cost_diff = cost_diff.loc[is_experiment_date]
+  non_runtime_cost_diff = cost_diff.loc[~is_experiment_date]
+
+  # Assert that the cost is unchanhged outside of the experiment.
+  assert (non_runtime_cost_diff == 0.0).all().all()
+
+  # Assert that the total cost equals the expected budget per cell.
+  total_cost_cell_1 = runtime_cost_diff.loc[
+      expected_data.geo_id.isin(["US", "CA"])
+  ].sum()
+  assert np.isclose(total_cost_cell_1["cost"], 100)
+  assert np.isclose(total_cost_cell_1["campaign_cost"], 100)
+  total_cost_cell_2 = runtime_cost_diff.loc[
+      expected_data.geo_id.isin(["DE", "FR"])
+  ].sum()
+  assert np.isclose(total_cost_cell_2["cost"], 100)
+  assert np.isclose(total_cost_cell_2["campaign_cost"], 100)
+
+  # Assert that the cost is spread evenly per day
+  for geo_id in ["US", "CA", "DE", "FR"]:
+    cost_diff_per_day = runtime_cost_diff.loc[expected_data.geo_id == geo_id]
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["cost"].values,
+        cost_diff_per_day["cost"].values[0],
+        decimal=7,
+    )
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["campaign_cost"].values,
+        cost_diff_per_day["campaign_cost"].values[0],
+        decimal=7,
+    )
+
+
+def test_simulate_experiment_returns_correct_data_for_heavy_up_daily_budget(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.model_copy(
+      update=dict(
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.DAILY_BUDGET,
+              value=100,
+          ),
+      )
+  )
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  cost_diff = (
+      simulated_dataset.parsed_data[["cost", "campaign_cost"]]
+      - expected_data[["cost", "campaign_cost"]]
+  )
+  runtime_cost_diff = cost_diff.loc[is_experiment_date].copy()
+  non_runtime_cost_diff = cost_diff.loc[~is_experiment_date].copy()
+
+  # Assert that the cost is unchanhged outside of the experiment.
+  assert (non_runtime_cost_diff == 0.0).all().all()
+
+  # Assert that the cost per day is equal to the expected daily budget.
+  runtime_cost_diff["date"] = expected_data["date"].copy()
+  for geo_ids in [["US", "CA"], ["DE", "FR"]]:
+    cost_diff_per_day = (
+        runtime_cost_diff.loc[expected_data.geo_id.isin(geo_ids)]
+        .groupby("date")[["cost", "campaign_cost"]]
+        .sum()
+    )
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["cost"].values,
+        100.0,
+        decimal=7,
+    )
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["campaign_cost"].values,
+        100.0,
+        decimal=7,
+    )
+
+
+def test_simulate_experiment_returns_correct_data_for_go_dark(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.model_copy(
+      update=dict(
+          experiment_type=ExperimentType.GO_DARK,
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+              value=-0.1,
+          ),
+      )
+  )
+
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA", "DE", "FR"]) & is_experiment_date,
+      ["cost", "campaign_cost"],
+  ] *= 0.9
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, expected_data, check_like=True
+  )
+
+
+def test_simulate_experiment_returns_correct_data_for_hold_back_total_budget(
+    big_raw_data_zero_costs, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data_zero_costs)
+  design = default_design.model_copy(
+      update=dict(
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+              value=100,
+          ),
+          experiment_type=ExperimentType.HOLD_BACK,
+      )
+  )
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  cost_diff = (
+      simulated_dataset.parsed_data[["cost", "campaign_cost"]]
+      - expected_data[["cost", "campaign_cost"]]
+  )
+  runtime_cost_diff = cost_diff.loc[is_experiment_date]
+  non_runtime_cost_diff = cost_diff.loc[~is_experiment_date]
+
+  # Assert that the cost is unchanhged outside of the experiment.
+  assert (non_runtime_cost_diff == 0.0).all().all()
+
+  # Assert that the total cost equals the expected budget per cell.
+  total_cost_cell_1 = runtime_cost_diff.loc[
+      expected_data.geo_id.isin(["US", "CA"])
+  ].sum()
+  assert np.isclose(total_cost_cell_1["cost"], 100)
+  assert np.isclose(total_cost_cell_1["campaign_cost"], 100)
+  total_cost_cell_2 = runtime_cost_diff.loc[
+      expected_data.geo_id.isin(["DE", "FR"])
+  ].sum()
+  assert np.isclose(total_cost_cell_2["cost"], 100)
+  assert np.isclose(total_cost_cell_2["campaign_cost"], 100)
+
+  # Assert that the cost is spread evenly per day
+  for geo_id in ["US", "CA", "DE", "FR"]:
+    cost_diff_per_day = runtime_cost_diff.loc[expected_data.geo_id == geo_id]
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["cost"].values,
+        cost_diff_per_day["cost"].values[0],
+        decimal=7,
+    )
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["campaign_cost"].values,
+        cost_diff_per_day["campaign_cost"].values[0],
+        decimal=7,
+    )
+
+
+def test_simulate_experiment_returns_correct_data_for_hold_back_daily_budget(
+    big_raw_data_zero_costs, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data_zero_costs)
+  design = default_design.model_copy(
+      update=dict(
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.DAILY_BUDGET,
+              value=100,
+          ),
+          experiment_type=ExperimentType.HOLD_BACK,
+      )
+  )
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  cost_diff = (
+      simulated_dataset.parsed_data[["cost", "campaign_cost"]]
+      - expected_data[["cost", "campaign_cost"]]
+  )
+  runtime_cost_diff = cost_diff.loc[is_experiment_date].copy()
+  non_runtime_cost_diff = cost_diff.loc[~is_experiment_date].copy()
+
+  # Assert that the cost is unchanhged outside of the experiment.
+  assert (non_runtime_cost_diff == 0.0).all().all()
+
+  # Assert that the cost per day is equal to the expected daily budget.
+  runtime_cost_diff["date"] = expected_data["date"].copy()
+  for geo_ids in [["US", "CA"], ["DE", "FR"]]:
+    cost_diff_per_day = (
+        runtime_cost_diff.loc[expected_data.geo_id.isin(geo_ids)]
+        .groupby("date")[["cost", "campaign_cost"]]
+        .sum()
+    )
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["cost"].values,
+        100.0,
+        decimal=7,
+    )
+    np.testing.assert_array_almost_equal(
+        cost_diff_per_day["campaign_cost"].values,
+        100.0,
+        decimal=7,
+    )

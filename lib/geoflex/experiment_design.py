@@ -547,11 +547,6 @@ class ExperimentDesign(pydantic.BaseModel):
   model_config = pydantic.ConfigDict(extra="forbid")
 
   @property
-  def n_cells(self) -> int:
-    """The number of cells to use for the experiment."""
-    return self.constraints.n_cells
-
-  @property
   def pretest_weeks(self) -> int:
     """The number of weeks in the pretest period.
 

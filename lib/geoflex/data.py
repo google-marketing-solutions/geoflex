@@ -6,8 +6,14 @@ import functools
 import itertools
 import warnings
 
+import geoflex.experiment_design
+import numpy as np
 import pandas as pd
 import pydantic
+
+ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
+ExperimentType = geoflex.experiment_design.ExperimentType
 
 
 class GeoPerformanceDataset(pydantic.BaseModel):
@@ -270,4 +276,146 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         data=melted_data,
         geo_id_column=geo_id_column,
         date_column=date_column,
+    )
+
+  def simulate_experiment(
+      self,
+      experiment_start_date: dt.date,
+      design: ExperimentDesign,
+      treatment_effect_size: float = 0.0,
+  ) -> "GeoPerformanceDataset":
+    """Simulates a geo experiment in the data.
+
+    This applies the experiment budget, as specified in the experiment design,
+    to the cost metrics in the data. For now it only supports A/A simulations
+    with no treatment effect.
+
+    Args:
+      experiment_start_date: The start date of the experiment. This is the date
+        that the treatment geos were first exposed to the treatment.
+      design: The experiment design.
+      treatment_effect_size: The treatment effect size. This is the percentage
+        change in the response metric that the treatment geos will experience
+        compared to the control geos in all response metrics.
+
+    Returns:
+      The simulated experiment data.
+
+    Raises:
+      NotImplementedError: If the treatment effect size is not 0.0.
+      ValueError: If the experiment type is hold back and the cost metric is
+        not 0.0.
+    """
+    if not np.isclose(treatment_effect_size, 0.0):
+      raise NotImplementedError(
+          "Simulate experiment is currently only supported for A/A simulations"
+          " with no treatment effect."
+      )
+
+    # Get all cost metrics.
+    all_metrics = [design.primary_metric] + design.secondary_metrics
+    cost_columns = set(
+        [metric.cost_column for metric in all_metrics if metric.cost_column]
+    )
+
+    data = self.pivoted_data.copy()
+    experiment_end_date = experiment_start_date + dt.timedelta(
+        weeks=design.runtime_weeks
+    )
+    treatment_dates_mask = (data.index.values >= experiment_start_date) & (
+        data.index.values < experiment_end_date
+    )
+
+    is_percent_change = (
+        design.experiment_budget.budget_type
+        == ExperimentBudgetType.PERCENTAGE_CHANGE
+    )
+    is_total_budget = (
+        design.experiment_budget.budget_type
+        == ExperimentBudgetType.TOTAL_BUDGET
+    )
+    is_heavy_up = design.experiment_type == ExperimentType.HEAVY_UP
+    is_hold_back = design.experiment_type == ExperimentType.HOLD_BACK
+
+    # Apply the experiment budget to the cost metrics.
+    for cost_metric in cost_columns:
+      has_cost = data[cost_metric].sum().sum() > 0
+      if is_hold_back and has_cost:
+        raise ValueError(
+            "Cost metric found in a hold back experiment. This is not"
+            " supported."
+        )
+      for treatment_cell in design.geo_assignment.treatment:
+        for treatment_geo in treatment_cell:
+          if is_percent_change:
+            # Simply apply the percentage change
+            data.loc[treatment_dates_mask, (cost_metric, treatment_geo)] *= (
+                1 + design.experiment_budget.value
+            )
+            continue
+
+          budget_value = design.experiment_budget.value
+          if is_total_budget:
+            # Total budget is divided across runtime
+            budget_value /= design.runtime_weeks * 7
+
+          if is_heavy_up:
+            # For a heavy up experiment, the budget is shared proportional to
+            # the existing cost across geos.
+            total_cost = (
+                self.pivoted_data[cost_metric]
+                .loc[treatment_dates_mask, list(treatment_cell)]
+                .abs()  # Take abs() just in case there are negative costs.
+                .sum()
+                .sum()
+            )
+            geo_cost = (
+                self.pivoted_data[cost_metric]
+                .loc[treatment_dates_mask, treatment_geo]
+                .abs()  # Take abs() just in case there are negative costs.
+                .sum()
+            )
+
+            budget_frac = geo_cost / total_cost
+          elif is_hold_back:
+            # For a hold back experiment, the budget is shared proportional to
+            # the primary response metric across geos. This is because the
+            # cost does not exist yet for a hold back experiment.
+            total_primary_response = (
+                self.pivoted_data[design.primary_metric.column]
+                .loc[treatment_dates_mask, list(treatment_cell)]
+                .abs()  # Take abs() just in case there are negative responses.
+                .sum()
+                .sum()
+            )
+            geo_primary_response = (
+                self.pivoted_data[design.primary_metric.column]
+                .loc[treatment_dates_mask, treatment_geo]
+                .abs()  # Take abs() just in case there are negative responses.
+                .sum()
+            )
+            budget_frac = geo_primary_response / total_primary_response
+          else:
+            raise RuntimeError(  # pylint: disable=g-doc-exception
+                "This shouldn't have happened, but somehow got an experiment"
+                " type that is neither heavy up, hold back, but a budget that"
+                " is not a percentage change."
+            )
+
+          data.loc[treatment_dates_mask, (cost_metric, treatment_geo)] += (
+              budget_value * budget_frac
+          )
+
+          # Finally make sure the spend does not go negative for any geo
+          data.loc[treatment_dates_mask, (cost_metric, treatment_geo)] = (
+              data.loc[treatment_dates_mask, (cost_metric, treatment_geo)].clip(
+                  lower=0
+              )
+          )
+
+      # Create the runtime dataset and analyse it
+    return self.from_pivoted_data(
+        data,
+        geo_id_column=self.geo_id_column,
+        date_column=self.date_column,
     )
