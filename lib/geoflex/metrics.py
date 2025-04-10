@@ -56,6 +56,40 @@ class Metric(pydantic.BaseModel):
         )
     return self
 
+  def invert(self) -> "Metric":
+    """Converts a cost per metric to a metric per cost and vice versa.
+
+    This is used for power calculations of cost per metric metrics,
+    because in the null hypothesis the cost per metric is undefined (since the
+    metric incrementality is zero). Therefore we need to first invert it,
+    then calculate the power, and then invert it back.
+
+    Returns:
+      The inverted metric.
+
+    Raises:
+      ValueError: If the metric is not a metric per cost or a cost per metric.
+    """
+    inverted_suffix = " __INVERTED__"
+    if self.metric_per_cost or self.cost_per_metric:
+      if self.name.endswith(inverted_suffix):
+        new_name = self.name.removesuffix(inverted_suffix)
+      else:
+        new_name = self.name + inverted_suffix
+
+      return self.model_copy(
+          update={
+              "name": new_name,
+              "metric_per_cost": not self.metric_per_cost,
+              "cost_per_metric": not self.cost_per_metric,
+          }
+      )
+    else:
+      raise ValueError(
+          "Metric cannot be inverted because it is not a metric per cost or a"
+          " cost per metric."
+      )
+
 
 class ROAS(Metric):
   """The return of advertising spend."""

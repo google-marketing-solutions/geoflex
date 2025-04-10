@@ -94,3 +94,57 @@ def test_cost_column_must_be_set_if_metric_needs_cost(metric_cls, args):
   """Tests that cost column is set if metric is metric per cost or cost per metric."""
   with pytest.raises(ValueError):
     metric_cls(**args)
+
+
+def test_invert_metric_per_cost_round_trip():
+  """Tests that invert works for metric per cost."""
+  metric = geoflex.metrics.Metric(
+      name="test_metric",
+      metric_per_cost=True,
+      cost_column="cost",
+  )
+  inverted_metric = metric.invert()
+
+  expected_inverted_metric = geoflex.metrics.Metric(
+      name="test_metric __INVERTED__",
+      column="test_metric",
+      metric_per_cost=False,
+      cost_per_metric=True,
+      cost_column="cost",
+  )
+  assert inverted_metric == expected_inverted_metric
+
+  twice_inverted_metric = inverted_metric.invert()
+  assert twice_inverted_metric == metric
+
+
+def test_invert_cost_per_metric_round_trip():
+  """Tests that invert works for metric per cost."""
+  metric = geoflex.metrics.Metric(
+      name="test_metric",
+      cost_per_metric=True,
+      cost_column="cost",
+  )
+  inverted_metric = metric.invert()
+
+  expected_inverted_metric = geoflex.metrics.Metric(
+      name="test_metric __INVERTED__",
+      column="test_metric",
+      metric_per_cost=True,
+      cost_per_metric=False,
+      cost_column="cost",
+  )
+  assert inverted_metric == expected_inverted_metric
+
+  twice_inverted_metric = inverted_metric.invert()
+  assert twice_inverted_metric == metric
+
+
+def test_invert_raises_error_for_non_cost_metric():
+  """Tests that invert raises an error for a non-cost metric."""
+  metric = geoflex.metrics.Metric(
+      name="test_metric",
+      column="test_column",
+  )
+  with pytest.raises(ValueError):
+    metric.invert()
