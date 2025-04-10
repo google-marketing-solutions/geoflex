@@ -1,13 +1,22 @@
 """The main experiment class for GeoFleX."""
 
+import functools
 from typing import Any
+import geoflex.bootstrap
 import geoflex.data
+import geoflex.evaluation
 import geoflex.experiment_design
 import pandas as pd
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
+MultivariateTimeseriesBootstrap = (
+    geoflex.bootstrap.MultivariateTimeseriesBootstrap
+)
+GeoAssignmentRepresentivenessScorer = (
+    geoflex.evaluation.GeoAssignmentRepresentivenessScorer
+)
 
 
 class Experiment:
@@ -18,6 +27,9 @@ class Experiment:
       name: str,
       historical_data: GeoPerformanceDataset,
       design_spec: ExperimentDesignSpec,
+      bootstrapper_seasons_per_block: int = 2,
+      bootstrapper_log_transform: bool = True,
+      bootstrapper_seasonality: int = 7,
   ):
     """Initializes the experiment.
 
@@ -27,12 +39,22 @@ class Experiment:
         from Google Drive, so it must be unique.
       historical_data: The historical data for the experiment.
       design_spec: The specification for the experiment.
+      bootstrapper_seasons_per_block: The number of seasons per block for the
+        bootstrapper.
+      bootstrapper_log_transform: Whether to log transform the data for the
+        bootstrapper. Only do this if all your metrics are non-negative.
+      bootstrapper_seasonality: The seasonality for the bootstrapper. Defaults
+        to 7 which assumes you have daily data with a weekly seasonality.
     """
     self.name = name
     self.historical_data = historical_data
     self.design_spec = design_spec
     self.runtime_data = None
     self.experiment_start_date = None
+
+    self.bootstrapper_seasons_per_block = bootstrapper_seasons_per_block
+    self.bootstrapper_log_transform = bootstrapper_log_transform
+    self.bootstrapper_seasonality = bootstrapper_seasonality
 
     self._drive_folder_url = None  # Will be set when saving to Google Drive.
     self.clear_designs()
@@ -84,6 +106,37 @@ class Experiment:
   def n_experiment_designs(self) -> int:
     """Returns the number of experiment designs."""
     return len(self._eligible_experiment_design_results)
+
+  @functools.cached_property
+  def bootstrapper(self) -> MultivariateTimeseriesBootstrap:
+    """The bootstrapper for the experiment.
+
+    This will return bootstrapped samples of the historical data, which can be
+    used to estimate the standard error of the primary metric.
+    """
+    bootstrapper = MultivariateTimeseriesBootstrap(
+        log_transform=self.bootstrapper_log_transform,
+        seasonality=self.bootstrapper_seasonality,
+        seasons_per_block=self.bootstrapper_seasons_per_block,
+    )
+    bootstrapper.fit(
+        self.historical_data.pivoted_data,
+        seasons_per_filt=self.bootstrapper_seasons_per_block,
+    )
+    return bootstrapper
+
+  @functools.cached_property
+  def representativeness_scorer(self) -> GeoAssignmentRepresentivenessScorer:
+    """The representativeness scorer for the experiment.
+
+    This evaluates how representative evaluate experiment designs if the
+    effect scope is "all_geos".
+    """
+    return GeoAssignmentRepresentivenessScorer(
+        historical_data=self.historical_data.parsed_data,
+        geo_column_name=self.historical_data.geo_id_column,
+        geos=self.historical_data.geos,
+    )
 
   def explore_experiment_designs(self, max_trials: int = 100) -> None:
     """Explores how the different eligible experiment designs perform.

@@ -1,8 +1,20 @@
 """Tests for the experiment module."""
 
+import geoflex.data
 import geoflex.experiment
+import geoflex.experiment_design
+import geoflex.metrics
 import mock
+import numpy as np
 import pandas as pd
+import pytest
+
+ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
+ExperimentType = geoflex.experiment_design.ExperimentType
+GeoEligibility = geoflex.experiment_design.GeoEligibility
+ExperimentBudget = geoflex.experiment_design.ExperimentBudget
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
+EffectScope = geoflex.experiment_design.EffectScope
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -100,3 +112,82 @@ def test_experiment_get_all_raw_eval_metrics():
       expected_all_raw_eval_metrics,
       check_like=True,
   )
+
+
+@pytest.fixture(name="historical_data")
+def mock_historical_data_fixture():
+  """Fixture for a mock historical data."""
+  rng = np.random.default_rng(seed=42)
+  data = pd.DataFrame({
+      "geo_id": ["US"] * 100 + ["CA"] * 100 + ["DE"] * 100 + ["FR"] * 100,
+      "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 4,
+      "revenue": rng.random(size=400),
+      "cost": rng.random(size=400),
+      "conversions": rng.random(size=400),
+  })
+  data["date"] = data["date"].dt.strftime("%Y-%m-%d")
+
+  return geoflex.data.GeoPerformanceDataset(data=data)
+
+
+@pytest.fixture(name="default_design_spec")
+def mock_design_spec_fixture():
+  """Fixture for a mock design spec."""
+  return ExperimentDesignSpec(
+      experiment_type=ExperimentType.GO_DARK,
+      primary_metric="revenue",
+      secondary_metrics=[
+          "conversions",
+          geoflex.metrics.ROAS(),
+          geoflex.metrics.CPA(),
+      ],
+      experiment_budget_candidates=[
+          ExperimentBudget(
+              value=-1.0, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
+          ),
+          ExperimentBudget(
+              value=-0.5, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
+          ),
+      ],
+      eligible_methodologies=["RCT"],
+      max_runtime_weeks=4,
+      min_runtime_weeks=2,
+      n_cells=3,
+      geo_eligibility_candidates=[
+          None,
+          GeoEligibility(control=["geo_1"], treatment=[[], []], exclude=[]),
+          GeoEligibility(control=[], treatment=[[], []], exclude=["geo_1"]),
+      ],
+      effect_scope=EffectScope.ALL_GEOS,
+  )
+
+
+def test_experiment_bootstrapper_is_initialized_correctly(
+    historical_data, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+  assert experiment.bootstrapper.log_transform
+  assert experiment.bootstrapper.seasonality == 7
+  assert experiment.bootstrapper.seasons_per_block == 2
+
+
+def test_experiment_representativeness_scorer_is_initialized_correctly(
+    historical_data, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+  assert experiment.representativeness_scorer.historical_data.equals(
+      historical_data.parsed_data
+  )
+  assert (
+      experiment.representativeness_scorer.geo_column_name
+      == historical_data.geo_id_column
+  )
+  assert experiment.representativeness_scorer.geos == historical_data.geos

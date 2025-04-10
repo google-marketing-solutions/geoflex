@@ -69,7 +69,7 @@ class GeoAssignmentRepresentivenessScorer:
         If None, the full data is used.
     """
     self.historical_data = historical_data
-    self.sample_column_name = geo_column_name
+    self.geo_column_name = geo_column_name
     self.silhouette_sample_size = silhouette_sample_size
     self.geos = geos
 
@@ -86,14 +86,14 @@ class GeoAssignmentRepresentivenessScorer:
         if i < j:
           x = (
               self.historical_data.loc[
-                  self.historical_data[self.sample_column_name] == geo_i
+                  self.historical_data[self.geo_column_name] == geo_i
               ]
               .select_dtypes("number")
               .values
           )
           y = (
               self.historical_data.loc[
-                  self.historical_data[self.sample_column_name] == geo_j
+                  self.historical_data[self.geo_column_name] == geo_j
               ]
               .select_dtypes("number")
               .values
