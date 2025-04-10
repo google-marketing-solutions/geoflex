@@ -1,7 +1,9 @@
 """The main experiment class for GeoFleX."""
 
+from typing import Any
 import geoflex.data
 import geoflex.experiment_design
+import pandas as pd
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
@@ -33,8 +35,55 @@ class Experiment:
     self.experiment_start_date = None
 
     self._drive_folder_url = None  # Will be set when saving to Google Drive.
-    self._eligible_experiment_designs = {}  # Maps design_id to ExperimentDesign
+    self.clear_designs()
+
+  def clear_designs(self) -> None:
+    """Clears the designs."""
+    self._eligible_experiment_design_results = {}
     self._selected_design_id = None
+
+  def record_design(
+      self,
+      design: ExperimentDesign,
+      raw_eval_metrics: pd.DataFrame,
+      primary_metric_standard_error: float,
+      representiveness_score: float,
+  ) -> None:
+    """Records the design and its evaluation results.
+
+    Args:
+      design: The experiment design.
+      raw_eval_metrics: The raw evaluation metrics for the design.
+      primary_metric_standard_error: The standard error of the primary metric.
+      representiveness_score: The representiveness score of the design.
+    """
+    self._eligible_experiment_design_results[design.design_id] = {
+        "design": design,
+        "raw_eval_metrics": raw_eval_metrics,
+        "representiveness_score": representiveness_score,
+        "primary_metric_standard_error": primary_metric_standard_error,
+    }
+    self._eligible_experiment_design_results[design.design_id][
+        "raw_eval_metrics"
+    ]["design_id"] = design.design_id
+
+  def get_experiment_design_results(self, design_id: str) -> dict[str, Any]:
+    """Returns the experiment design results for a given design_id."""
+    return self._eligible_experiment_design_results[design_id]
+
+  @property
+  def all_raw_eval_metrics(self) -> pd.DataFrame:
+    """Returns all raw evaluation metrics for all experiment designs."""
+    raw_eval_metrics_list = [
+        results["raw_eval_metrics"]
+        for results in self._eligible_experiment_design_results.values()
+    ]
+    return pd.concat(raw_eval_metrics_list, ignore_index=True)
+
+  @property
+  def n_experiment_designs(self) -> int:
+    """Returns the number of experiment designs."""
+    return len(self._eligible_experiment_design_results)
 
   def explore_experiment_designs(self, max_trials: int = 100) -> None:
     """Explores how the different eligible experiment designs perform.
@@ -67,9 +116,11 @@ class Experiment:
     """
     if self._selected_design_id is None:
       raise ValueError("No design has been selected.")
-    if self._selected_design_id not in self._eligible_experiment_designs:
+    if self._selected_design_id not in self._eligible_experiment_design_results:
       raise ValueError(f"Design {self._selected_design_id} does not exist.")
-    return self._eligible_experiment_designs[self._selected_design_id]
+    return self._eligible_experiment_design_results[self._selected_design_id][
+        "design"
+    ]
 
   def save_to_file(self, file_path: str) -> None:
     """Saves the experiment to a file."""
