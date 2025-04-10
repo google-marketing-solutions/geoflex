@@ -6,6 +6,7 @@ import geoflex.bootstrap
 import geoflex.data
 import geoflex.evaluation
 import geoflex.experiment_design
+import optuna as op
 import pandas as pd
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -137,6 +138,75 @@ class Experiment:
         geo_column_name=self.historical_data.geo_id_column,
         geos=self.historical_data.geos,
     )
+
+  def suggest_experiment_design(self, trial: op.Trial) -> ExperimentDesign:
+    """Suggests an experiment design for the given trial.
+
+    It will suggest experiment designs based on the experiment design spec.
+
+    Args:
+      trial: The Optuna trial to use to suggest the experiment design.
+
+    Returns:
+      The suggested experiment design.
+    """
+    runtime_weeks = trial.suggest_int(
+        "runtime_weeks",
+        self.design_spec.min_runtime_weeks,
+        self.design_spec.max_runtime_weeks,
+    )
+    methodology_name = trial.suggest_categorical(
+        "methodology", list(self.design_spec.eligible_methodologies)
+    )
+    geo_eligibility_id = trial.suggest_categorical(
+        "geo_eligibility_id",
+        list(range(len(self.design_spec.geo_eligibility_candidates))),
+    )
+    n_geos_per_group_id = trial.suggest_categorical(
+        "n_geos_per_group_id",
+        list(range(len(self.design_spec.n_geos_per_group_candidates))),
+    )
+    random_seed = trial.suggest_categorical(
+        "random_seed", self.design_spec.random_seeds
+    )
+    experiment_budget_id = trial.suggest_categorical(
+        "experiment_budget_id",
+        list(range(len(self.design_spec.experiment_budget_candidates))),
+    )
+
+    geo_eligibility = self.design_spec.geo_eligibility_candidates[
+        geo_eligibility_id
+    ]
+    n_geos_per_group = self.design_spec.n_geos_per_group_candidates[
+        n_geos_per_group_id
+    ]
+    experiment_budget = self.design_spec.experiment_budget_candidates[
+        experiment_budget_id
+    ]
+
+    methodology = geoflex.methodology.get_methodology(methodology_name)
+    methodology_parameters = methodology.suggest_methodology_parameters(
+        self.design_spec, trial
+    )
+
+    design = ExperimentDesign(
+        experiment_type=self.design_spec.experiment_type,
+        primary_metric=self.design_spec.primary_metric,
+        experiment_budget=experiment_budget,
+        secondary_metrics=self.design_spec.secondary_metrics,
+        methodology=methodology_name,
+        methodology_parameters=methodology_parameters,
+        runtime_weeks=runtime_weeks,
+        n_cells=self.design_spec.n_cells,
+        alpha=self.design_spec.alpha,
+        alternative_hypothesis=self.design_spec.alternative_hypothesis,
+        geo_eligibility=geo_eligibility,
+        n_geos_per_group=n_geos_per_group,
+        random_seed=random_seed,
+        effect_scope=self.design_spec.effect_scope,
+    )
+
+    return design
 
   def explore_experiment_designs(self, max_trials: int = 100) -> None:
     """Explores how the different eligible experiment designs perform.

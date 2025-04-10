@@ -6,6 +6,7 @@ import geoflex.experiment_design
 import geoflex.metrics
 import mock
 import numpy as np
+import optuna as op
 import pandas as pd
 import pytest
 
@@ -15,6 +16,7 @@ GeoEligibility = geoflex.experiment_design.GeoEligibility
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 EffectScope = geoflex.experiment_design.EffectScope
+ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -191,3 +193,57 @@ def test_experiment_representativeness_scorer_is_initialized_correctly(
       == historical_data.geo_id_column
   )
   assert experiment.representativeness_scorer.geos == historical_data.geos
+
+
+@pytest.fixture(name="mock_trial")
+def mock_trial_fixture():
+  """Fixture for a mock trial."""
+  study = op.create_study(direction="minimize")
+  trial = study.ask()
+  return trial
+
+
+def test_experiment_suggest_experiment_design_returns_correct_design(
+    historical_data, default_design_spec, mock_trial
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+  suggested_design = experiment.suggest_experiment_design(mock_trial)
+
+  assert isinstance(suggested_design, ExperimentDesign)
+  assert suggested_design.experiment_type == default_design_spec.experiment_type
+  assert suggested_design.primary_metric == default_design_spec.primary_metric
+  assert (
+      suggested_design.experiment_budget
+      in default_design_spec.experiment_budget_candidates
+  )
+  assert suggested_design.secondary_metrics == (
+      default_design_spec.secondary_metrics
+  )
+  assert (
+      suggested_design.methodology in default_design_spec.eligible_methodologies
+  )
+  assert isinstance(suggested_design.methodology_parameters, dict)
+  assert suggested_design.runtime_weeks in range(
+      default_design_spec.min_runtime_weeks,
+      default_design_spec.max_runtime_weeks + 1,
+  )
+  assert suggested_design.n_cells == default_design_spec.n_cells
+  assert suggested_design.alpha == default_design_spec.alpha
+  assert (
+      suggested_design.alternative_hypothesis
+      == default_design_spec.alternative_hypothesis
+  )
+  assert (
+      suggested_design.geo_eligibility
+      in default_design_spec.geo_eligibility_candidates
+  )
+  assert (
+      suggested_design.n_geos_per_group
+      in default_design_spec.n_geos_per_group_candidates
+  )
+  assert suggested_design.random_seed in default_design_spec.random_seeds
+  assert suggested_design.effect_scope == default_design_spec.effect_scope
