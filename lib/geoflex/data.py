@@ -76,8 +76,7 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     input_data[self.geo_id_column] = input_data[self.geo_id_column].astype(str)
 
     unique_geos = input_data[self.geo_id_column].unique().tolist()
-    unique_dates = pd.to_datetime(
-        input_data[self.date_column]).unique().tolist()
+    unique_dates = input_data[self.date_column].unique().tolist()
 
     if not unique_geos:
       raise ValueError("No unique geos found in the data.")
@@ -243,3 +242,32 @@ class GeoPerformanceDataset(pydantic.BaseModel):
 
     return self
 
+  @functools.cached_property
+  def pivoted_data(self) -> pd.DataFrame:
+    """Returns the data pivoted by geo and date."""
+    return pd.pivot_table(
+        self.parsed_data,
+        index=self.date_column,
+        columns=self.geo_id_column,
+    ).sort_index()
+
+  @classmethod
+  def from_pivoted_data(
+      cls,
+      pivoted_data: pd.DataFrame,
+      geo_id_column: str = "geo_id",
+      date_column: str = "date",
+  ) -> "GeoPerformanceDataset":
+    """Returns a GeoPerformanceDataset from a pivoted data frame."""
+    melted_data = (
+        pivoted_data.stack(level=geo_id_column, future_stack=True)
+        .reset_index()
+        .sort_values([date_column, geo_id_column])
+        .copy()
+    )
+    melted_data[date_column] = melted_data[date_column].dt.strftime("%Y-%m-%d")
+    return cls(
+        data=melted_data,
+        geo_id_column=geo_id_column,
+        date_column=date_column,
+    )

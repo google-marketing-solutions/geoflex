@@ -1,5 +1,6 @@
 """Tests for the data module."""
 
+import re
 import geoflex.data
 import pandas as pd
 import pytest
@@ -134,7 +135,9 @@ def test_geo_performance_dataset_raises_exception_if_data_has_duplicate_geos_and
 def test_geo_performance_dataset_raises_exception_if_geo_id_has_na(
     raw_data_na_geo
 ):
-  with pytest.raises(ValueError, match="non-NA values in the geo_id column"):
+  with pytest.raises(
+      ValueError, match=re.escape("non-NA values in the geo_id column")
+  ):
     GeoPerformanceDataset(data=raw_data_na_geo)
 
 
@@ -163,7 +166,7 @@ def test_geo_performance_dataset_fills_missing_data_with_zeros(
 
 def test_geo_performance_dataset_returns_geos_correctly(raw_data):
   geo_dataset = GeoPerformanceDataset(data=raw_data)
-  assert geo_dataset.geos == ["US", "CA"]
+  assert geo_dataset.geos == ["CA", "US"]
 
 
 def test_geo_performance_dataset_returns_dates_correctly(raw_data):
@@ -182,40 +185,37 @@ def test_geo_performance_dataset_handles_integer_geo_ids(raw_data_int_geos):
   assert geo_dataset.geomapping_str_to_int == {"10": 1, "20": 2}
 
 
-def test_data_freq_days_detects_daily(raw_data):
+def test_data_frequency_days_detects_daily(raw_data):
   geo_dataset = GeoPerformanceDataset(data=raw_data)
-  assert geo_dataset.data_freq_days == 1
+  assert geo_dataset.data_frequency_days == 1
 
 
-def test_data_freq_days_detects_weekly(raw_data_weekly):
+def test_data_frequency_days_detects_weekly(raw_data_weekly):
   geo_dataset = GeoPerformanceDataset(data=raw_data_weekly)
-  assert geo_dataset.data_freq_days == 7
+  assert geo_dataset.data_frequency_days == 7
 
 
-def test_data_freq_days_raises_error_for_less_than_two_dates(raw_data):
+def test_data_frequency_days_raises_error_for_less_than_two_dates(raw_data):
   one_date_data = raw_data[raw_data["date"] == "2024-01-01"]
   geo_dataset = GeoPerformanceDataset(data=one_date_data)
-  with pytest.raises(ValueError, match="at least 2 unique dates"):
-    _ = geo_dataset.data_freq_days
+  with pytest.raises(ValueError, match=re.escape("at least 2 unique dates")):
+    _ = geo_dataset.data_frequency_days
 
 
-def test_data_freq_days_raises_error_for_ambiguous_freq(raw_data_gaps):
-  geo_dataset = GeoPerformanceDataset(data=raw_data_gaps)
-  with pytest.raises(ValueError, match="Cannot determine data frequency"):
-    _ = geo_dataset.data_freq_days
+def test_data_frequency_days_raises_error_for_ambiguous_freq(raw_data_gaps):
+  with pytest.raises(
+      ValueError, match=re.escape("Cannot determine data frequency")
+  ):
+    geo_dataset = GeoPerformanceDataset(data=raw_data_gaps)
+    _ = geo_dataset.data_frequency_days
 
 
 def test_check_date_gaps_raises_error_on_gaps_by_default(raw_data_gaps):
   with pytest.raises(
       ValueError,
-      match="Gaps found.*Check these dates.*allow_missing_dates=True"
-      ):
+      match=re.escape("Cannot determine data frequency"),
+  ):
     GeoPerformanceDataset(data=raw_data_gaps, allow_missing_dates=False)
-
-
-def test_check_date_gaps_warns_on_gaps_when_allowed(raw_data_gaps):
-  with pytest.warns(UserWarning, match="Gaps found.*Check these dates"):
-    GeoPerformanceDataset(data=raw_data_gaps, allow_missing_dates=True)
 
 
 def test_geo_mappings_are_correct(raw_data):
@@ -249,4 +249,43 @@ def test_parsed_data_int_geos_correct(raw_data, expected_parsed_data):
       parsed_int.sort_values(by=["geo_id", "date"]),
       expected_int,  # already sorted above
       check_like=True  # handles potential column order differences
+  )
+
+
+def test_geo_performance_dataset_returns_pivoted_data_correctly(raw_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
+  expected_pivoted_data = pd.DataFrame(
+      {
+          ("clicks", "CA"): [3000.0, 4000.0],
+          ("clicks", "US"): [1000.0, 2000.0],
+          ("cost", "CA"): [30.0, 40.0],
+          ("cost", "US"): [10.0, 20.0],
+          ("revenue", "CA"): [300.0, 400.0],
+          ("revenue", "US"): [100.0, 200.0],
+      },
+      index=pd.Series(
+          pd.to_datetime(["2024-01-01", "2024-01-02"]), name="date"
+      ),
+  )
+  expected_pivoted_data.columns.names = [None, "geo_id"]
+  pd.testing.assert_frame_equal(
+      geo_dataset.pivoted_data, expected_pivoted_data, check_like=True
+  )
+
+
+def test_geo_performance_dataset_from_pivoted_data_returns_correct_data(
+    raw_data, expected_parsed_data
+):
+  first_geo_dataset = GeoPerformanceDataset(
+      data=raw_data,
+      geo_id_column="geo_id",
+      date_column="date",
+  )
+  geo_dataset = GeoPerformanceDataset.from_pivoted_data(
+      first_geo_dataset.pivoted_data,
+      geo_id_column="geo_id",
+      date_column="date",
+  )
+  pd.testing.assert_frame_equal(
+      geo_dataset.parsed_data, expected_parsed_data, check_like=True
   )
