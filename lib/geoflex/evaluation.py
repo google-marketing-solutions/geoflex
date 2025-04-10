@@ -4,6 +4,7 @@ import functools
 import dcor
 import numpy as np
 import pandas as pd
+from scipy import stats
 from sklearn.metrics import silhouette_score
 
 
@@ -175,3 +176,47 @@ class GeoAssignmentRepresentivenessScorer:
     else:
       pvalue = None
     return score, pvalue
+
+
+def calculate_minimum_detectable_effect_from_stats(
+    standard_error: float,
+    alternative: str = "two-sided",
+    power: float = 0.8,
+    alpha: float = 0.05,
+) -> float:
+  """Calculates the minimum detectable effect from the standard error.
+
+  The minimum detectable effect is the smallest true effect size that would
+  return a statistically significant result, at the specified alpha level
+  and with the specified alternative hypothesis, [power]% of the time.
+
+  The returned minimum detectable effect is always positive, even if the
+  alternative hypothesis is "less".
+
+  Args:
+    standard_error: The standard error of the test statistic.
+    alternative: The alternative hypothesis being tested, one of ['two-sided',
+      'greater', 'less'].
+    power: The desired statistical power, as a fraction. Defaults to 0.8, which
+      would mean a power of 80%.
+    alpha: The alpha level of the test, defaults to 0.05.
+
+  Returns:
+    The minimum detectable absolute effect size.
+
+  Raises:
+     ValueError: If the alternative is not one of ['two-sided', 'greater',
+      'less'].
+  """
+  if alternative == "two-sided":
+    z_alpha = stats.norm.ppf(q=1.0 - alpha / 2.0)
+  elif alternative in ["greater", "less"]:
+    z_alpha = stats.norm.ppf(q=1.0 - alpha)
+  else:
+    raise ValueError(
+        "Alternative must be one of ['two-sided', 'greater', 'less']"
+    )
+
+  z_power = stats.norm.ppf(power)
+
+  return standard_error * (z_alpha + z_power)

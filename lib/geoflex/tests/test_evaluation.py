@@ -128,3 +128,41 @@ def test_scorer_can_handle_assignment_with_excluded_geos(raw_data):
   result, _ = scorer(np.array([-1, 0, 1, 1]))
   assert result <= 1.0
   assert result >= -1.0
+
+
+def test_calculate_minimum_detectable_effect_from_stats_raises_error_for_invalid_alternative():
+  with pytest.raises(ValueError):
+    geoflex.evaluation.calculate_minimum_detectable_effect_from_stats(
+        standard_error=1.0,
+        alternative="invalid_alternative",
+    )
+
+
+@pytest.mark.parametrize(
+    "standard_error,alternative,power,alpha,expected_result",
+    [
+        (1.0, "two-sided", 0.8, 0.05, 2.801585218),
+        (1.0, "greater", 0.8, 0.05, 2.48647486),
+        (1.0, "less", 0.8, 0.05, 2.48647486),
+        (1.0, "two-sided", 0.9, 0.05, 3.24151555),
+        (1.0, "greater", 0.9, 0.05, 2.92640519),
+        (1.0, "less", 0.9, 0.05, 2.92640519),
+        (1.0, "two-sided", 0.8, 0.1, 2.486474860),
+        (1.0, "greater", 0.8, 0.1, 2.123172799),
+        (1.0, "less", 0.8, 0.1, 2.123172799),
+        (2.0, "two-sided", 0.8, 0.05, 5.603170436),
+        (2.0, "greater", 0.8, 0.05, 4.972949721),
+        (2.0, "less", 0.8, 0.05, 4.972949721),
+    ],
+)
+def test_calculate_minimum_detectable_effect_from_stats_returns_expected_values(
+    standard_error, alternative, power, alpha, expected_result
+):
+  result = geoflex.evaluation.calculate_minimum_detectable_effect_from_stats(
+      standard_error=standard_error,
+      alternative=alternative,
+      power=power,
+      alpha=alpha,
+  )
+  print(result, expected_result, np.isclose(result, expected_result))
+  assert np.isclose(result, expected_result)
