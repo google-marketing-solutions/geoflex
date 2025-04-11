@@ -15,5 +15,6 @@ Experiment = experiment.Experiment
 ExperimentDesign = experiment_design.ExperimentDesign
 ExperimentBudget = experiment_design.ExperimentBudget
 ExperimentBudgetType = experiment_design.ExperimentBudgetType
+EffectScope = experiment_design.EffectScope
 
 __version__ = "0.0.1"

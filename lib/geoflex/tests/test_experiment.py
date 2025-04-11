@@ -435,3 +435,159 @@ def test_explore_experiment_designs_records_design_results(
   )
 
   assert experiment.all_raw_eval_metrics["design_id"].nunique() == 3
+
+
+def test_get_all_design_summaries_returns_correct_data_relative_effects(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  experiment.explore_experiment_designs(
+      max_trials=3, simulations_per_trial=5, n_jobs=1
+  )
+  design_summaries = experiment.get_all_design_summaries(
+      target_power=0.8,
+      target_primary_metric_mde=None,
+      pareto_front_only=False,
+      include_design_parameters=False,
+      use_relative_effects_where_possible=True,
+  )
+
+  assert isinstance(design_summaries, pd.DataFrame)
+  assert design_summaries.index.names == ["design_id"]
+  assert design_summaries.dtypes.to_dict() == {
+      "MDE (CPA)": "float64",
+      "MDE (ROAS)": "float64",
+      "Relative MDE (conversions)": "float64",
+      "Relative MDE (revenue, primary metric)": "float64",
+      "all_checks_pass": "bool",
+      "failing_checks": "object",
+      "primary_metric_all_checks_pass": "bool",
+      "primary_metric_failing_checks": "object",
+      "primary_metric_standard_error": "float64",
+      "treatment_groups_representiveness_score": "float64",
+  }
+  assert len(design_summaries) == 3
+
+
+def test_get_all_design_summaries_returns_correct_data_absolute_effects(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  experiment.explore_experiment_designs(
+      max_trials=3, simulations_per_trial=5, n_jobs=1
+  )
+  design_summaries = experiment.get_all_design_summaries(
+      target_power=0.8,
+      target_primary_metric_mde=None,
+      pareto_front_only=False,
+      include_design_parameters=False,
+      use_relative_effects_where_possible=False,
+  )
+
+  assert isinstance(design_summaries, pd.DataFrame)
+  assert design_summaries.index.names == ["design_id"]
+  assert design_summaries.dtypes.to_dict() == {
+      "MDE (CPA)": "float64",
+      "MDE (ROAS)": "float64",
+      "MDE (conversions)": "float64",
+      "MDE (revenue, primary metric)": "float64",
+      "all_checks_pass": "bool",
+      "failing_checks": "object",
+      "primary_metric_all_checks_pass": "bool",
+      "primary_metric_failing_checks": "object",
+      "primary_metric_standard_error": "float64",
+      "treatment_groups_representiveness_score": "float64",
+  }
+  assert len(design_summaries) == 3
+
+
+def test_get_all_design_summaries_returns_correct_data_pareto_front_only(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  experiment.explore_experiment_designs(
+      max_trials=3, simulations_per_trial=5, n_jobs=1
+  )
+  design_summaries = experiment.get_all_design_summaries(
+      target_power=0.8,
+      target_primary_metric_mde=None,
+      pareto_front_only=True,
+      include_design_parameters=False,
+      use_relative_effects_where_possible=True,
+  )
+
+  assert isinstance(design_summaries, pd.DataFrame)
+  assert design_summaries.index.names == ["design_id"]
+  assert design_summaries.dtypes.to_dict() == {
+      "MDE (CPA)": "float64",
+      "MDE (ROAS)": "float64",
+      "Relative MDE (conversions)": "float64",
+      "Relative MDE (revenue, primary metric)": "float64",
+      "all_checks_pass": "bool",
+      "failing_checks": "object",
+      "primary_metric_all_checks_pass": "bool",
+      "primary_metric_failing_checks": "object",
+      "primary_metric_standard_error": "float64",
+      "treatment_groups_representiveness_score": "float64",
+  }
+  assert (
+      len(design_summaries) == 1
+  )  # Only one design is on the Pareto front in the test data.
+
+
+def test_get_all_design_summaries_returns_correct_data_with_design_parameters(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  experiment.explore_experiment_designs(
+      max_trials=3, simulations_per_trial=5, n_jobs=1
+  )
+  design_summaries = experiment.get_all_design_summaries(
+      target_power=0.8,
+      target_primary_metric_mde=None,
+      pareto_front_only=False,
+      include_design_parameters=True,
+      use_relative_effects_where_possible=True,
+  )
+
+  assert isinstance(design_summaries, pd.DataFrame)
+  assert design_summaries.index.names == ["design_id"]
+  print(design_summaries.dtypes.to_dict())
+  assert design_summaries.dtypes.to_dict() == {
+      "n_geos_control": "int64",
+      "n_geos_exclude": "int64",
+      "n_geos_treatment_0": "int64",
+      "n_geos_treatment_1": "int64",
+      "experiment_budget": "object",
+      "methodology": "object",
+      "runtime_weeks": "int64",
+      "methodology_parameters": "object",
+      "random_seed": "int64",
+      "MDE (CPA)": "float64",
+      "MDE (ROAS)": "float64",
+      "Relative MDE (conversions)": "float64",
+      "Relative MDE (revenue, primary metric)": "float64",
+      "all_checks_pass": "bool",
+      "failing_checks": "object",
+      "primary_metric_all_checks_pass": "bool",
+      "primary_metric_failing_checks": "object",
+      "primary_metric_standard_error": "float64",
+      "treatment_groups_representiveness_score": "float64",
+  }
+  assert len(design_summaries) == 3

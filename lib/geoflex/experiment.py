@@ -24,6 +24,41 @@ GeoAssignmentRepresentivenessScorer = (
 EffectScope = geoflex.experiment_design.EffectScope
 
 
+def _format_experiment_budget(value, budget_type):
+  """Formats the experiment budget into a single string for printing."""
+  if budget_type == "percentage_change":
+    return f"{value:.0%}"
+  elif budget_type == "daily_budget":
+    return f"${value} per day"
+  elif budget_type == "total_budget":
+    return f"${value} total"
+  else:
+    return f"Value = {value}, Type = {budget_type}"
+
+
+def _format_geo_eligibility(control, treatment, exclude, **kwargs):
+  """Creates separate columns for the geo eligibility for printing."""
+  del kwargs
+
+  out = {"geo_eligible_control": control, "geo_eligible_exclude": exclude}
+  for i, treatment_cell in enumerate(treatment):
+    out[f"geo_eligible_treatment_{i}"] = treatment_cell
+
+  out_filtered = {k: v for k, v in out.items() if v}
+  return pd.Series(out_filtered)
+
+
+def _format_n_geos_per_group(control, treatment, exclude, **kwargs):
+  """Creates three columns for the number of geos per group for printing."""
+  del kwargs
+
+  out = {"n_geos_control": len(control), "n_geos_exclude": len(exclude)}
+  for i, treatment_cell in enumerate(treatment):
+    out[f"n_geos_treatment_{i}"] = len(treatment_cell)
+
+  return pd.Series(out)
+
+
 class MaxTrialsCallback:
   """Used to stop an Optuna study after a certain number of trials.
 
@@ -453,7 +488,10 @@ class Experiment:
     )
 
   def _design_evaluation_objective(
-      self, trial: op.Trial, simulations_per_trial: int
+      self,
+      trial: op.Trial,
+      simulations_per_trial: int,
+      ignore_designs_with_failing_checks: bool,
   ) -> tuple[float, float]:
     """Suggests a new experiment design, and evaluates it.
 
@@ -463,15 +501,21 @@ class Experiment:
     methodology, and if the primary metric meets the validation checks.
 
     If the design is not eligible for the methodology, or if the primary metric
-    does not meet the validation checks, we will return inf for the standard
-    error, and -1.0 for the representiveness score. This will ensure that this
-    design is never selected.
+    does not meet the validation checks and ignore_designs_with_failing_checks,
+    we will return inf for the standard error, and -1.0 for the
+    representiveness score. This will ensure that this design is never selected.
 
     Args:
       trial: The Optuna trial to use to suggest the experiment design.
       simulations_per_trial: The number of simulations to run per trial. The
         siumulations are used to calculate the standard error of the effect
         size.
+      ignore_designs_with_failing_checks: Whether to ignore designs with failing
+        checks. If this is set to true, if the design fails the checks, we will
+        return inf for the standard error, and -1.0 for the representiveness
+        score. This will ensure that this design is never selected. If set to
+        false, we will return the standard error and representiveness score,
+        regardless of whether the checks pass.
 
     Returns:
       A tuple of the standard error of the primary metric, and the
@@ -538,11 +582,12 @@ class Experiment:
     # ensure that this design is never selected. The validation checks are
     # designed to ensure that the confidence intervals for the primary metric
     # are correctly calibrated and the effect size estimates are unbiased.
-    primary_metric_all_checks_pass = primary_metric_results[
-        "all_checks_pass"
-    ].all()
-    if not primary_metric_all_checks_pass:
-      return np.inf, -1.0
+    if ignore_designs_with_failing_checks:
+      primary_metric_all_checks_pass = primary_metric_results[
+          "all_checks_pass"
+      ].all()
+      if not primary_metric_all_checks_pass:
+        return np.inf, -1.0
 
     # Finally we return the standard error of the primary metric, and the
     # representiveness score. These will be used by optuna to optimise the
@@ -556,6 +601,7 @@ class Experiment:
       simulations_per_trial: int = 300,
       n_jobs: int = -1,
       seed: int = 0,
+      ignore_designs_with_failing_checks: bool = True,
   ) -> None:
     """Explores how the different eligible experiment designs perform.
 
@@ -573,10 +619,17 @@ class Experiment:
         will use all available CPU cores.
       seed: The random seed to use for sampling the experiment designs. This is
         used to ensure that the results are reproducible.
+      ignore_designs_with_failing_checks: Whether to ignore designs with failing
+        checks. If this is set to true, designs with failing checks will not be
+        included in the results, and the exploration will look for max_trials of
+        designs with passing checks. If set to false, the exploration will look
+        for max_trials of designs, regardless of whether the checks pass.
     """
 
     objective = lambda trial: self._design_evaluation_objective(
-        trial, simulations_per_trial
+        trial,
+        simulations_per_trial=simulations_per_trial,
+        ignore_designs_with_failing_checks=ignore_designs_with_failing_checks,
     )
 
     with warnings.catch_warnings():
@@ -601,9 +654,224 @@ class Experiment:
         n_jobs=n_jobs,
     )
 
-  def get_top_designs(self) -> list[ExperimentDesign]:
-    """Returns the top experiment designs."""
-    raise NotImplementedError()
+  def _summarise_single_design_results(
+      self,
+      data: pd.DataFrame,
+      use_relative_effects_where_possible: bool,
+      target_power: float,
+  ) -> pd.Series:
+    """Summarises the results of a single design.
+
+    This returns the MDEs for each metric, and the standard error of the
+    primary metric. It also returns the failing checks as a list and whether
+    all checks pass.
+
+    Args:
+      data: The data to summarise. This contains one row per metric for the
+        design.
+      use_relative_effects_where_possible: Whether to use the relative effects
+        where possible. If the metric is a cost-per-metric or metric-per-cost
+        metric, we will always use the absolute effect. Otherwise, if this is
+        set to true we will use relative effects.
+      target_power: The target power to use for the MDE calculations.
+
+    Returns:
+      A pandas series containing the MDEs for each metric, and the standard
+      error of the primary metric, whether the validation checks pass and the
+      list of failing checks.
+    """
+    output = {
+        "failing_checks": [],
+        "all_checks_pass": True,
+    }
+
+    for _, row in data.iterrows():
+      metric_name = row["metric"]
+
+      if use_relative_effects_where_possible and np.isfinite(
+          row["relative_effect_standard_error"]
+      ):
+        standard_error = row["relative_effect_standard_error"]
+        mde_name_prefix = "Relative "
+      else:
+        standard_error = row["absolute_effect_standard_error"]
+        mde_name_prefix = ""
+
+      if row["is_primary_metric"]:
+        output["primary_metric_failing_checks"] = row["failing_checks"]
+        output["primary_metric_all_checks_pass"] = row["all_checks_pass"]
+        output["primary_metric_standard_error"] = standard_error
+        primary_metric_mde_name = ", primary metric"
+      else:
+        primary_metric_mde_name = ""
+
+      mde = geoflex.evaluation.calculate_minimum_detectable_effect_from_stats(
+          standard_error=standard_error,
+          alternative=self.design_spec.alternative_hypothesis,
+          power=target_power,
+          alpha=self.design_spec.alpha,
+      )
+
+      if "__INVERTED__" in metric_name:
+        metric_name = metric_name.replace(" __INVERTED__", "")
+        mde = 1.0 / mde
+
+      output[
+          f"{mde_name_prefix}MDE ({metric_name}{primary_metric_mde_name})"
+      ] = mde
+      output["failing_checks"] += row["failing_checks"]
+      output["all_checks_pass"] &= row["all_checks_pass"]
+
+    return pd.Series(output).sort_index()
+
+  def _get_design_summaries(self) -> pd.DataFrame:
+    """Returns summaries of the experiment designs as a dataframe."""
+    out = (
+        pd.DataFrame([
+            design_results["design"].model_dump()
+            for design_results in self._eligible_experiment_design_results.values()
+        ])
+        .set_index("design_id")
+        .drop(
+            columns=[
+                "experiment_type",
+                "primary_metric",
+                "secondary_metrics",
+                "n_cells",
+                "alpha",
+                "alternative_hypothesis",
+                "effect_scope",
+            ]
+        )
+    )
+
+    out["experiment_budget"] = out["experiment_budget"].apply(
+        lambda x: _format_experiment_budget(**x)
+    )
+
+    out = (
+        out["geo_eligibility"]
+        .apply(lambda x: _format_geo_eligibility(**x))
+        .join(out.drop(columns="geo_eligibility"))
+    )
+    out = (
+        out["geo_assignment"]
+        .apply(lambda x: _format_n_geos_per_group(**x))
+        .join(out.drop(columns=["geo_assignment", "n_geos_per_group"]))
+    )
+    return out
+
+  def get_all_design_summaries(
+      self,
+      target_power: float = 0.8,
+      target_primary_metric_mde: float | None = None,
+      pareto_front_only: bool = False,
+      include_design_parameters: bool = False,
+      use_relative_effects_where_possible: bool = True,
+  ) -> pd.DataFrame:
+    """Returns all the experiment design summaries as a dataframe.
+
+    If the experiment is a multi-cell experiment, then the performance metrics
+    (the MDEs, standard errors, coverages and failing checks) are taken to be
+    the worst case scenario for each cell. So the standard error is the maximum
+    standard error across all cells, and the coverage is the minimum coverage
+    across all cells, etc. This is to ensure that the best design selected is
+    one that works across all cells in the design.
+
+    Args:
+      target_power: The target power to use for the MDE calculations. The MDE
+        will be calculated for every metric specified in the design spec.
+      target_primary_metric_mde: The target MDE for the primary metric. If this
+        is set, then the power will be calculated for the primary metric at this
+        MDE.
+      pareto_front_only: Whether to only include the pareto front of the
+        experiment designs. The pareto front is the set of designs that have the
+        best performance on both representativeness and performance metrics.
+      include_design_parameters: Whether to include the design parameters in the
+        output. If not included just the design id and the results will be
+        included.
+      use_relative_effects_where_possible: Whether to use the relative effects
+        where possible. For each metric, if the metric is a cost-per-metric or
+        metric-per-cost metric, we will always use the absolute effect.
+        Otherwise, if this is set to true we will use relative effects.
+
+    Returns:
+      A dataframe containing the experiment design summaries.
+    """
+    if target_primary_metric_mde is not None:
+      raise NotImplementedError(
+          "Calculating the Power given an MDE is not yet implemented"
+      )
+    raw_data = self.all_raw_eval_metrics
+
+    if pareto_front_only:
+      best_trial_numbers = [trial.number for trial in self.study.best_trials]
+      pareto_front_design_ids = (
+          self.study.trials_dataframe()
+          .loc[best_trial_numbers, "user_attrs_design_id"]
+          .values
+      )
+      raw_data = raw_data.loc[
+          raw_data["design_id"].isin(pareto_front_design_ids)
+      ]
+
+    # The design summary metrics are calculated by evaluating each simulation
+    # result for each metric, and then aggregating the results across the cells
+    # taking the maximum standard error and minimum coverage (i.e. the worst
+    # case scenario for each cell).
+    design_summary_metrics = (
+        raw_data.groupby(["design_id", "metric", "is_primary_metric", "cell"])[[
+            "metric",
+            "point_estimate",
+            "point_estimate_relative",
+            "lower_bound",
+            "upper_bound",
+            "lower_bound_relative",
+            "upper_bound_relative",
+        ]]
+        .apply(self.evaluate_single_simulation_results)
+        .reset_index()
+        .groupby(["design_id", "is_primary_metric", "metric"])
+        .agg(
+            unbiased_absolute_effect=("absolute_effect_is_unbiased", "all"),
+            unbiased_relative_effect=("relative_effect_is_unbiased", "all"),
+            coverage_absolute_effect=("absolute_effect_has_coverage", "min"),
+            coverage_relative_effect=("relative_effect_has_coverage", "min"),
+            all_checks_pass=("all_checks_pass", "all"),
+            absolute_effect_standard_error=(
+                "standard_error_absolute_effect",
+                "max",
+            ),
+            relative_effect_standard_error=(
+                "standard_error_relative_effect",
+                "max",
+            ),
+            failing_checks=("failing_checks", lambda x: list(set(sum(x, [])))),
+        )
+        .reset_index()
+        .groupby("design_id")
+        .apply(
+            self._summarise_single_design_results,
+            use_relative_effects_where_possible=use_relative_effects_where_possible,
+            target_power=target_power,
+            include_groups=False,
+        )
+    )
+
+    if include_design_parameters:
+      design_summary_metrics = self._get_design_summaries().join(
+          design_summary_metrics
+      )
+
+    if self.design_spec.effect_scope == EffectScope.ALL_GEOS:
+      design_summary_metrics["treatment_groups_representiveness_score"] = (
+          pd.Series({
+              design_id: values["representiveness_score"]
+              for design_id, values in self._eligible_experiment_design_results.items()
+          })
+      )
+
+    return design_summary_metrics.sort_values("primary_metric_standard_error")
 
   def select_design(self, design_id: str) -> None:
     """Sets the selected design, based on the design_id."""
