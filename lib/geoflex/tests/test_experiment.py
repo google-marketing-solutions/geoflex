@@ -310,3 +310,113 @@ def test_simulate_experiments_returns_none_for_invalid_design(
         suggested_design, simulations_per_trial=1
     )
     assert simulated_data is None
+
+
+def test_evaluate_single_simulation_results_returns_correct_data_with_relative_effects(
+    historical_data_lots_of_geos, default_design_spec, mock_trial
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  suggested_design = experiment.suggest_experiment_design(mock_trial)
+  simulated_data = experiment.simulate_experiments(
+      suggested_design, simulations_per_trial=1
+  )
+
+  # Revenue is a metric that should have relative effects
+  simulated_data = simulated_data.loc[simulated_data["metric"] == "revenue"]
+
+  evaluation_results = experiment.evaluate_single_simulation_results(
+      simulated_data
+  )
+
+  assert isinstance(evaluation_results, pd.Series)
+  assert evaluation_results.index.values.tolist() == [
+      "avg_absolute_effect",
+      "standard_error_absolute_effect",
+      "coverage_absolute_effect",
+      "absolute_effect_is_unbiased",
+      "absolute_effect_has_coverage",
+      "avg_relative_effect",
+      "standard_error_relative_effect",
+      "coverage_relative_effect",
+      "relative_effect_is_unbiased",
+      "relative_effect_has_coverage",
+      "all_checks_pass",
+      "failing_checks",
+  ]
+  # Check all numeric values are finite
+  assert np.all(
+      np.isfinite(
+          evaluation_results[[
+              "avg_absolute_effect",
+              "standard_error_absolute_effect",
+              "coverage_absolute_effect",
+              "avg_relative_effect",
+              "standard_error_relative_effect",
+              "coverage_relative_effect",
+          ]]
+          .astype(float)
+          .values
+      )
+  )
+
+
+def test_evaluate_single_simulation_results_returns_correct_data_without_relative_effects(
+    historical_data_lots_of_geos, default_design_spec, mock_trial
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  suggested_design = experiment.suggest_experiment_design(mock_trial)
+  simulated_data = experiment.simulate_experiments(
+      suggested_design, simulations_per_trial=1
+  )
+
+  # ROAS is a metric that should not have relative effects
+  simulated_data = simulated_data.loc[simulated_data["metric"] == "ROAS"]
+
+  evaluation_results = experiment.evaluate_single_simulation_results(
+      simulated_data
+  )
+
+  assert isinstance(evaluation_results, pd.Series)
+  assert evaluation_results.index.values.tolist() == [
+      "avg_absolute_effect",
+      "standard_error_absolute_effect",
+      "coverage_absolute_effect",
+      "absolute_effect_is_unbiased",
+      "absolute_effect_has_coverage",
+      "avg_relative_effect",
+      "standard_error_relative_effect",
+      "coverage_relative_effect",
+      "relative_effect_is_unbiased",
+      "relative_effect_has_coverage",
+      "all_checks_pass",
+      "failing_checks",
+  ]
+  # Check all absolute effect values are finite
+  assert np.all(
+      np.isfinite(
+          evaluation_results[[
+              "avg_absolute_effect",
+              "standard_error_absolute_effect",
+              "coverage_absolute_effect",
+          ]]
+          .astype(float)
+          .values
+      )
+  )
+
+  # Check all relative effect values are NA
+  assert np.all((
+      evaluation_results[[
+          "avg_relative_effect",
+          "standard_error_relative_effect",
+          "coverage_relative_effect",
+      ]].isna()
+  ))
