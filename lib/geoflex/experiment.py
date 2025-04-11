@@ -2,6 +2,7 @@
 
 import functools
 from typing import Any
+import warnings
 import geoflex.bootstrap
 import geoflex.data
 import geoflex.evaluation
@@ -20,6 +21,35 @@ MultivariateTimeseriesBootstrap = (
 GeoAssignmentRepresentivenessScorer = (
     geoflex.evaluation.GeoAssignmentRepresentivenessScorer
 )
+EffectScope = geoflex.experiment_design.EffectScope
+
+
+class MaxTrialsCallback:
+  """Used to stop an Optuna study after a certain number of trials.
+
+  With the way we are using Optuna, some trials can be invalid and will return
+  inf for the first value. We want to run Optuna for a certain number of
+  valid trials, so we use this callback to stop the study after we reach that
+  number.
+  """
+
+  def __init__(self, max_trials: int):
+    """Initializes the callback.
+
+    Args:
+      max_trials: The maximum number of valid trials to run.
+    """
+    self.max_trials = max_trials
+
+  def __call__(self, study: op.Study, trial: op.Trial) -> None:
+    n_non_inf_trials = len([
+        t
+        for t in study.trials
+        if t.values is not None and not np.isinf(t.values[0])
+    ])
+
+    if n_non_inf_trials >= self.max_trials:
+      study.stop()
 
 
 class Experiment:
@@ -422,7 +452,111 @@ class Experiment:
         )
     )
 
-  def explore_experiment_designs(self, max_trials: int = 100) -> None:
+  def _design_evaluation_objective(
+      self, trial: op.Trial, simulations_per_trial: int
+  ) -> tuple[float, float]:
+    """Suggests a new experiment design, and evaluates it.
+
+    This is the objective function for optuna. It will suggest a new experiment
+    design based on the design spec, simulate the experiment, and evaluate the
+    results. The evaluation will determine if the design is eligible for the
+    methodology, and if the primary metric meets the validation checks.
+
+    If the design is not eligible for the methodology, or if the primary metric
+    does not meet the validation checks, we will return inf for the standard
+    error, and -1.0 for the representiveness score. This will ensure that this
+    design is never selected.
+
+    Args:
+      trial: The Optuna trial to use to suggest the experiment design.
+      simulations_per_trial: The number of simulations to run per trial. The
+        siumulations are used to calculate the standard error of the effect
+        size.
+
+    Returns:
+      A tuple of the standard error of the primary metric, and the
+      representiveness score.
+    """
+    # Suggest the experiment design based on the design spec.
+    design = self.suggest_experiment_design(trial)
+    trial.set_user_attr("design_id", design.design_id)
+
+    # If the effect scope is all geos, we need to ensure that the treatment
+    # geos are representative of the entire population. Otherwise we do not.
+    needs_representiveness = design.effect_scope == EffectScope.ALL_GEOS
+    if needs_representiveness:
+      # TODO: use representativeness_scorer  # pylint: disable=g-bad-todo
+      representiveness_score = 1.0
+    else:
+      representiveness_score = 1.0
+
+    # Simulate the experiment with the suggested design.
+    results = self.simulate_experiments(design, simulations_per_trial)
+
+    # If the design is not eligible for the methdology, the results will be
+    # None. In this case we return inf for the standard error, and -1.0 for the
+    # representiveness score. This will ensure that this design is never
+    # selected.
+    if results is None:
+      return np.inf, -1.0
+
+    # We evaluate the primary metric for the objective for optuna. This will
+    # ensure that we are finding the best possible design for the primary
+    # metric.
+    primary_metric_results = (
+        results.loc[results["is_primary_metric"]]
+        .groupby("cell")
+        .apply(self.evaluate_single_simulation_results, include_groups=False)
+    )
+
+    # If the primary metric is a cost-per-metric metric, or a metric-per-cost
+    # metric, we will use the standard error of the absolute effect. Otherwise,
+    # we will use the standard error of the relative effect. These are the
+    # easiest to interpret for the user.
+    if (
+        design.primary_metric.cost_per_metric
+        or design.primary_metric.metric_per_cost
+    ):
+      primary_metric_standard_error = primary_metric_results[
+          "standard_error_absolute_effect"
+      ].max()
+    else:
+      primary_metric_standard_error = primary_metric_results[
+          "standard_error_relative_effect"
+      ].max()
+
+    # Record the design results for later analysis.
+    self.record_design(
+        design=design,
+        raw_eval_metrics=results,
+        primary_metric_standard_error=primary_metric_standard_error,
+        representiveness_score=representiveness_score,
+    )
+
+    # If the primary metric does not meet the validation checks, we return inf
+    # for the standard error, and -1.0 for the representiveness score. This will
+    # ensure that this design is never selected. The validation checks are
+    # designed to ensure that the confidence intervals for the primary metric
+    # are correctly calibrated and the effect size estimates are unbiased.
+    primary_metric_all_checks_pass = primary_metric_results[
+        "all_checks_pass"
+    ].all()
+    if not primary_metric_all_checks_pass:
+      return np.inf, -1.0
+
+    # Finally we return the standard error of the primary metric, and the
+    # representiveness score. These will be used by optuna to optimise the
+    # objective. We will perform multi-objective optimisation to find the
+    # smallest standard error with the highest representiveness score.
+    return primary_metric_standard_error, representiveness_score
+
+  def explore_experiment_designs(
+      self,
+      max_trials: int = 100,
+      simulations_per_trial: int = 300,
+      n_jobs: int = -1,
+      seed: int = 0,
+  ) -> None:
     """Explores how the different eligible experiment designs perform.
 
     Given your data and the experiment design spec, this function will explore
@@ -432,9 +566,40 @@ class Experiment:
     Args:
       max_trials: The maximum number of trials to run. If there are more than
         max_trials eligible experiment designs, they will be randomly sampled.
+      simulations_per_trial: The number of simulations to run for each eligible
+        experiment design. This is used to estimate the performance of the
+        experiment designs.
+      n_jobs: The number of jobs to use for parallelisation. If set to -1, it
+        will use all available CPU cores.
+      seed: The random seed to use for sampling the experiment designs. This is
+        used to ensure that the results are reproducible.
     """
 
-    raise NotImplementedError()
+    objective = lambda trial: self._design_evaluation_objective(
+        trial, simulations_per_trial
+    )
+
+    with warnings.catch_warnings():
+      # Hide the experiment warning about the BruteForceSampler being
+      # experimental.
+      warnings.filterwarnings(
+          "ignore", message="BruteForceSampler is experimental"
+      )
+
+      self.study = op.create_study(
+          sampler=op.samplers.BruteForceSampler(seed=seed),
+          directions=[
+              "minimize",
+              "maximize",
+          ],  # Minimise standard error, maximise representiveness
+      )
+
+    self.study.optimize(
+        objective,
+        n_trials=max_trials * 10,
+        callbacks=[MaxTrialsCallback(max_trials)],
+        n_jobs=n_jobs,
+    )
 
   def get_top_designs(self) -> list[ExperimentDesign]:
     """Returns the top experiment designs."""

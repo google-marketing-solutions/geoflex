@@ -420,3 +420,18 @@ def test_evaluate_single_simulation_results_returns_correct_data_without_relativ
           "coverage_relative_effect",
       ]].isna()
   ))
+
+
+def test_explore_experiment_designs_records_design_results(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  experiment.explore_experiment_designs(
+      max_trials=3, simulations_per_trial=5, n_jobs=1
+  )
+
+  assert experiment.all_raw_eval_metrics["design_id"].nunique() == 3
