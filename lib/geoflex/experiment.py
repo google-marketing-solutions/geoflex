@@ -303,10 +303,6 @@ class Experiment:
         weeks=self.design_spec.max_runtime_weeks
     )
 
-    design.geo_assignment = methodology.assign_geos(
-        design, self.historical_data, np.random.default_rng(design.random_seed)
-    )
-
     # Cost-per-metric metrics must be inverted for power calculation
     # because we will run an A/A test, and the metric impact is 0, which
     # makes cost-per-metric metrics undefined. We will re-invert the results
@@ -525,15 +521,6 @@ class Experiment:
     design = self.suggest_experiment_design(trial)
     trial.set_user_attr("design_id", design.design_id)
 
-    # If the effect scope is all geos, we need to ensure that the treatment
-    # geos are representative of the entire population. Otherwise we do not.
-    needs_representiveness = design.effect_scope == EffectScope.ALL_GEOS
-    if needs_representiveness:
-      # TODO: use representativeness_scorer  # pylint: disable=g-bad-todo
-      representiveness_score = 1.0
-    else:
-      representiveness_score = 1.0
-
     # Simulate the experiment with the suggested design.
     results = self.simulate_experiments(design, simulations_per_trial)
 
@@ -543,6 +530,26 @@ class Experiment:
     # selected.
     if results is None:
       return np.inf, -1.0
+
+    # Assign geos for the experiment.
+    design.geo_assignment = geoflex.methodology.get_methodology(
+        design.methodology
+    ).assign_geos(
+        design, self.historical_data, np.random.default_rng(design.random_seed)
+    )
+
+    # If the effect scope is all geos, we need to ensure that the treatment
+    # geos are representative of the entire population. Otherwise we do not.
+    needs_representiveness = design.effect_scope == EffectScope.ALL_GEOS
+    if needs_representiveness:
+      assignment = design.geo_assignment.make_geo_assignment_array(
+          self.representativeness_scorer.geos
+      )
+      representiveness_score = self.representativeness_scorer(
+          assignment=assignment, with_pvalue=False
+      )[0]
+    else:
+      representiveness_score = 0.0
 
     # We evaluate the primary metric for the objective for optuna. This will
     # ensure that we are finding the best possible design for the primary
@@ -592,7 +599,7 @@ class Experiment:
     # Finally we return the standard error of the primary metric, and the
     # representiveness score. These will be used by optuna to optimise the
     # objective. We will perform multi-objective optimisation to find the
-    # smallest standard error with the highest representiveness score.
+    # smallest standard error and highest representiveness score.
     return primary_metric_standard_error, representiveness_score
 
   def explore_experiment_designs(
@@ -778,6 +785,10 @@ class Experiment:
     across all cells, etc. This is to ensure that the best design selected is
     one that works across all cells in the design.
 
+    If the effect scope is all geos, then the representiveness score is also
+    calculated. A higher score is better, and a score close to 0
+    is ideal. Worst case is a score of -1.
+
     Args:
       target_power: The target power to use for the MDE calculations. The MDE
         will be calculated for every metric specified in the design spec.
@@ -860,7 +871,8 @@ class Experiment:
 
     if include_design_parameters:
       design_summary_metrics = self._get_design_summaries().join(
-          design_summary_metrics
+          design_summary_metrics,
+          how="inner",
       )
 
     if self.design_spec.effect_scope == EffectScope.ALL_GEOS:

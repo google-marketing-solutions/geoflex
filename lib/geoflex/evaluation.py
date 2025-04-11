@@ -14,24 +14,28 @@ class GeoAssignmentRepresentivenessScorer:
   Ideally, each of the treatment groups in a geo assignment should be
   representative ofthe entire population. This scorer uses the silhouette score,
   in combination with distance correlation, to measure the representativeness of
-  the treatment groups. 1. The distance correlation is used to measure the
-  "distance" between two
+  the treatment groups.
 
+  1. The distance correlation is used to measure the "distance" between two
     geos. It is defined as `1 - the distance correlation coefficient`. This
     gives a distance matrix for all the geos. The distance correlation
     coefficient is a multivariate correlation which evaluates the similarity
     based on all numerical columns in the data. For more information see:
     https://arxiv.org/pdf/0803.4101
   2. The silhouette score is used to measure the "quality" of a geo assignment.
-    It is defined as the minimum silhouette score for the treatment groups in
+    It is defined as the maximum silhouette score for the treatment groups in
     the assignment. For more information see:
     https://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_samples.html
-  3. If applied, a permutation test is used to calculate a p-value to indicate
+  3. The representiveness score is then calculated as -1 * the silhouette score.
+    This is because a lower silhouette score indicates a better assignment.
+  4. If applied, a permutation test is used to calculate a p-value to indicate
     the likelihood of the assignment being as representative as a random
     assignment.
+
   A good assignment will have a low silhouette score, ideally lower than 0. A
   high score indicates that the treatment groups are separate clusters and are
   therefore not representative of the entire population.
+
   Example usage:
   ```
     scorer = GeoAssignmentRepresentivenessScorer(
@@ -117,9 +121,9 @@ class GeoAssignmentRepresentivenessScorer:
     return scores
 
   def _score(self, assignment: np.ndarray) -> float:
-    """Calculates the silhouette score for the given assignment.
+    """Calculates the representativeness score for the given assignment.
 
-    This is the minimum silhouette score for the treatment groups in the
+    This is -1 * the maximum silhouette score for the treatment groups in the
     assignment.
 
     Args:
@@ -129,7 +133,7 @@ class GeoAssignmentRepresentivenessScorer:
         treatment groups in a multi-cell test).
 
     Returns:
-      The silhouette score for the given assignment.
+      The representativeness score for the given assignment.
     """
     max_assignment = np.max(assignment)
     scores = []
@@ -143,7 +147,7 @@ class GeoAssignmentRepresentivenessScorer:
               sample_size=self.silhouette_sample_size,
           )
       )
-    return np.min(scores)
+    return -1 * np.max(scores)
 
   def __call__(
       self,
@@ -152,6 +156,12 @@ class GeoAssignmentRepresentivenessScorer:
       n_permutation_samples: int = 200,
   ) -> tuple[float, float | None]:
     """Scores the representativeness of the given geo assignment.
+
+    The ideal score is close to 0.0, which indicates that the treatment groups
+    are representative of the entire population. A negative score indicates that
+    the treatment groups are separate clusters and are therefore not
+    representative of the entire population. A highly positive score is usually
+    just due to random chance, but can occur if you don't have many geos.
 
     Args:
       assignment: The geo assignment to score. This is assumed to be a numpy

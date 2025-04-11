@@ -97,7 +97,7 @@ def test_scorer_returns_none_for_pvalue_if_not_requested(raw_data):
   assert pvalue is None
 
 
-def test_scorer_returns_lower_score_for_representative_assignment(raw_data):
+def test_scorer_returns_higher_score_for_representative_assignment(raw_data):
   scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
       historical_data=raw_data,
       geo_column_name="geo_id",
@@ -105,7 +105,7 @@ def test_scorer_returns_lower_score_for_representative_assignment(raw_data):
   )
   result_1, _ = scorer(np.array([0, 1, 0, 1]))
   result_2, _ = scorer(np.array([0, 0, 1, 1]))
-  assert result_1 < result_2
+  assert result_1 > result_2
 
 
 def test_scorer_can_handle_assignment_with_multiple_treatment_groups(raw_data):

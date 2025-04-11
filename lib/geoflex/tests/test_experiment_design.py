@@ -1,6 +1,7 @@
 """Tests for the experiment design module."""
 
 import geoflex.experiment_design
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -407,3 +408,13 @@ def test_geoeligibility_multiarm_3cell():
   assert df_arm2.loc["u1"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="u1")
       )
+
+
+def test_make_geo_assignment_array_returns_correct_array():
+  assignment = GeoAssignment(
+      treatment=[{"US", "UK"}, {"CA"}],
+      control={"FR", "AU"},
+      exclude={"DE", "JP"},
+  ).make_geo_assignment_array(["US", "CA", "UK", "FR", "DE", "Other"])
+  expected_assignment = np.array([1, 2, 1, 0, -1, -1])
+  assert np.array_equal(assignment, expected_assignment)

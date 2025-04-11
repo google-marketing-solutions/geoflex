@@ -6,6 +6,7 @@ from typing import Any
 import uuid
 
 import geoflex.metrics
+import numpy as np
 import pandas as pd
 import pydantic
 
@@ -130,6 +131,31 @@ class GeoAssignment(GeoEligibility):
       seen_geos.update(group_set)
 
     return self
+
+  def make_geo_assignment_array(self, geos: list[str]) -> np.ndarray:
+    """Creates an array with the geo assignment for a given list of geos.
+
+    Args:
+      geos: The list of geos to assign.
+
+    Returns:
+      An array with the geo assignment for the given list of geos. The array
+      has the same length as the list of geos, and the value at index i
+      represents the geo assignment for the geo at index i in the list of geos.
+      The values are 0 for control, -1 for exclude, and 1+ for treatment, where
+      1 represents the first cell, 2 represents the second cell, etc.
+    """
+    assignment = np.ones(len(geos)) * -1
+    for i, geo in enumerate(geos):
+      if geo in self.control:
+        assignment[i] = 0
+        continue
+
+      for j, treatment_group in enumerate(self.treatment, 1):
+        if geo in treatment_group:
+          assignment[i] = j
+          break
+    return assignment.astype(int)
 
 
 class ExperimentBudgetType(enum.StrEnum):
