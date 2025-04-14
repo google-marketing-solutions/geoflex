@@ -6,6 +6,7 @@ import geoflex.bootstrap
 import geoflex.data
 import geoflex.evaluation
 import geoflex.experiment_design
+import numpy as np
 import optuna as op
 import pandas as pd
 
@@ -207,6 +208,97 @@ class Experiment:
     )
 
     return design
+
+  def simulate_experiments(
+      self, design: ExperimentDesign, simulations_per_trial: int
+  ) -> pd.DataFrame | None:
+    """Simulates experiments for the given design.
+
+    Args:
+      design: The experiment design to simulate.
+      simulations_per_trial: The number of simulations to run.
+
+    Returns:
+      The results of the simulations, or None if the design is not eligible for
+      the methodology.
+    """
+    methodology = geoflex.methodology.get_methodology(design.methodology)
+    if not methodology.is_eligible_for_design(design):
+      return None
+
+    max_date = self.historical_data.parsed_data[
+        self.historical_data.date_column
+    ].max()
+    exp_start_date = max_date - pd.Timedelta(
+        weeks=self.design_spec.max_runtime_weeks
+    )
+
+    design.geo_assignment = methodology.assign_geos(
+        design, self.historical_data, np.random.default_rng(design.random_seed)
+    )
+
+    # Cost-per-metric metrics must be inverted for power calculation
+    # because we will run an A/A test, and the metric impact is 0, which
+    # makes cost-per-metric metrics undefined. We will re-invert the results
+    # at the end to get to the MDE for the original metric.
+    if design.primary_metric.cost_per_metric:
+      inverted_primary_metric = design.primary_metric.invert()
+    else:
+      inverted_primary_metric = design.primary_metric
+
+    inverted_secondary_metrics = [
+        metric.invert() if metric.cost_per_metric else metric
+        for metric in design.secondary_metrics
+    ]
+
+    results_list = []
+    random_seed = design.random_seed
+    for sample in self.bootstrapper.sample_dataframes(simulations_per_trial):
+      # Design the experiment with the pre-test data
+      is_pretest = sample.index.values < exp_start_date
+      pretest_dataset = geoflex.GeoPerformanceDataset.from_pivoted_data(
+          sample.loc[is_pretest],
+          geo_id_column=self.historical_data.geo_id_column,
+          date_column=self.historical_data.date_column,
+      )
+
+      # Different random seed for each sample
+      random_seed += 1
+      geo_assignment = methodology.assign_geos(
+          design,
+          pretest_dataset,
+          np.random.default_rng(random_seed),
+      )
+      sample_design = design.model_copy(
+          update={
+              "geo_assignment": geo_assignment,
+              "primary_metric": inverted_primary_metric,
+              "secondary_metrics": inverted_secondary_metrics,
+              "random_seed": random_seed,
+          }
+      )
+
+      # Create the runtime dataset from the bootstrapped sample, simulate the \
+      # experiment in it, and analyse it.
+      runtime_dataset = geoflex.GeoPerformanceDataset.from_pivoted_data(
+          sample,
+          geo_id_column=self.historical_data.geo_id_column,
+          date_column=self.historical_data.date_column,
+      ).simulate_experiment(
+          experiment_start_date=exp_start_date,
+          design=sample_design,
+      )
+
+      results_list.append(
+          methodology.analyze_experiment(
+              runtime_dataset,
+              sample_design,
+              exp_start_date.strftime("%Y-%m-%d"),
+          )
+      )
+
+    results = pd.concat(results_list)
+    return results
 
   def explore_experiment_designs(self, max_trials: int = 100) -> None:
     """Explores how the different eligible experiment designs perform.

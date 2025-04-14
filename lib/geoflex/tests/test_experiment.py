@@ -132,6 +132,22 @@ def mock_historical_data_fixture():
   return geoflex.data.GeoPerformanceDataset(data=data)
 
 
+@pytest.fixture(name="historical_data_lots_of_geos")
+def mock_historical_data_lots_of_geos_fixture():
+  """Fixture for a mock historical data with lots of geos."""
+  rng = np.random.default_rng(seed=42)
+  data = pd.DataFrame({
+      "geo_id": [f"geo_{i}" for i in range(20) for _ in range(100)],  # pylint: disable=g-complex-comprehension
+      "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 20,
+      "revenue": rng.random(size=2000),
+      "cost": rng.random(size=2000),
+      "conversions": rng.random(size=2000),
+  })
+  data["date"] = data["date"].dt.strftime("%Y-%m-%d")
+
+  return geoflex.data.GeoPerformanceDataset(data=data)
+
+
 @pytest.fixture(name="default_design_spec")
 def mock_design_spec_fixture():
   """Fixture for a mock design spec."""
@@ -155,11 +171,7 @@ def mock_design_spec_fixture():
       max_runtime_weeks=4,
       min_runtime_weeks=2,
       n_cells=3,
-      geo_eligibility_candidates=[
-          None,
-          GeoEligibility(control=["geo_1"], treatment=[[], []], exclude=[]),
-          GeoEligibility(control=[], treatment=[[], []], exclude=["geo_1"]),
-      ],
+      geo_eligibility_candidates=[None],
       effect_scope=EffectScope.ALL_GEOS,
   )
 
@@ -247,3 +259,54 @@ def test_experiment_suggest_experiment_design_returns_correct_design(
   )
   assert suggested_design.random_seed in default_design_spec.random_seeds
   assert suggested_design.effect_scope == default_design_spec.effect_scope
+
+
+def test_simulate_experiments_returns_correct_data(
+    historical_data_lots_of_geos, default_design_spec, mock_trial
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  suggested_design = experiment.suggest_experiment_design(mock_trial)
+  simulated_data = experiment.simulate_experiments(
+      suggested_design, simulations_per_trial=1
+  )
+
+  assert isinstance(simulated_data, pd.DataFrame)
+  assert len(simulated_data) == 8  # 4 metrics, 2 treatment arms
+  assert simulated_data.dtypes.to_dict() == {
+      "cell": "int64",
+      "metric": "object",
+      "is_primary_metric": "bool",
+      "point_estimate": "float64",
+      "lower_bound": "float64",
+      "upper_bound": "float64",
+      "point_estimate_relative": "object",
+      "lower_bound_relative": "object",
+      "upper_bound_relative": "object",
+      "p_value": "float64",
+      "is_significant": "bool",
+  }
+
+
+def test_simulate_experiments_returns_none_for_invalid_design(
+    historical_data_lots_of_geos, default_design_spec, mock_trial
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  suggested_design = experiment.suggest_experiment_design(mock_trial)
+
+  # Mock the RCT methodology to always say invalid design.
+  with mock.patch.object(
+      geoflex.methodology.rct.RCT, "is_eligible_for_design", autospec=True
+  ) as mock_is_eligible_for_design:
+    mock_is_eligible_for_design.return_value = False
+    simulated_data = experiment.simulate_experiments(
+        suggested_design, simulations_per_trial=1
+    )
+    assert simulated_data is None
