@@ -568,7 +568,6 @@ def test_get_all_design_summaries_returns_correct_data_with_design_parameters(
 
   assert isinstance(design_summaries, pd.DataFrame)
   assert design_summaries.index.names == ["design_id"]
-  print(design_summaries.dtypes.to_dict())
   assert design_summaries.dtypes.to_dict() == {
       "n_geos_control": "int64",
       "n_geos_exclude": "int64",
@@ -591,3 +590,15 @@ def test_get_all_design_summaries_returns_correct_data_with_design_parameters(
       "treatment_groups_representiveness_score": "float64",
   }
   assert len(design_summaries) == 3
+
+
+def test_count_all_eligible_designs_returns_correct_data(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  counts = experiment.count_all_eligible_designs()
+  assert counts == {"RCT": 6}

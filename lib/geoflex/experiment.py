@@ -622,6 +622,70 @@ class Experiment:
     # smallest standard error and highest representiveness score.
     return primary_metric_standard_error, representiveness_score
 
+  def _design_counting_evaluation_objective(
+      self,
+      trial: op.Trial,
+  ) -> float:
+    """A dummy objective function used to count the number of eligible designs.
+
+    This doesn't actually evaluate the design, it just logs the number of
+    eligible designs for each methodology. This is used to count the number
+    of eligible designs for each methodology.
+
+    Args:
+      trial: The Optuna trial to use to suggest the experiment design.
+
+    Returns:
+      The score is 1 if the design is eligible for the methodology, 0 otherwise.
+    """
+    # Suggest the experiment design based on the design spec.
+    design = self.suggest_experiment_design(trial)
+    methodology = geoflex.methodology.get_methodology(design.methodology)
+    if methodology.is_eligible_for_design(design):
+      trial.set_user_attr("methodology", design.methodology)
+      return 1.0
+    else:
+      return 0.0
+
+  def count_all_eligible_designs(self) -> dict[str, int]:
+    """Returns the number of eligible experiment designs per methodology.
+
+    Note: this does not look at the designs that have already been explored,
+    it looks at all possible designs regardless of whether they have already
+    been explored.
+
+    If there are more than 10k eligible designs, it will only count up to 10k.
+    """
+    previous_verbosity = op.logging.get_verbosity()
+    op.logging.set_verbosity(logging.CRITICAL)  # Disable logging.
+    with warnings.catch_warnings():
+      # Hide the experiment warning about the BruteForceSampler being
+      # experimental.
+      warnings.filterwarnings(
+          "ignore", message="BruteForceSampler is experimental"
+      )
+
+      counting_study = op.create_study(
+          sampler=op.samplers.BruteForceSampler(), directions=["maximize"]
+      )
+
+    counting_study.optimize(
+        self._design_counting_evaluation_objective,
+        n_trials=10_000,
+        n_jobs=-1,
+    )
+
+    all_results = counting_study.trials_dataframe()
+
+    counts = (
+        all_results.groupby("user_attrs_methodology")["value"]
+        .sum()
+        .astype(int)
+        .to_dict()
+    )
+    op.logging.set_verbosity(previous_verbosity)  # Restore logging.
+    return counts
+
   def explore_experiment_designs(
       self,
       max_trials: int = 100,
