@@ -1,6 +1,7 @@
 """Tests for the experiment design module."""
 
 import geoflex.experiment_design
+import geoflex.metrics
 import numpy as np
 import pandas as pd
 import pytest
@@ -103,62 +104,123 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
         pytest.param(
             {
                 "experiment_type": ExperimentType.HEAVY_UP,
-                "experiment_budget_candidates": ExperimentBudget(
-                    value=-10,
-                    budget_type=ExperimentBudgetType.DAILY_BUDGET,
-                ),
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=-10,
+                        budget_type=ExperimentBudgetType.DAILY_BUDGET,
+                    )
+                ],
             },
             id="heavy_up_experiment_must_have_positive_budget",
         ),
         pytest.param(
             {
                 "experiment_type": ExperimentType.HOLD_BACK,
-                "experiment_budget_candidates": ExperimentBudget(
-                    value=0,
-                    budget_type=ExperimentBudgetType.DAILY_BUDGET,
-                ),
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=-10,
+                        budget_type=ExperimentBudgetType.DAILY_BUDGET,
+                    )
+                ],
             },
             id="hold_back_experiment_must_have_positive_budget",
         ),
         pytest.param(
             {
                 "experiment_type": ExperimentType.HOLD_BACK,
-                "experiment_budget_candidates": ExperimentBudget(
-                    value=0.5,
-                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-                ),
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=0.5,
+                        budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                    )
+                ],
             },
             id="hold_back_experiment_cannot_have_percentage_change_budget",
         ),
         pytest.param(
             {
                 "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": ExperimentBudget(
-                    value=0.5,
-                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-                ),
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=0.5,
+                        budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                    )
+                ],
             },
             id="go_dark_experiment_cannot_have_positive_budget",
         ),
         pytest.param(
             {
                 "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": ExperimentBudget(
-                    value=-0.5,
-                    budget_type=ExperimentBudgetType.DAILY_BUDGET,
-                ),
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=-0.5,
+                        budget_type=ExperimentBudgetType.DAILY_BUDGET,
+                    )
+                ],
             },
             id="go_dark_experiment_cannot_have_daily_budget",
         ),
         pytest.param(
             {
                 "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": ExperimentBudget(
-                    value=-0.5,
-                    budget_type=ExperimentBudgetType.TOTAL_BUDGET,
-                ),
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=-0.5,
+                        budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+                    )
+                ],
             },
             id="go_dark_experiment_cannot_have_total_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.AB_TEST,
+                "experiment_budget_candidates": [
+                    ExperimentBudget(
+                        value=-0.5,
+                        budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                    )
+                ],
+            },
+            id="ab_experiment_cannot_have_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.GO_DARK,
+                "experiment_budget_candidates": [None],
+            },
+            id="go_dark_cannot_have_zero_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.HOLD_BACK,
+                "experiment_budget_candidates": [None],
+            },
+            id="hold_back_cannot_have_zero_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.HEAVY_UP,
+                "experiment_budget_candidates": [None],
+            },
+            id="heavy_up_cannot_have_zero_budget",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.AB_TEST,
+                "experiment_budget_candidates": [None],
+                "secondary_metrics": [geoflex.metrics.ROAS()],
+            },
+            id="ab_test_cannot_have_cost_secondary_metrics",
+        ),
+        pytest.param(
+            {
+                "experiment_type": ExperimentType.AB_TEST,
+                "experiment_budget_candidates": [None],
+                "primary_metric": geoflex.metrics.ROAS(),
+            },
+            id="ab_test_cannot_have_cost_secondary_metrics",
         ),
     ],
 )
@@ -194,20 +256,53 @@ def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
         {"trimming_quantile_candidates": [0.0, 0.5]},
         {"n_cells": 3},
         {"secondary_metrics": ["conversions"]},
+        {
+            "experiment_type": ExperimentType.AB_TEST,
+            "experiment_budget_candidates": [None],
+        },
     ],
 )
 def test_design_spec_can_be_created_with_valid_input(valid_args):
-  ExperimentDesignSpec(
-      experiment_type=ExperimentType.GO_DARK,
-      primary_metric="revenue",
-      experiment_budget_candidates=[
+  default_args = {
+      "experiment_type": ExperimentType.GO_DARK,
+      "primary_metric": "revenue",
+      "experiment_budget_candidates": [
           ExperimentBudget(
               value=-0.1,
               budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
           )
       ],
-      **valid_args,
+  }
+  default_args.update(valid_args)
+
+  ExperimentDesignSpec(**default_args)
+
+
+def test_design_spec_takes_first_budget_candidate_if_budget_is_irrelevant():
+  # Budget is irrelevant because no cost metrics are used,
+  design_spec = ExperimentDesignSpec(
+      experiment_type=ExperimentType.GO_DARK,
+      primary_metric="revenue",
+      secondary_metrics=["conversions"],
+      experiment_budget_candidates=[
+          ExperimentBudget(
+              value=-0.1,
+              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+          ),
+          ExperimentBudget(
+              value=100,
+              budget_type=ExperimentBudgetType.DAILY_BUDGET,
+          ),
+      ],
   )
+
+  expected_budget_candidates = [
+      ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      )
+  ]
+  assert design_spec.experiment_budget_candidates == expected_budget_candidates
 
 
 @pytest.mark.parametrize(

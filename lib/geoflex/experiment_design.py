@@ -17,9 +17,12 @@ Metric = geoflex.metrics.Metric
 
 
 class ExperimentType(enum.StrEnum):
-  GO_DARK = "go_dark"
-  HEAVY_UP = "heavy_up"
-  HOLD_BACK = "hold_back"
+  GO_DARK = "go_dark"  # Reduce spend in a campaign to measure incrementality.
+  HEAVY_UP = (  # Increase spend in a campaign to measure incrementality.
+      "heavy_up"
+  )
+  HOLD_BACK = "hold_back"  # Hold back a new campaign to measure incrementality.
+  AB_TEST = "ab_test"  # Measure a campaign change without a change in spend.
 
 
 class GeoEligibility(pydantic.BaseModel):
@@ -263,7 +266,8 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       experiment, the budget value should be positive and is usually defined as
       a daily budget or a total budget. For a heavy-up experiment, this is the
       incremental budget, meaning the increase on top of the BAU spend, not the
-      total budget.
+      total budget. If your metrics do not include cost, or you are running an
+      A/B test, then you do not need to specify a budget.
     secondary_metrics: The secondary response metrics for the experiment. These
       are the metrics that the experiment will also measure, but are not as
       important as the primary metric.
@@ -297,7 +301,7 @@ class ExperimentDesignSpec(pydantic.BaseModel):
 
   experiment_type: ExperimentType
   primary_metric: Metric
-  experiment_budget_candidates: list[ExperimentBudget]
+  experiment_budget_candidates: list[ExperimentBudget] = [None]
   secondary_metrics: list[Metric] = []
   alternative_hypothesis: str = "two-sided"
   alpha: float = 0.1
@@ -313,8 +317,77 @@ class ExperimentDesignSpec(pydantic.BaseModel):
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
+  @pydantic.field_validator("experiment_budget_candidates", mode="before")
+  @classmethod
+  def cast_none_budget_candidates_to_zero_spend(
+      cls, experiment_budget_candidates: list[ExperimentBudget | None]
+  ) -> list[ExperimentBudget]:
+    """Casts None budget candidates to zero spend."""
+    new_budget_candidates = []
+    for budget_candidate in experiment_budget_candidates:
+      if budget_candidate is None:
+        new_budget_candidates.append(
+            ExperimentBudget(
+                value=0, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
+            )
+        )
+      else:
+        new_budget_candidates.append(budget_candidate)
+    return new_budget_candidates
+
   @pydantic.model_validator(mode="after")
-  def check_experiment_budget_candidates_are_valid(
+  def validate_budget_candidates_match_metrics(
+      self,
+  ) -> "ExperimentDesignSpec":
+    """Ensures that the budget candidates are consistent with the metrics.
+
+    1. If none of the metrics have a cost then budget doesn't matter.
+
+    The budget only matters when looking at metrics like ROAS and CPA. For
+    other metrics the budget doesn't matter for the purposes of the experiment
+    design and analysis.
+
+    In this case, if the user has specified multiple budget candidates but
+    no cost metrics, then we warn the user and select the first budget candidate
+    as the budget that will be used for the experiment design and analysis.
+
+    2. If any of the metrics have a cost then all budget candidates must be
+    non-zero.
+
+    If any of the metrics have a cost then all budget candidates must be
+    non-zero. If any of the budget candidates are zero then we raise an error.
+
+    Returns:
+      The values with the budget candidates possibly modified.
+    """
+    all_metrics = [self.primary_metric] + self.secondary_metrics
+    has_cost_metric = any(
+        metric.cost_per_metric or metric.metric_per_cost
+        for metric in all_metrics
+    )
+    if not has_cost_metric:
+      if len(self.experiment_budget_candidates) > 1:
+        LOGGER.warning(
+            "None of the metrics have a cost, but there are multiple budget"
+            " candidates. Dropping all but the first budget candidate, since"
+            " the budget will have no influence on the design or the analysis"
+            " results without any cost metrics."
+        )
+      self.experiment_budget_candidates = self.experiment_budget_candidates[:1]
+    elif has_cost_metric:
+      for budget_candidate in self.experiment_budget_candidates:
+        if budget_candidate.value == 0.0:
+          error_message = (
+              "The experiment has cost metrics, but one of the budget"
+              " candidates is zero. The cost metrics can only be used for a"
+              " non-zero budget."
+          )
+          LOGGER.error(error_message)
+          raise ValueError(error_message)
+    return self
+
+  @pydantic.model_validator(mode="after")
+  def check_experiment_budget_candidates_are_consistent_with_experiment_type(
       self,
   ) -> "ExperimentDesignSpec":
     for budget in self.experiment_budget_candidates:
@@ -357,6 +430,14 @@ class ExperimentDesignSpec(pydantic.BaseModel):
           )
           logger.error(error_message)
           raise ValueError(error_message)
+
+      # AB test experiment budgets must be zero.
+      if self.experiment_type == ExperimentType.AB_TEST:
+        if budget.value != 0:
+          error_message = "The budget must be zero for an A/B test experiment."
+          LOGGER.error(error_message)
+          raise ValueError(error_message)
+
     return self
 
   @pydantic.field_validator("alpha", mode="after")
@@ -551,7 +632,8 @@ class ExperimentDesign(pydantic.BaseModel):
       heavy-up or hold-back experiment, the budget value should be positive and
       is usually defined as a daily budget or a total budget. For a heavy-up
       experiment, this is the incremental budget, meaning the increase on top of
-      the BAU spend, not the total budget.
+      the BAU spend, not the total budget. If your metrics do not include cost,
+      or you are running an A/B test, then you do not need to specify a budget.
     secondary_metrics: The secondary response metrics for the experiment. These
       are the metrics that the experiment will also measure, but are not as
       important as the primary metric.
@@ -579,7 +661,7 @@ class ExperimentDesign(pydantic.BaseModel):
   """
   experiment_type: ExperimentType
   primary_metric: Metric
-  experiment_budget: ExperimentBudget
+  experiment_budget: ExperimentBudget = None
   secondary_metrics: list[Metric] = []
   methodology: str
   runtime_weeks: int
@@ -732,4 +814,45 @@ class ExperimentDesign(pydantic.BaseModel):
         )
         logger.error(error_message)
         raise ValueError(error_message)
+
+    # AB test experiment budgets must be zero.
+    if self.experiment_type == ExperimentType.AB_TEST:
+      if self.experiment_budget.value != 0:
+        error_message = "The budget must be zero for an A/B test experiment."
+        LOGGER.error(error_message)
+        raise ValueError(error_message)
+
+    return self
+
+  @pydantic.field_validator("experiment_budget", mode="before")
+  @classmethod
+  def cast_none_budget_to_zero_spend(
+      cls, experiment_budget: ExperimentBudget | None
+  ) -> ExperimentBudget:
+    """Casts None budget to zero spend."""
+    if experiment_budget is None:
+      return ExperimentBudget(
+          value=0, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
+      )
+
+    return experiment_budget
+
+  @pydantic.model_validator(mode="after")
+  def ensure_budget_is_consistent_with_metrics(
+      self,
+  ) -> "ExperimentDesignSpec":
+    """If any of the metrics have a cost then the budget must be non-zero."""
+    all_metrics = [self.primary_metric] + self.secondary_metrics
+    has_cost_metric = any(
+        metric.cost_per_metric or metric.metric_per_cost
+        for metric in all_metrics
+    )
+    if has_cost_metric and self.experiment_budget.value == 0.0:
+      error_message = (
+          "The experiment has cost metrics, but one of the budget"
+          " candidates is zero. The cost metrics can only be used for a"
+          " non-zero budget."
+      )
+      LOGGER.error(error_message)
+      raise ValueError(error_message)
     return self
