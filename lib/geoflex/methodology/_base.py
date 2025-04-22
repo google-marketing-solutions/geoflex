@@ -17,6 +17,8 @@ ExperimentDesignEvaluation = (
 )
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 
+_METHODOLOGIES = {}
+
 
 class Methodology(abc.ABC):
   """Base class for all methodologies.
@@ -122,3 +124,21 @@ class Methodology(abc.ABC):
       A dataframe with the analysis results.
     """
     pass
+
+
+def register_methodology(
+    methodology_class: type[Methodology],
+) -> type[Methodology]:
+  """Registers a methodology so it can be retrieved by name."""
+  _METHODOLOGIES[methodology_class.__name__] = methodology_class
+  return methodology_class
+
+
+def get_methodology(methodology_name: str) -> Methodology:
+  """Returns the methodology with the given name."""
+  return _METHODOLOGIES[methodology_name]()
+
+
+def list_methodologies() -> list[str]:
+  """Returns a list of all methodologies."""
+  return list(_METHODOLOGIES.keys())

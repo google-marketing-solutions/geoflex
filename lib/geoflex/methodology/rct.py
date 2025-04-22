@@ -20,6 +20,8 @@ ExperimentDesignEvaluation = (
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentType = geoflex.experiment_design.ExperimentType
 
+register_methodology = _base.register_methodology
+
 
 class RCTParameters(pydantic.BaseModel):
   """The parameters for the RCT methodology.
@@ -33,6 +35,7 @@ class RCTParameters(pydantic.BaseModel):
   trimming_quantile: float = pydantic.Field(default=0.0, ge=0.0, lt=0.5)
 
 
+@register_methodology
 class RCT(_base.Methodology):
   """The Randomized Controlled Trial (RCT) methodology for GeoFleX.
 
