@@ -1,5 +1,6 @@
 """Bootstrap methods for GeoFleX."""
 
+import logging
 from typing import Generator
 import numpy as np
 import pandas as pd
@@ -8,6 +9,8 @@ from statsmodels.tsa.seasonal import DecomposeResult
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.tools import diff
 from statsmodels.tsa.vector_ar.var_model import VAR
+
+logger = logging.getLogger(__name__)
 
 
 def _auto_seasonal_decompose(
@@ -149,16 +152,16 @@ class MultivariateTimeseriesBootstrap:
       # Automatically infer the block size as 1 higher than the minimum
       self.seasons_per_block = min_seasons_per_block + 1
       if self.verbose:
-        print(
-            "Automatically inferred block size = "
-            f"{self.seasons_per_block * self.seasonality} "
-            f"({self.seasons_per_block} seasons)"
+        logger.info(
+            "Automatically inferred block size = %s (%s seasons)",
+            self.seasons_per_block * self.seasonality,
+            self.seasons_per_block,
         )
     elif self.seasons_per_block < min_seasons_per_block:
-      print(
-          f"WARNING: The seasons_per_block={self.seasons_per_block} "
-          "is too small, it does not capture the autocorrelation in the "
-          "data. Try a bigger one."
+      logger.warning(
+          "The seasons_per_block=%s is too small, it does not capture the "
+          "autocorrelation in the data. Try a bigger one.",
+          self.seasons_per_block,
       )
     self.block_size = self.seasons_per_block * self.seasonality
 

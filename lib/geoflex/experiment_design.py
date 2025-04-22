@@ -2,6 +2,7 @@
 
 import enum
 import itertools
+import logging
 from typing import Any
 import uuid
 
@@ -11,6 +12,7 @@ import pandas as pd
 import pydantic
 
 
+logger = logging.getLogger(__name__)
 Metric = geoflex.metrics.Metric
 
 
@@ -125,9 +127,9 @@ class GeoAssignment(GeoEligibility):
     for group_set in all_assignment_groups:
       overlap = group_set & seen_geos
       if overlap:
-        raise ValueError(
-            f"The following geos are in multiple groups: {overlap}"
-        )
+        error_message = f"The following geos are in multiple groups: {overlap}"
+        logger.error(error_message)
+        raise ValueError(error_message)
       seen_geos.update(group_set)
 
     return self
@@ -211,9 +213,11 @@ class ExperimentBudget(pydantic.BaseModel):
         self.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE
         and self.value < -1.0
     ):
-      raise ValueError(
+      error_message = (
           "Cannot have a percentage change budget below -1.0 (-100%)."
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
 
@@ -317,15 +321,19 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       # Go dark experiment budgets must be a negative percentage change.
       if self.experiment_type == ExperimentType.GO_DARK:
         if budget.value >= 0:
-          raise ValueError(
+          error_message = (
               "The percentage change budget must be negative for a go-dark"
               " experiment."
           )
+          logger.error(error_message)
+          raise ValueError(error_message)
         if budget.budget_type != ExperimentBudgetType.PERCENTAGE_CHANGE:
-          raise ValueError(
+          error_message = (
               "The budget type must be 'percentage_change' for a go-dark"
               " experiment."
           )
+          logger.error(error_message)
+          raise ValueError(error_message)
 
       # Heavy-up and hold-back experiment budgets must be positive.
       if self.experiment_type in [
@@ -333,25 +341,31 @@ class ExperimentDesignSpec(pydantic.BaseModel):
           ExperimentType.HOLD_BACK,
       ]:
         if budget.value <= 0:
-          raise ValueError(
+          error_message = (
               "The daily budget must be positive for a heavy-up or hold-back"
               " experiment."
           )
+          logger.error(error_message)
+          raise ValueError(error_message)
 
       # Hold-back experiment budgets cannot be a percentage change.
       if self.experiment_type == ExperimentType.HOLD_BACK:
         if budget.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
-          raise ValueError(
+          error_message = (
               "The budget type cannot be 'percentage_change' for a hold-back"
               " experiment."
           )
+          logger.error(error_message)
+          raise ValueError(error_message)
     return self
 
   @pydantic.field_validator("alpha", mode="after")
   @classmethod
   def check_alpha_is_between_0_and_1(cls, alpha: float) -> float:
     if alpha < 0 or alpha > 1:
-      raise ValueError("alpha must be between 0 and 1")
+      error_message = "alpha must be between 0 and 1"
+      logger.error(error_message)
+      raise ValueError(error_message)
     return alpha
 
   @pydantic.field_validator("alternative_hypothesis", mode="after")
@@ -360,10 +374,12 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       cls, alternative_hypothesis: str
   ) -> str:
     if alternative_hypothesis not in ["two-sided", "greater", "less"]:
-      raise ValueError(
+      error_message = (
           "alternative_hypothesis must be one of 'two-sided', 'greater', or"
           " 'less'"
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
     return alternative_hypothesis
 
   @pydantic.field_validator("primary_metric", mode="before")
@@ -385,7 +401,9 @@ class ExperimentDesignSpec(pydantic.BaseModel):
   @classmethod
   def check_at_least_one_random_seed(cls, random_seeds: list[int]) -> list[int]:
     if not random_seeds:
-      raise ValueError("At least one random seed must be provided.")
+      error_message = "At least one random seed must be provided."
+      logger.error(error_message)
+      raise ValueError(error_message)
     return random_seeds
 
   @pydantic.model_validator(mode="before")
@@ -429,9 +447,11 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       The ExperimentDesignConstraints object.
     """
     if self.max_runtime_weeks < self.min_runtime_weeks:
-      raise ValueError(
+      error_message = (
           "max_runtime_weeks must be greater than or equal to min_runtime_weeks"
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -445,7 +465,9 @@ class ExperimentDesignSpec(pydantic.BaseModel):
         The ExperimentDesignConstraints object.
     """
     if self.n_cells < 2:
-      raise ValueError("n_cells must be greater than or equal to 2")
+      error_message = "n_cells must be greater than or equal to 2"
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -464,9 +486,11 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     for candidate in self.n_geos_per_group_candidates:
       if candidate is not None:
         if len(candidate) != self.n_cells:
-          raise ValueError(
+          error_message = (
               "The number of geos per group does not match the number of cells."
           )
+          logger.error(error_message)
+          raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -479,10 +503,12 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       expected_num_treatment_arms = self.n_cells - 1
 
       if num_treatment_arms_in_geoeligibility != expected_num_treatment_arms:
-        raise ValueError(
+        error_message = (
             "The number of treatment arms in the geo eligibility does not match"
             " the number of cells."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -492,7 +518,9 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     all_metrics = [self.primary_metric] + self.secondary_metrics
     metric_names = [metric.name for metric in all_metrics]
     if len(metric_names) != len(set(metric_names)):
-      raise ValueError("Metric names must be unique.")
+      error_message = "Metric names must be unique."
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
 
@@ -602,10 +630,12 @@ class ExperimentDesign(pydantic.BaseModel):
     """Checks that the number of geos per group matches the number of cells."""
     if self.n_geos_per_group is not None:
       if len(self.n_geos_per_group) != self.n_cells:
-        raise ValueError(
+        error_message = (
             f"Length of n_geos_per_group ({len(self.n_geos_per_group)}) "
             f"does not match n_cells ({self.n_cells})."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -617,11 +647,13 @@ class ExperimentDesign(pydantic.BaseModel):
       )
       expected_num_treatment_arms = self.n_cells - 1
       if num_treatment_arms_in_assignment != expected_num_treatment_arms:
-        raise ValueError(
+        error_message = (
             f"Expected {expected_num_treatment_arms} treatment arms "
             f"in geo_assignment (based on n_cells={self.n_cells}), "
             f"but found {num_treatment_arms_in_assignment}."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="before")
@@ -646,7 +678,9 @@ class ExperimentDesign(pydantic.BaseModel):
     all_metrics = [self.primary_metric] + self.secondary_metrics
     metric_names = [metric.name for metric in all_metrics]
     if len(metric_names) != len(set(metric_names)):
-      raise ValueError("Metric names must be unique.")
+      error_message = "Metric names must be unique."
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -656,18 +690,22 @@ class ExperimentDesign(pydantic.BaseModel):
     # Go dark experiment budgets must be a negative percentage change.
     if self.experiment_type == ExperimentType.GO_DARK:
       if self.experiment_budget.value >= 0:
-        raise ValueError(
+        error_message = (
             "The percentage change budget must be negative for a go-dark"
             " experiment."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
       if (
           self.experiment_budget.budget_type
           != ExperimentBudgetType.PERCENTAGE_CHANGE
       ):
-        raise ValueError(
+        error_message = (
             "The budget type must be 'percentage_change' for a go-dark"
             " experiment."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
 
     # Heavy-up and hold-back experiment budgets must be positive.
     if self.experiment_type in [
@@ -675,10 +713,12 @@ class ExperimentDesign(pydantic.BaseModel):
         ExperimentType.HOLD_BACK,
     ]:
       if self.experiment_budget.value <= 0:
-        raise ValueError(
+        error_message = (
             "The daily budget must be positive for a heavy-up or hold-back"
             " experiment."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
 
     # Hold-back experiment budgets cannot be a percentage change.
     if self.experiment_type == ExperimentType.HOLD_BACK:
@@ -686,8 +726,10 @@ class ExperimentDesign(pydantic.BaseModel):
           self.experiment_budget.budget_type
           == ExperimentBudgetType.PERCENTAGE_CHANGE
       ):
-        raise ValueError(
+        error_message = (
             "The budget type cannot be 'percentage_change' for a hold-back"
             " experiment."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
     return self

@@ -1,11 +1,14 @@
 """Methods to evaluate the quality of a geo experiments."""
 
 import functools
+import logging
 import dcor
 import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.metrics import silhouette_score
+
+logger = logging.getLogger(__name__)
 
 
 class GeoAssignmentRepresentivenessScorer:
@@ -223,9 +226,11 @@ def calculate_minimum_detectable_effect_from_stats(
   elif alternative in ["greater", "less"]:
     z_alpha = stats.norm.ppf(q=1.0 - alpha)
   else:
-    raise ValueError(
+    error_message = (
         "Alternative must be one of ['two-sided', 'greater', 'less']"
     )
+    logger.error(error_message)
+    raise ValueError(error_message)
 
   z_power = stats.norm.ppf(power)
 

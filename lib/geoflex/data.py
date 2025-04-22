@@ -4,6 +4,7 @@ from collections.abc import Mapping
 import datetime as dt
 import functools
 import itertools
+import logging
 import warnings
 
 import geoflex.experiment_design
@@ -14,6 +15,8 @@ import pydantic
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 ExperimentType = geoflex.experiment_design.ExperimentType
+
+logger = logging.getLogger(__name__)
 
 
 class GeoPerformanceDataset(pydantic.BaseModel):
@@ -46,9 +49,11 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     missing_cols = [col for col in required_columns if col not in data.columns]
 
     if missing_cols:
-      raise ValueError(
+      error_message = (
           f"Data must have the following columns: {', '.join(required_columns)}"
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     return values
 
@@ -63,9 +68,9 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       return values
 
     if data[geo_col].isna().any():
-      raise ValueError(
-          f"Data must have non-NA values in the {geo_col} column."
-      )
+      error_message = f"Data must have non-NA values in the {geo_col} column."
+      logger.error(error_message)
+      raise ValueError(error_message)
     return values
 
   @functools.cached_property
@@ -85,9 +90,13 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     unique_dates = input_data[self.date_column].unique().tolist()
 
     if not unique_geos:
-      raise ValueError("No unique geos found in the data.")
+      error_message = "No unique geos found in the data."
+      logger.error(error_message)
+      raise ValueError(error_message)
     if not unique_dates:
-      raise ValueError("No unique dates found in the data.")
+      error_message = "No unique dates found in the data."
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     index = pd.DataFrame(
         itertools.product(unique_geos, unique_dates),
@@ -98,7 +107,9 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         input_data.select_dtypes("number").columns.values.tolist()
     )
     if not all_metric_columns:
-      raise ValueError("No metric columns found in the data.")
+      error_message = "No metric columns found in the data."
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     all_columns_to_keep = list(
         {self.geo_id_column, self.date_column} | set(all_metric_columns)
@@ -136,10 +147,12 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       duplicated_indices = parsed_data.index[
           parsed_data.index.duplicated()
       ].unique().tolist()
-      raise ValueError(
+      error_message = (
           "Data processing resulted in non-unique 'geo_id_date' index values. "
           f"Duplicated indices start with: {', '.join(duplicated_indices)}"
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     return parsed_data
 
@@ -184,12 +197,16 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     """
     unique_dates = self.dates
     if len(unique_dates) < 2:
-      raise ValueError("Data must have at least 2 unique dates.")
+      error_message = "Data must have at least 2 unique dates."
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     date_diffs = pd.Series(unique_dates).diff().dt.days.dropna()
 
     if date_diffs.empty:
-      warnings.warn("Cannot determine data frequency")
+      warning_message = "Cannot determine data frequency."
+      logger.warning(warning_message)
+      warnings.warn(warning_message)
       return 1  # default to daily
 
     mode_freq = date_diffs.mode()
@@ -203,10 +220,12 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         frequency = int(median_freq)
         return frequency
       else:
-        raise ValueError(
+        error_message = (
             "Cannot determine data frequency. "
             "Most common and median frequencies are not 1, 7, or integer."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
 
   @functools.cached_property
   def parsed_data_int_geos(self) -> pd.DataFrame:
@@ -242,9 +261,12 @@ class GeoPerformanceDataset(pydantic.BaseModel):
           f"Check these dates preceding a gap: {gap_dates_str}."
       )
       if self.allow_missing_dates:
+        logger.warning(message)
         warnings.warn(message, UserWarning)
       else:
-        raise ValueError(message + " Set allow_missing_dates=True to ignore.")
+        error_message = message + " Set allow_missing_dates=True to ignore."
+        logger.error(error_message)
+        raise ValueError(error_message)
 
     return self
 
@@ -307,10 +329,12 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         not 0.0.
     """
     if not np.isclose(treatment_effect_size, 0.0):
-      raise NotImplementedError(
+      error_message = (
           "Simulate experiment is currently only supported for A/A simulations"
           " with no treatment effect."
       )
+      logger.error(error_message)
+      raise NotImplementedError(error_message)
 
     # Get all cost metrics.
     all_metrics = [design.primary_metric] + design.secondary_metrics
@@ -341,10 +365,12 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     for cost_metric in cost_columns:
       has_cost = data[cost_metric].sum().sum() > 0
       if is_hold_back and has_cost:
-        raise ValueError(
+        error_message = (
             "Cost metric found in a hold back experiment. This is not"
             " supported."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
       for treatment_cell in design.geo_assignment.treatment:
         for treatment_geo in treatment_cell:
           if is_percent_change:
@@ -396,11 +422,13 @@ class GeoPerformanceDataset(pydantic.BaseModel):
             )
             budget_frac = geo_primary_response / total_primary_response
           else:
-            raise RuntimeError(  # pylint: disable=g-doc-exception
+            error_message = (
                 "This shouldn't have happened, but somehow got an experiment"
                 " type that is neither heavy up, hold back, but a budget that"
                 " is not a percentage change."
             )
+            logger.error(error_message)
+            raise RuntimeError(error_message)  # pylint: disable=g-doc-exception
 
           data.loc[treatment_dates_mask, (cost_metric, treatment_geo)] += (
               budget_value * budget_frac

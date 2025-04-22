@@ -1,7 +1,10 @@
 """The metrics for a GeoFleX experiment."""
 
+import logging
 from typing import Any
 import pydantic
+
+logger = logging.getLogger(__name__)
 
 
 class Metric(pydantic.BaseModel):
@@ -39,9 +42,11 @@ class Metric(pydantic.BaseModel):
       self,
   ) -> "Metric":
     if self.metric_per_cost and self.cost_per_metric:
-      raise ValueError(
+      error_message = (
           "Metric cannot be both a metric per cost and a cost per metric."
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
   @pydantic.model_validator(mode="after")
@@ -50,10 +55,12 @@ class Metric(pydantic.BaseModel):
   ) -> "Metric":
     if self.metric_per_cost or self.cost_per_metric:
       if not self.cost_column:
-        raise ValueError(
+        error_message = (
             "Cost column must be set if metric is a metric per cost or a cost"
             " per metric."
         )
+        logger.error(error_message)
+        raise ValueError(error_message)
     return self
 
   def invert(self) -> "Metric":
@@ -85,10 +92,12 @@ class Metric(pydantic.BaseModel):
           }
       )
     else:
-      raise ValueError(
+      error_message = (
           "Metric cannot be inverted because it is not a metric per cost or a"
           " cost per metric."
       )
+      logger.error(error_message)
+      raise ValueError(error_message)
 
 
 class ROAS(Metric):

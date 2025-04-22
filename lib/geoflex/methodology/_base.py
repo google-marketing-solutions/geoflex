@@ -1,6 +1,7 @@
 """The base class for all methodologies, to ensure a unified interface."""
 
 import abc
+import logging
 from typing import Any
 import geoflex.data
 import geoflex.experiment_design
@@ -18,6 +19,7 @@ ExperimentDesignEvaluation = (
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 
 _METHODOLOGIES = {}
+logger = logging.getLogger(__name__)
 
 
 class Methodology(abc.ABC):
@@ -130,12 +132,18 @@ def register_methodology(
     methodology_class: type[Methodology],
 ) -> type[Methodology]:
   """Registers a methodology so it can be retrieved by name."""
+  logger.info("Registering methodology: %s", methodology_class.__name__)
   _METHODOLOGIES[methodology_class.__name__] = methodology_class
   return methodology_class
 
 
 def get_methodology(methodology_name: str) -> Methodology:
   """Returns the methodology with the given name."""
+  if methodology_name not in _METHODOLOGIES:
+    error_message = f"Methodology {methodology_name} not registered."
+    logger.error(error_message)
+    raise ValueError(error_message)
+
   return _METHODOLOGIES[methodology_name]()
 
 

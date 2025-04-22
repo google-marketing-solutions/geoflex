@@ -1,6 +1,7 @@
 """The main experiment class for GeoFleX."""
 
 import functools
+import logging
 from typing import Any
 import warnings
 import geoflex.bootstrap
@@ -22,6 +23,8 @@ GeoAssignmentRepresentivenessScorer = (
     geoflex.evaluation.GeoAssignmentRepresentivenessScorer
 )
 EffectScope = geoflex.experiment_design.EffectScope
+
+logger = logging.getLogger(__name__)
 
 
 def _format_experiment_budget(value, budget_type):
@@ -84,6 +87,7 @@ class MaxTrialsCallback:
     ])
 
     if n_non_inf_trials >= self.max_trials:
+      logger.info("Stopping study after %s trials.", n_non_inf_trials)
       study.stop()
 
 
@@ -133,6 +137,7 @@ class Experiment:
 
   def clear_designs(self) -> None:
     """Clears the designs."""
+    logger.info("Clearing designs for experiment %s.", self.name)
     self._eligible_experiment_design_results = {}
     self._selected_design_id = None
 
@@ -529,6 +534,12 @@ class Experiment:
     # representiveness score. This will ensure that this design is never
     # selected.
     if results is None:
+      logger.info(
+          "Design %s (trial %s) is not eligible for methodology %s",
+          design.design_id,
+          trial.number,
+          design.methodology,
+      )
       return np.inf, -1.0
 
     # Assign geos for the experiment.
@@ -589,11 +600,20 @@ class Experiment:
     # ensure that this design is never selected. The validation checks are
     # designed to ensure that the confidence intervals for the primary metric
     # are correctly calibrated and the effect size estimates are unbiased.
-    if ignore_designs_with_failing_checks:
-      primary_metric_all_checks_pass = primary_metric_results[
-          "all_checks_pass"
-      ].all()
-      if not primary_metric_all_checks_pass:
+    primary_metric_all_checks_pass = primary_metric_results[
+        "all_checks_pass"
+    ].all()
+    if not primary_metric_all_checks_pass:
+      logger.info(
+          "Design %s (trial %s) does not meet the validation checks for the"
+          " primary metric, the following checks failed: %s",
+          design.design_id,
+          trial.number,
+          primary_metric_results["failing_checks"].aggregate(
+              lambda x: ", ".join(list(set(sum(x, []))))
+          ),
+      )
+      if ignore_designs_with_failing_checks:
         return np.inf, -1.0
 
     # Finally we return the standard error of the primary metric, and the
@@ -810,9 +830,11 @@ class Experiment:
       A dataframe containing the experiment design summaries.
     """
     if target_primary_metric_mde is not None:
-      raise NotImplementedError(
+      error_message = (
           "Calculating the Power given an MDE is not yet implemented"
       )
+      logger.error(error_message)
+      raise NotImplementedError(error_message)
     raw_data = self.all_raw_eval_metrics
 
     if pareto_front_only:
@@ -897,9 +919,13 @@ class Experiment:
       does not exist.
     """
     if self._selected_design_id is None:
-      raise ValueError("No design has been selected.")
+      error_message = "No design has been selected."
+      logger.error(error_message)
+      raise ValueError(error_message)
     if self._selected_design_id not in self._eligible_experiment_design_results:
-      raise ValueError(f"Design {self._selected_design_id} does not exist.")
+      error_message = f"Design {self._selected_design_id} does not exist."
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self._eligible_experiment_design_results[self._selected_design_id][
         "design"
     ]
