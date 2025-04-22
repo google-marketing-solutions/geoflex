@@ -150,19 +150,7 @@ def test_rct_is_eligible_for_design(design, expected_is_eligible):
   assert RCT().is_eligible_for_design(design) == expected_is_eligible
 
 
-@pytest.mark.parametrize(
-    "design_spec,expected_parameter_names",
-    [
-        ({}, ["trimming_quantile"]),
-        (
-            {"trimming_quantile_candidates": [0.0, 0.1, 0.2]},
-            ["trimming_quantile"],
-        ),
-    ],
-)
-def test_rct_suggest_methodology_parameters(
-    design_spec, expected_parameter_names
-):
+def test_rct_suggests_no_methodology_parameters():
   study = op.create_study()
   trial = study.ask()
   parameters = RCT().suggest_methodology_parameters(
@@ -175,13 +163,11 @@ def test_rct_suggest_methodology_parameters(
                   budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
               )
           ],
-          max_runtime_weeks=4,
-          min_runtime_weeks=2,
-          **design_spec,
+          runtime_weeks_candidates=[2, 4],
       ),
       trial,
   )
-  assert set(parameters.keys()) == set(expected_parameter_names)
+  assert parameters == {}  # pylint: disable=g-explicit-bool-comparison
 
 
 @pytest.mark.parametrize(

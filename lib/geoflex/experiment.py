@@ -226,10 +226,9 @@ class Experiment:
     Returns:
       The suggested experiment design.
     """
-    runtime_weeks = trial.suggest_int(
+    runtime_weeks = trial.suggest_categorical(
         "runtime_weeks",
-        self.design_spec.min_runtime_weeks,
-        self.design_spec.max_runtime_weeks,
+        self.design_spec.runtime_weeks_candidates,
     )
     methodology_name = trial.suggest_categorical(
         "methodology", list(self.design_spec.eligible_methodologies)
@@ -305,7 +304,7 @@ class Experiment:
         self.historical_data.date_column
     ].max()
     exp_start_date = max_date - pd.Timedelta(
-        weeks=self.design_spec.max_runtime_weeks
+        weeks=max(self.design_spec.runtime_weeks_candidates)
     )
 
     # Cost-per-metric metrics must be inverted for power calculation

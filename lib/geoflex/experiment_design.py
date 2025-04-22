@@ -131,7 +131,7 @@ class GeoAssignment(GeoEligibility):
       overlap = group_set & seen_geos
       if overlap:
         error_message = f"The following geos are in multiple groups: {overlap}"
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise ValueError(error_message)
       seen_geos.update(group_set)
 
@@ -219,7 +219,7 @@ class ExperimentBudget(pydantic.BaseModel):
       error_message = (
           "Cannot have a percentage change budget below -1.0 (-100%)."
       )
-      logger.error(error_message)
+      LOGGER.error(error_message)
       raise ValueError(error_message)
     return self
 
@@ -276,18 +276,15 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     alpha: The significance level for the experiment. Defaults to 0.1.
     eligible_methodologies: The eligible methodologies for the experiment.
       Defaults to all methodologies except RCT.
-    max_runtime_weeks: The maximum number of weeks the experiment can run.
-    min_runtime_weeks: The minimum number of weeks the experiment can run.
+    runtime_weeks_candidates: The candidates for the number of weeks the
+      experiment can run. The experiment design will choose the best
+      configuration from this list.
     n_cells: The number of cells to use for the experiment. Must be at least 2.
     n_geos_per_group_candidates: A list of lists of integers representing the
       number of geos per group that should be considered. The experiment design
       will choose the best configuration from this list. The inner lists must
       have the length of n_cells. If None, then the number of geos per group
       will be unconstrained.
-    trimming_quantile_candidates: The candidates for the trimming quantiles to
-      use for the experiment. The trimming quantile is used to trim the tails of
-      the distribution of the response metric before calculating the confidence
-      interval. Defaults to [0.0] (no trimming).
     geo_eligibility_candidates: The geo eligibility candidates for the
       experiment.
     random_seeds: The random seeds to use for the experiment. If any random
@@ -306,11 +303,9 @@ class ExperimentDesignSpec(pydantic.BaseModel):
   alternative_hypothesis: str = "two-sided"
   alpha: float = 0.1
   eligible_methodologies: list[str] = ("TBR_MM", "TBR", "TM", "GBR")
-  max_runtime_weeks: int = 8
-  min_runtime_weeks: int = 2
+  runtime_weeks_candidates: list[int] = [4, 6]
   n_cells: int = 2
   n_geos_per_group_candidates: list[list[int] | None] = [None]
-  trimming_quantile_candidates: list[float] = [0.0]
   geo_eligibility_candidates: list[GeoEligibility] = [None]
   random_seeds: list[int] = [0]
   effect_scope: EffectScope = EffectScope.ALL_GEOS
@@ -367,7 +362,7 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     )
     if not has_cost_metric:
       if len(self.experiment_budget_candidates) > 1:
-        LOGGER.warning(
+        logger.warning(
             "None of the metrics have a cost, but there are multiple budget"
             " candidates. Dropping all but the first budget candidate, since"
             " the budget will have no influence on the design or the analysis"
@@ -382,7 +377,7 @@ class ExperimentDesignSpec(pydantic.BaseModel):
               " candidates is zero. The cost metrics can only be used for a"
               " non-zero budget."
           )
-          LOGGER.error(error_message)
+          logger.error(error_message)
           raise ValueError(error_message)
     return self
 
@@ -435,9 +430,8 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       if self.experiment_type == ExperimentType.AB_TEST:
         if budget.value != 0:
           error_message = "The budget must be zero for an A/B test experiment."
-          LOGGER.error(error_message)
+          logger.error(error_message)
           raise ValueError(error_message)
-
     return self
 
   @pydantic.field_validator("alpha", mode="after")
@@ -516,21 +510,19 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     return values
 
   @pydantic.model_validator(mode="after")
-  def check_max_runtime_greater_than_min_runtime(
+  def check_runtime_weeks_candidates_is_not_empty(
       self,
   ) -> "ExperimentDesignConstraints":
-    """Checks that max_runtime_weeks is greater than or equal to min_runtime_weeks.
+    """Checks that the runtime week candidates is not empty.
 
     Raises:
-      ValueError: If max_runtime_weeks is less than min_runtime_weeks.
+      ValueError: If runtime_weeks_candidates is empty.
 
     Returns:
       The ExperimentDesignConstraints object.
     """
-    if self.max_runtime_weeks < self.min_runtime_weeks:
-      error_message = (
-          "max_runtime_weeks must be greater than or equal to min_runtime_weeks"
-      )
+    if not self.runtime_weeks_candidates:
+      error_message = "runtime_weeks_candidates must be non-empty."
       logger.error(error_message)
       raise ValueError(error_message)
     return self
@@ -819,7 +811,7 @@ class ExperimentDesign(pydantic.BaseModel):
     if self.experiment_type == ExperimentType.AB_TEST:
       if self.experiment_budget.value != 0:
         error_message = "The budget must be zero for an A/B test experiment."
-        LOGGER.error(error_message)
+        logger.error(error_message)
         raise ValueError(error_message)
 
     return self
@@ -853,6 +845,6 @@ class ExperimentDesign(pydantic.BaseModel):
           " candidates is zero. The cost metrics can only be used for a"
           " non-zero budget."
       )
-      LOGGER.error(error_message)
+      logger.error(error_message)
       raise ValueError(error_message)
     return self

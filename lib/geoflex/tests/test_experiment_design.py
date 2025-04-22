@@ -57,8 +57,8 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
     "invalid_args",
     [
         pytest.param(
-            {"max_runtime_weeks": 1, "min_runtime_weeks": 2},
-            id="min_runtime_weeks_greater_than_max_runtime_weeks",
+            {"runtime_weeks_candidates": []},
+            id="runtime_weeks_candidates_is_empty",
         ),
         pytest.param(
             {"n_cells": 1},
@@ -247,13 +247,11 @@ def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
             "geo_eligibility_candidates": [
                 GeoAssignment(treatment=[["US", "UK"]], control=["CA", "AU"])
             ],
-            "max_runtime_weeks": 4,
-            "min_runtime_weeks": 2,
+            "runtime_weeks_candidates": [2, 4],
         },
         {},
         {"geo_eligibility_candidates": [None]},
         {"n_geos_per_group_candidates": [[2, 2], [1, 5], None]},
-        {"trimming_quantile_candidates": [0.0, 0.5]},
         {"n_cells": 3},
         {"secondary_metrics": ["conversions"]},
         {

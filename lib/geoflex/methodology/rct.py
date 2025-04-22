@@ -8,7 +8,6 @@ from geoflex.methodology import _base
 import numpy as np
 import optuna as op
 import pandas as pd
-import pydantic
 
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -21,18 +20,6 @@ GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentType = geoflex.experiment_design.ExperimentType
 
 register_methodology = _base.register_methodology
-
-
-class RCTParameters(pydantic.BaseModel):
-  """The parameters for the RCT methodology.
-
-  Attributes:
-    trimming_quantile: The quantile to use for trimming. Higher trimming can
-      lead to more power, but will lead to more geos being ignored. Cannot be
-      greater than 0.5. Defaults to 0.0 to not trim any data.
-  """
-
-  trimming_quantile: float = pydantic.Field(default=0.0, ge=0.0, lt=0.5)
 
 
 @register_methodology
@@ -87,11 +74,7 @@ class RCT(_base.Methodology):
     Returns:
       A dictionary of parameters that are specific to the RCT methodology.
     """
-    parameters = {}
-    parameters["trimming_quantile"] = trial.suggest_categorical(
-        "trimming_quantile", design_spec.trimming_quantile_candidates
-    )
-    return parameters
+    return {}  # No parameters for RCT
 
   def assign_geos(
       self,
@@ -176,10 +159,6 @@ class RCT(_base.Methodology):
     Returns:
       A dataframe with the analysis results.
     """
-    parameters = RCTParameters.model_validate(
-        experiment_design.methodology_parameters
-    )
-
     is_during_runtime = (
         runtime_data.parsed_data[runtime_data.date_column]
         >= experiment_start_date
@@ -218,7 +197,7 @@ class RCT(_base.Methodology):
         statistical_results = statistics.yuens_t_test_ind(
             treatment_data[metric.column].values,
             control_data[metric.column].values,
-            trimming_quantile=parameters.trimming_quantile,
+            trimming_quantile=0.0,
             alpha=experiment_design.alpha,
             alternative=experiment_design.alternative_hypothesis,
         )

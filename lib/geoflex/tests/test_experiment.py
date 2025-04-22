@@ -168,8 +168,7 @@ def mock_design_spec_fixture():
           ),
       ],
       eligible_methodologies=["RCT"],
-      max_runtime_weeks=4,
-      min_runtime_weeks=2,
+      runtime_weeks_candidates=[2, 4],
       n_cells=3,
       geo_eligibility_candidates=[None],
       effect_scope=EffectScope.ALL_GEOS,
@@ -239,9 +238,9 @@ def test_experiment_suggest_experiment_design_returns_correct_design(
       suggested_design.methodology in default_design_spec.eligible_methodologies
   )
   assert isinstance(suggested_design.methodology_parameters, dict)
-  assert suggested_design.runtime_weeks in range(
-      default_design_spec.min_runtime_weeks,
-      default_design_spec.max_runtime_weeks + 1,
+  assert (
+      suggested_design.runtime_weeks
+      in default_design_spec.runtime_weeks_candidates
   )
   assert suggested_design.n_cells == default_design_spec.n_cells
   assert suggested_design.alpha == default_design_spec.alpha
@@ -601,4 +600,4 @@ def test_count_all_eligible_designs_returns_correct_data(
       design_spec=default_design_spec,
   )
   counts = experiment.count_all_eligible_designs()
-  assert counts == {"RCT": 6}
+  assert counts == {"RCT": 4}
