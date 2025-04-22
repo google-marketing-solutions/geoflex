@@ -131,7 +131,7 @@ class GeoAssignment(GeoEligibility):
       overlap = group_set & seen_geos
       if overlap:
         error_message = f"The following geos are in multiple groups: {overlap}"
-        LOGGER.error(error_message)
+        logger.error(error_message)
         raise ValueError(error_message)
       seen_geos.update(group_set)
 
@@ -208,6 +208,8 @@ class ExperimentBudget(pydantic.BaseModel):
   value: float
   budget_type: ExperimentBudgetType
 
+  model_config = pydantic.ConfigDict(extra="forbid")
+
   @pydantic.model_validator(mode="after")
   def check_percentage_change_is_not_below_minus_1(
       self,
@@ -219,7 +221,7 @@ class ExperimentBudget(pydantic.BaseModel):
       error_message = (
           "Cannot have a percentage change budget below -1.0 (-100%)."
       )
-      LOGGER.error(error_message)
+      logger.error(error_message)
       raise ValueError(error_message)
     return self
 
@@ -245,6 +247,55 @@ class EffectScope(enum.StrEnum):
 
   ALL_GEOS = "all_geos"
   TREATMENT_GEOS = "treatment_geos"
+
+
+class CellVolumeConstraintType(enum.StrEnum):
+  """The type of cell volume constraint to use in an experiment."""
+
+  NUMBER_OF_GEOS = "number_of_geos"
+  MAX_PERCENTAGE_OF_TOTAL_SPEND = "max_percentage_of_total_spend"
+  MAX_PERCENTAGE_OF_TOTAL_RESPONSE = "max_percentage_of_total_response"
+
+
+class CellVolumeConstraint(pydantic.BaseModel):
+  """The cell volume constraint for an experiment.
+
+  This can constrain either the number of geos per cell, the maximum percentage
+  of total spend per cell, or the maximum percentage of total response per cell.
+
+  Attributes:
+    values: The values of the cell volume constraint. This should be a list
+      of values, one for each cell. If the value is None, then there is no
+      constraint on the cell volume for that cell.
+    constraint_type: The type of the cell volume constraint, one of
+      "number_of_geos", "max_percentage_of_total_spend", or
+      "max_percentage_of_total_response".
+  """
+
+  values: list[float | int | None]
+  constraint_type: CellVolumeConstraintType = (
+      CellVolumeConstraintType.NUMBER_OF_GEOS
+  )
+
+  model_config = pydantic.ConfigDict(extra="forbid")
+
+  @property
+  def flexible(self) -> bool:
+    """Returns True if the cell volume constraint is flexible."""
+    return all(value is None for value in self.values)
+
+  @pydantic.model_validator(mode="after")
+  def check_constraint_type_is_implemented(
+      self,
+  ) -> "CellVolumeConstraint":
+    if self.constraint_type != CellVolumeConstraintType.NUMBER_OF_GEOS:
+      error_message = (
+          "Only cell volume constraint of type 'number_of_geos' is currently"
+          " implemented."
+      )
+      logger.error(error_message)
+      raise NotImplementedError(error_message)
+    return self
 
 
 class ExperimentDesignSpec(pydantic.BaseModel):
@@ -280,11 +331,10 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       experiment can run. The experiment design will choose the best
       configuration from this list.
     n_cells: The number of cells to use for the experiment. Must be at least 2.
-    n_geos_per_group_candidates: A list of lists of integers representing the
-      number of geos per group that should be considered. The experiment design
-      will choose the best configuration from this list. The inner lists must
-      have the length of n_cells. If None, then the number of geos per group
-      will be unconstrained.
+    cell_volume_constraint_candidates: A list of CellVolumeConstraints.The
+      experiment design will choose the best configuration from this list. Each
+      constraint must have a value for each cell. If the constraint value is
+      None, then there is no constraint on the cell volume for that cell.
     geo_eligibility_candidates: The geo eligibility candidates for the
       experiment.
     random_seeds: The random seeds to use for the experiment. If any random
@@ -305,12 +355,39 @@ class ExperimentDesignSpec(pydantic.BaseModel):
   eligible_methodologies: list[str] = ("TBR_MM", "TBR", "TM", "GBR")
   runtime_weeks_candidates: list[int] = [4, 6]
   n_cells: int = 2
-  n_geos_per_group_candidates: list[list[int] | None] = [None]
+  cell_volume_constraint_candidates: list[CellVolumeConstraint] = [None]
   geo_eligibility_candidates: list[GeoEligibility] = [None]
   random_seeds: list[int] = [0]
   effect_scope: EffectScope = EffectScope.ALL_GEOS
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def cast_none_cell_volume_constraint_candidates_to_unconstrained(
+      cls, values: dict[str, Any]
+  ) -> dict[str, Any]:
+    """Casts None cell volume constraint candidates to unconstrained."""
+    cell_volume_constraint_candidates = values.get(
+        "cell_volume_constraint_candidates", [None]
+    )
+    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
+    new_cell_volume_constraint_candidates = []
+    for cell_volume_constraint in cell_volume_constraint_candidates:
+      if cell_volume_constraint is None:
+        new_cell_volume_constraint_candidates.append(
+            CellVolumeConstraint(
+                values=[None]*n_cells,
+                constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS
+            )
+        )
+      else:
+        new_cell_volume_constraint_candidates.append(cell_volume_constraint)
+
+    values["cell_volume_constraint_candidates"] = (
+        new_cell_volume_constraint_candidates
+    )
+    return values
 
   @pydantic.field_validator("experiment_budget_candidates", mode="before")
   @classmethod
@@ -472,15 +549,6 @@ class ExperimentDesignSpec(pydantic.BaseModel):
         for metric in metrics
     ]
 
-  @pydantic.field_validator("random_seeds", mode="after")
-  @classmethod
-  def check_at_least_one_random_seed(cls, random_seeds: list[int]) -> list[int]:
-    if not random_seeds:
-      error_message = "At least one random seed must be provided."
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return random_seeds
-
   @pydantic.model_validator(mode="before")
   @classmethod
   def cast_geo_eligibility_candidates(
@@ -508,6 +576,15 @@ class ExperimentDesignSpec(pydantic.BaseModel):
           for fixed_geos in raw_geo_eligibility_candidates
       ]
     return values
+
+  @pydantic.field_validator("random_seeds", mode="after")
+  @classmethod
+  def check_at_least_one_random_seed(cls, random_seeds: list[int]) -> list[int]:
+    if not random_seeds:
+      error_message = "At least one random seed must be provided."
+      logger.error(error_message)
+      raise ValueError(error_message)
+    return random_seeds
 
   @pydantic.model_validator(mode="after")
   def check_runtime_weeks_candidates_is_not_empty(
@@ -544,23 +621,24 @@ class ExperimentDesignSpec(pydantic.BaseModel):
     return self
 
   @pydantic.model_validator(mode="after")
-  def check_n_geos_per_group_candidates_match_n_cells(
+  def check_cell_volume_constraint_candidates_match_n_cells(
       self,
   ) -> "ExperimentDesignConstraints":
-    """Checks if number of geos per group candidates matches number of cells.
+    """Checks if cell volume constraint candidates matches number of cells.
 
     Raises:
-        ValueError: If the number of geos per group candidates does not match
+        ValueError: If the number of cell volume constraints does not match
         the number of cells.
 
     Returns:
         The ExperimentDesignConstraints object.
     """
-    for candidate in self.n_geos_per_group_candidates:
+    for candidate in self.cell_volume_constraint_candidates:
       if candidate is not None:
-        if len(candidate) != self.n_cells:
+        if len(candidate.values) != self.n_cells:
           error_message = (
-              "The number of geos per group does not match the number of cells."
+              "The number of cell volume constraint values does not match the"
+              " number of cells."
           )
           logger.error(error_message)
           raise ValueError(error_message)
@@ -594,6 +672,48 @@ class ExperimentDesignSpec(pydantic.BaseModel):
       error_message = "Metric names must be unique."
       logger.error(error_message)
       raise ValueError(error_message)
+    return self
+
+  @pydantic.model_validator(mode="after")
+  def validate_that_volume_constraints_match_geo_eligibility_candidates(
+      self,
+  ) -> "ExperimentDesignSpec":
+    """Check that the geo eligibility works with the volume constraints."""
+    for geo_eligibility in self.geo_eligibility_candidates:
+      for cell_volume_constraint in self.cell_volume_constraint_candidates:
+        if cell_volume_constraint.constraint_type != (
+            CellVolumeConstraintType.NUMBER_OF_GEOS
+        ):
+          continue
+
+        if cell_volume_constraint.flexible:
+          return self
+
+        group_eligibility = [
+            geo_eligibility.control
+        ] + geo_eligibility.treatment
+        for i in range(len(group_eligibility)):
+          if cell_volume_constraint.values[i] is None:
+            continue
+
+          group = group_eligibility[i].copy()
+          group -= geo_eligibility.exclude
+          for j in range(len(group_eligibility)):
+            if j == i:
+              continue
+            group -= group_eligibility[j]
+
+          if len(group) > cell_volume_constraint.values[i]:
+            error_message = (
+                "The geo eligibility does not work with the cell volume"
+                " constraint. The cell volume constraint requires"
+                f" {cell_volume_constraint.values[i]} geos in cell {i}, but the"
+                f" geo eligibility specifies {len(group)} geos that must be in"
+                " that cell."
+            )
+            logger.error(error_message)
+            raise ValueError(error_message)
+
     return self
 
 
@@ -639,9 +759,9 @@ class ExperimentDesign(pydantic.BaseModel):
     geo_eligibility: The geo eligibility for the experiment. This is used to
       specify which geos are eligible to be in which groups in the experiment.
       If None, then all geos are eligible for all groups.
-    n_geos_per_group: The number of geos per group. The first group will be the
-      control group, and all subsequent groups will be the treatment groups.
-      Defaults to None, which means it is flexible.
+    cell_volume_constraint: The cell volume constraint for the experiment. This
+      is used to specify the constraint on the number of geos per cell. If None,
+      then there is no constraint.
     constraints: The constraints for the experiment.
     geo_assignment: The geo assignment for the experiment. This is set after the
       design is created, when the geos are assigned.
@@ -664,13 +784,13 @@ class ExperimentDesign(pydantic.BaseModel):
   methodology_parameters: dict[str, Any] = {}
   random_seed: int = 0
   effect_scope: EffectScope = EffectScope.ALL_GEOS
+  cell_volume_constraint: CellVolumeConstraint = None
 
   # The design id is autogenerated for a new design.
   design_id: str = pydantic.Field(default_factory=lambda: str(uuid.uuid4()))
 
   # Store geo assignment directly
   geo_assignment: GeoAssignment | None = None
-  n_geos_per_group: list[int] | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -700,13 +820,16 @@ class ExperimentDesign(pydantic.BaseModel):
     ]
 
   @pydantic.model_validator(mode="after")
-  def check_n_geos_per_group_matches_n_cells(self) -> "ExperimentDesign":
-    """Checks that the number of geos per group matches the number of cells."""
-    if self.n_geos_per_group is not None:
-      if len(self.n_geos_per_group) != self.n_cells:
+  def check_cell_volume_constraint_per_group_matches_n_cells(
+      self,
+  ) -> "ExperimentDesign":
+    """Checks that the cell volume constraint matches the number of cells."""
+    if self.cell_volume_constraint is not None:
+      if len(self.cell_volume_constraint.values) != self.n_cells:
         error_message = (
-            f"Length of n_geos_per_group ({len(self.n_geos_per_group)}) "
-            f"does not match n_cells ({self.n_cells})."
+            "Length of cell_volume_constraint"
+            f" ({len(self.cell_volume_constraint.values)}) does not match"
+            f" n_cells ({self.n_cells})."
         )
         logger.error(error_message)
         raise ValueError(error_message)
@@ -848,3 +971,19 @@ class ExperimentDesign(pydantic.BaseModel):
       logger.error(error_message)
       raise ValueError(error_message)
     return self
+
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def cast_none_cell_volume_constraint_to_unconstrained(
+      cls, values: dict[str, Any]
+  ) -> dict[str, Any]:
+    """Casts None cell volume constraint to unconstrained."""
+    cell_volume_constraint = values.get("cell_volume_constraint")
+    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
+    if cell_volume_constraint is None:
+      values["cell_volume_constraint"] = CellVolumeConstraint(
+          values=[None] * n_cells,
+          constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
+      )
+
+    return values

@@ -237,9 +237,9 @@ class Experiment:
         "geo_eligibility_id",
         list(range(len(self.design_spec.geo_eligibility_candidates))),
     )
-    n_geos_per_group_id = trial.suggest_categorical(
-        "n_geos_per_group_id",
-        list(range(len(self.design_spec.n_geos_per_group_candidates))),
+    cell_volume_constraint_id = trial.suggest_categorical(
+        "cell_volume_constraint_id",
+        list(range(len(self.design_spec.cell_volume_constraint_candidates))),
     )
     random_seed = trial.suggest_categorical(
         "random_seed", self.design_spec.random_seeds
@@ -252,8 +252,8 @@ class Experiment:
     geo_eligibility = self.design_spec.geo_eligibility_candidates[
         geo_eligibility_id
     ]
-    n_geos_per_group = self.design_spec.n_geos_per_group_candidates[
-        n_geos_per_group_id
+    cell_volume_constraint = self.design_spec.cell_volume_constraint_candidates[
+        cell_volume_constraint_id
     ]
     experiment_budget = self.design_spec.experiment_budget_candidates[
         experiment_budget_id
@@ -276,7 +276,7 @@ class Experiment:
         alpha=self.design_spec.alpha,
         alternative_hypothesis=self.design_spec.alternative_hypothesis,
         geo_eligibility=geo_eligibility,
-        n_geos_per_group=n_geos_per_group,
+        cell_volume_constraint=cell_volume_constraint,
         random_seed=random_seed,
         effect_scope=self.design_spec.effect_scope,
     )
@@ -847,7 +847,7 @@ class Experiment:
     out = (
         out["geo_assignment"]
         .apply(lambda x: _format_n_geos_per_group(**x))
-        .join(out.drop(columns=["geo_assignment", "n_geos_per_group"]))
+        .join(out.drop(columns=["geo_assignment", "cell_volume_constraint"]))
     )
     return out
 

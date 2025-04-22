@@ -18,6 +18,7 @@ ExperimentDesignEvaluation = (
 )
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentType = geoflex.experiment_design.ExperimentType
+CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 register_methodology = _base.register_methodology
 
@@ -105,18 +106,44 @@ class RCT(_base.Methodology):
       exclude_geos = set(experiment_design.geo_eligibility.exclude)
     all_geos = set(historical_data.geos) - exclude_geos
 
-    if experiment_design.n_geos_per_group is None:
-      # If not specified, make an approximate equal split
-      # For example, splitting 10 into 3 groups will give 3, 3, 4.
-      # The order will be randomized, so it could be 4, 3, 3 etc.
-      base = len(all_geos) // experiment_design.n_cells
-      remainder = len(all_geos) % experiment_design.n_cells
-      n_geos_per_group = [base] * experiment_design.n_cells
-      for i in range(remainder):
-        n_geos_per_group[i] += 1
-      rng.shuffle(n_geos_per_group)
-    else:
-      n_geos_per_group = experiment_design.n_geos_per_group
+    if (
+        experiment_design.cell_volume_constraint.constraint_type
+        != CellVolumeConstraintType.NUMBER_OF_GEOS
+    ):
+      raise ValueError(
+          "Unsupported cell volume constraint type:"
+          f" {experiment_design.cell_volume_constraint.constraint_type}"
+      )
+
+    n_geos_per_group = experiment_design.cell_volume_constraint.values
+
+    # If any of the groups are set to None, make an approximate equal split
+    # For example, splitting 10 into 3 groups will give 3, 3, 4.
+    # The order will be randomized, so it could be 4, 3, 3 etc.
+    n_non_specified_cells = sum(1 for n in n_geos_per_group if n is None)
+    n_remaining_geos = len(all_geos) - sum(
+        n for n in n_geos_per_group if n is not None
+    )
+
+    if n_non_specified_cells:
+      if n_remaining_geos == 0:
+        n_geos_per_group = [n if n is not None else 0 for n in n_geos_per_group]
+      else:
+        base = n_remaining_geos // n_non_specified_cells
+        remainder = n_remaining_geos % n_non_specified_cells
+        n_geos_per_group_non_specified = [base] * n_non_specified_cells
+        for i in range(remainder):
+          n_geos_per_group_non_specified[i] += 1
+        rng.shuffle(n_geos_per_group_non_specified)
+
+        for i in range(len(n_geos_per_group)):
+          if n_geos_per_group[i] is None:
+            n_geos_per_group[i] = n_geos_per_group_non_specified.pop()
+
+        if n_geos_per_group_non_specified:
+          raise RuntimeError(  # pylint: disable=g-doc-exception
+              "n_geos_per_group_non_specified should be empty at this point."
+          )
 
     geo_groups = []
     for n_geos in n_geos_per_group:
@@ -127,7 +154,6 @@ class RCT(_base.Methodology):
       ).tolist()
       all_geos -= set(new_geo_group)
       geo_groups.append(new_geo_group)
-
     return GeoAssignment(treatment=geo_groups[1:], control=geo_groups[0])
 
   def analyze_experiment(

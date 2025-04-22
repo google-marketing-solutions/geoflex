@@ -18,6 +18,8 @@ ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoEligibility = geoflex.experiment_design.GeoEligibility
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
+CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
+CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -190,6 +192,13 @@ def test_rct_assign_geos(
     n_cells,
     expected_geo_counts,
 ):
+  if n_geos_per_group is None:
+    cell_volume_constraint = None
+  else:
+    cell_volume_constraint = CellVolumeConstraint(
+        values=n_geos_per_group,
+        constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
+    )
   rng = np.random.default_rng(seed=42)
   experiment_design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
@@ -203,7 +212,7 @@ def test_rct_assign_geos(
       n_cells=n_cells,
       alpha=0.1,
       geo_eligibility=GeoEligibility(exclude=set(exclude_geos)),
-      n_geos_per_group=n_geos_per_group,
+      cell_volume_constraint=cell_volume_constraint,
   )
   geo_assignment = RCT().assign_geos(experiment_design, performance_data, rng)
   geo_counts = [len(geo_assignment.control)] + list(

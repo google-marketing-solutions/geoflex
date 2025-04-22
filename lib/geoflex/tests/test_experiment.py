@@ -253,8 +253,8 @@ def test_experiment_suggest_experiment_design_returns_correct_design(
       in default_design_spec.geo_eligibility_candidates
   )
   assert (
-      suggested_design.n_geos_per_group
-      in default_design_spec.n_geos_per_group_candidates
+      suggested_design.cell_volume_constraint
+      in default_design_spec.cell_volume_constraint_candidates
   )
   assert suggested_design.random_seed in default_design_spec.random_seeds
   assert suggested_design.effect_scope == default_design_spec.effect_scope

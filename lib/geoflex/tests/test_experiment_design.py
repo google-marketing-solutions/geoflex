@@ -14,6 +14,7 @@ ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoEligibility = geoflex.experiment_design.GeoEligibility
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
+CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -65,8 +66,13 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
             id="n_cells_less_than_2",
         ),
         pytest.param(
-            {"n_geos_per_group_candidates": [[5, 1]], "n_cells": 3},
-            id="n_geos_per_group_does_not_match_n_cells",
+            {
+                "cell_volume_constraint_candidates": [
+                    CellVolumeConstraint(values=[5, 1])
+                ],
+                "n_cells": 3,
+            },
+            id="cell_volume_constraint_not_match_n_cells",
         ),
         pytest.param(
             {
@@ -251,7 +257,13 @@ def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
         },
         {},
         {"geo_eligibility_candidates": [None]},
-        {"n_geos_per_group_candidates": [[2, 2], [1, 5], None]},
+        {
+            "cell_volume_constraint_candidates": [
+                CellVolumeConstraint(values=[2, 2]),
+                CellVolumeConstraint(values=[1, 5]),
+                None,
+            ]
+        },
         {"n_cells": 3},
         {"secondary_metrics": ["conversions"]},
         {
