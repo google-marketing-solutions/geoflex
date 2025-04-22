@@ -267,21 +267,20 @@ def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
         {"n_cells": 3},
         {"secondary_metrics": ["conversions"]},
         {
-            "experiment_type": ExperimentType.AB_TEST,
-            "experiment_budget_candidates": [None],
+            "experiment_type": ExperimentType.GO_DARK,
+            "experiment_budget_candidates": [
+                ExperimentBudget(
+                    value=-0.1,
+                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+                )
+            ],
         },
     ],
 )
 def test_design_spec_can_be_created_with_valid_input(valid_args):
   default_args = {
-      "experiment_type": ExperimentType.GO_DARK,
+      "experiment_type": ExperimentType.AB_TEST,
       "primary_metric": "revenue",
-      "experiment_budget_candidates": [
-          ExperimentBudget(
-              value=-0.1,
-              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-          )
-      ],
   }
   default_args.update(valid_args)
 
@@ -313,33 +312,6 @@ def test_design_spec_takes_first_budget_candidate_if_budget_is_irrelevant():
       )
   ]
   assert design_spec.experiment_budget_candidates == expected_budget_candidates
-
-
-@pytest.mark.parametrize(
-    "methodology_parameters,expected_pretest_weeks",
-    [
-        ({"pretest_weeks": 4}, 4),
-        ({}, 0),
-    ],
-)
-def test_experiment_design_sets_pretest_weeks_correctly(
-    methodology_parameters, expected_pretest_weeks
-):
-  design = ExperimentDesign(
-      experiment_type=ExperimentType.GO_DARK,
-      primary_metric="revenue",
-      experiment_budget=ExperimentBudget(
-          value=-0.1,
-          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-      ),
-      secondary_metrics=["conversions"],
-      methodology="test_methodology",
-      methodology_parameters=methodology_parameters,
-      runtime_weeks=4,
-      alpha=0.1,
-      geo_eligibility=None,
-  )
-  assert design.pretest_weeks == expected_pretest_weeks
 
 
 def test_metric_names_must_be_unique():

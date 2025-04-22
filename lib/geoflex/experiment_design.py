@@ -3,7 +3,7 @@
 import enum
 import itertools
 import logging
-from typing import Any
+from typing import Annotated, Any
 import uuid
 
 import geoflex.metrics
@@ -38,7 +38,7 @@ class GeoEligibility(pydantic.BaseModel):
       defined will be flexible in terms of assignment.
   """
   control: set[str] = set()
-  treatment: list[set[str]] = []
+  treatment: list[set[str]] = [set()]
   exclude: set[str] = set()
   all_geos: set[str] = set()
   flexible: bool = True
@@ -298,6 +298,397 @@ class CellVolumeConstraint(pydantic.BaseModel):
     return self
 
 
+class ExperimentDesignEvaluation(pydantic.BaseModel):
+  """The evaluation results of an experiment design."""
+
+  design_id: str
+  minimum_detectable_effects: dict[Metric, float]  # One per metric
+  false_positive_rates: dict[Metric, float]  # One per metric
+  power_at_minimum_detectable_effect: dict[Metric, float]  # One per metric
+
+  model_config = pydantic.ConfigDict(extra="forbid")
+
+
+@pydantic.BeforeValidator
+def ensure_list(value: Any) -> Any:
+  """Ensures that the value is a list."""
+  if not isinstance(value, list):
+    return [value]
+  else:
+    return value
+
+
+@pydantic.BeforeValidator
+def cast_string_to_metric(metric: str | Metric) -> Metric:
+  """Converts a string to a metric."""
+  if isinstance(metric, str):
+    return Metric(name=metric)
+  return metric
+
+
+@pydantic.BeforeValidator
+def fix_empty_geo_eligibility(
+    geo_eligibility: GeoEligibility | None, info: pydantic.ValidationInfo
+) -> GeoEligibility:
+  """Fixes empty geo eligibility.
+
+  If the geo eligibility is None, then it is set so that all geos are eligible
+  for any arm of the experiment. If the treatment arms is an empty list, it
+  makes sure it has the correct number of empty sets, one for each treatment
+  arm.
+
+  Args:
+    geo_eligibility: The geo eligibility to fix.
+    info: The validation info.
+
+  Returns:
+    The fixed geo eligibility.
+  """
+  n_cells = info.data.get("n_cells", 2)
+  n_treatment_groups = n_cells - 1
+  if geo_eligibility is None:
+    return GeoEligibility(
+        control=[],
+        treatment=[set()] * n_treatment_groups,
+        exclude=[],
+    )
+
+  all_treatment_geos = set().union(*geo_eligibility.treatment)
+  if not all_treatment_geos:
+    return geo_eligibility.model_copy(
+        update=dict(treatment=[set()] * n_treatment_groups)
+    )
+
+  return geo_eligibility
+
+
+@pydantic.BeforeValidator
+def cast_none_budget_to_zero_spend(
+    experiment_budget: ExperimentBudget | None,
+) -> ExperimentBudget:
+  """Casts None budget to zero spend."""
+  if experiment_budget is None:
+    return ExperimentBudget(
+        value=0, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
+    )
+
+  return experiment_budget
+
+
+@pydantic.BeforeValidator
+def cast_none_cell_volume_constraint_to_unconstrained(
+    cell_volume_constraint: CellVolumeConstraint | None,
+    info: pydantic.ValidationInfo,
+) -> dict[str, Any]:
+  """Casts None cell volume constraint to unconstrained."""
+  n_cells = info.data.get("n_cells", 2)
+  if cell_volume_constraint is None:
+    return CellVolumeConstraint(
+        values=[None] * n_cells,
+        constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
+    )
+  return cell_volume_constraint
+
+
+@pydantic.BeforeValidator
+def ensure_seed_is_list_and_not_empty(
+    random_seeds: list[int] | None,
+) -> list[int]:
+  """Ensures that the random seeds is a list and not empty."""
+  if random_seeds is None or not random_seeds:
+    return [0]
+
+  if isinstance(random_seeds, int):
+    return [random_seeds]
+
+  return random_seeds
+
+
+@pydantic.AfterValidator
+def check_n_cells_greater_than_1(n_cells: int) -> int:
+  """Checks that n_cells is greater than or equal to 2."""
+  if n_cells < 2:
+    error_message = "n_cells must be greater than or equal to 2"
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return n_cells
+
+
+@pydantic.AfterValidator
+def check_alpha_is_between_0_and_1(alpha: float) -> float:
+  """Checks that alpha is between 0 and 1."""
+  if alpha < 0 or alpha > 1:
+    error_message = "alpha must be between 0 and 1"
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return alpha
+
+
+@pydantic.AfterValidator
+def check_alternative_hypothesis_is_valid(alternative_hypothesis: str) -> str:
+  """Checks that alternative_hypothesis is one of the valid options."""
+  if alternative_hypothesis not in ["two-sided", "greater", "less"]:
+    error_message = (
+        "alternative_hypothesis must be one of 'two-sided', 'greater', or"
+        " 'less'"
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return alternative_hypothesis
+
+
+@pydantic.AfterValidator
+def check_cell_volume_constraint_matches_n_cells(
+    cell_volume_constraint: CellVolumeConstraint, info: pydantic.ValidationInfo
+) -> "CellVolumeConstraint":
+  """Checks that the cell volume constraint matches the number of cells."""
+  n_cells = info.data.get("n_cells", 2)
+  if len(cell_volume_constraint.values) != n_cells:
+    error_message = (
+        "Length of cell_volume_constraint"
+        f" ({len(cell_volume_constraint.values)}) does not match"
+        f" n_cells ({n_cells})."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return cell_volume_constraint
+
+
+@pydantic.AfterValidator
+def check_geo_eligibility_matches_n_cells(
+    geo_eligibility: GeoEligibility, info: pydantic.ValidationInfo
+) -> "GeoEligibility":
+  """Checks if number of treatment arms in geoeligibility matches n_cells."""
+  n_cells = info.data.get("n_cells", 2)
+  num_treatment_arms_in_eligibility = len(geo_eligibility.treatment)
+  expected_num_treatment_arms = n_cells - 1
+  if num_treatment_arms_in_eligibility != expected_num_treatment_arms:
+    error_message = (
+        f"Expected {expected_num_treatment_arms} treatment arms "
+        f"in geo_eligibility (based on n_cells={n_cells}), "
+        f"but found {num_treatment_arms_in_eligibility}."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return geo_eligibility
+
+
+@pydantic.AfterValidator
+def check_experiment_budget_is_valid(
+    experiment_budget: ExperimentBudget, info: pydantic.ValidationInfo
+) -> "ExperimentBudget":
+  """Checks if the experiment budget is valid.
+
+  Go dark experiments must have a negative percentage change budget.
+  Heavy-up and hold-back experiments must have a positive budget.
+  Hold-back experiments cannot have a percentage change budget.
+  A/B test experiments must have a zero budget.
+
+  Args:
+    experiment_budget: The experiment budget to check.
+    info: The validation info.
+
+  Returns:
+    The validated experiment budget.
+
+  Raises:
+    ValueError: If the experiment budget is not valid.
+  """
+  # Go dark experiment budgets must be a negative percentage change.
+  experiment_type = info.data["experiment_type"]
+  if experiment_type == ExperimentType.GO_DARK:
+    if experiment_budget.value >= 0:
+      error_message = (
+          "The percentage change budget must be negative for a go-dark"
+          " experiment."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+    if experiment_budget.budget_type != ExperimentBudgetType.PERCENTAGE_CHANGE:
+      error_message = (
+          "The budget type must be 'percentage_change' for a go-dark"
+          " experiment."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+  # Heavy-up and hold-back experiment budgets must be positive.
+  if experiment_type in [
+      ExperimentType.HEAVY_UP,
+      ExperimentType.HOLD_BACK,
+  ]:
+    if experiment_budget.value <= 0:
+      error_message = (
+          "The daily budget must be positive for a heavy-up or hold-back"
+          " experiment."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+  # Hold-back experiment budgets cannot be a percentage change.
+  if experiment_type == ExperimentType.HOLD_BACK:
+    if experiment_budget.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
+      error_message = (
+          "The budget type cannot be 'percentage_change' for a hold-back"
+          " experiment."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+  # AB test experiment budgets must be zero.
+  if experiment_type == ExperimentType.AB_TEST:
+    if experiment_budget.value != 0:
+      error_message = "The budget must be zero for an A/B test experiment."
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+  return experiment_budget
+
+
+@pydantic.AfterValidator
+def check_budget_is_consistent_with_metrics(
+    experiment_budget: ExperimentBudget,
+    info: pydantic.ValidationInfo,
+) -> "ExperimentBudget":
+  """If any of the metrics have a cost then the budget must be non-zero."""
+  all_metrics = [info.data["primary_metric"]] + info.data.get(
+      "secondary_metrics", []
+  )
+  has_cost_metric = any(
+      metric.cost_per_metric or metric.metric_per_cost for metric in all_metrics
+  )
+  if has_cost_metric and experiment_budget.value == 0.0:
+    error_message = (
+        "The experiment has cost metrics, but one of the budget"
+        " candidates is zero. The cost metrics can only be used for a"
+        " non-zero budget."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return experiment_budget
+
+
+@pydantic.BeforeValidator
+def drop_extra_budget_candidates_if_no_cost_metrics(
+    experiment_budget_candidates: list[ExperimentBudget],
+    info: pydantic.ValidationInfo,
+) -> list[ExperimentBudget]:
+  """If none of the metrics have a cost then budget doesn't matter.
+
+  The budget only matters when looking at metrics like ROAS and CPA. For
+  other metrics the budget doesn't matter for the purposes of the experiment
+  design and analysis.
+
+  In this case, if the user has specified multiple budget candidates but
+  no cost metrics, then we warn the user and select the first budget candidate
+  as the budget that will be used for the experiment design and analysis.
+
+  Args:
+    experiment_budget_candidates: The experiment budget candidates to validate.
+    info: The validation info.
+
+  Returns:
+    The validated experiment budget candidates.
+  """
+  all_metrics = [info.data["primary_metric"]] + info.data.get(
+      "secondary_metrics", []
+  )
+  has_cost_metric = any(
+      metric.cost_per_metric or metric.metric_per_cost for metric in all_metrics
+  )
+  if not has_cost_metric and len(experiment_budget_candidates) > 1:
+    logger.warning(
+        "None of the metrics have a cost, but there are multiple budget"
+        " candidates. Dropping all but the first budget candidate, since"
+        " the budget will have no influence on the design or the analysis"
+        " results without any cost metrics."
+    )
+    return experiment_budget_candidates[:1]
+
+  return experiment_budget_candidates
+
+
+@pydantic.AfterValidator
+def check_secondary_metric_names_do_not_overlap(
+    secondary_metrics: list[Metric], info: pydantic.ValidationInfo
+) -> list[Metric]:
+  """Checks that the secondary metric names are unique.
+
+  They must not overlap with each other or the primary metric.
+
+  Args:
+    secondary_metrics: The secondary metrics to check.
+    info: The validation info.
+
+  Returns:
+    The validated secondary metrics.
+  """
+  all_metrics = [info.data["primary_metric"]] + secondary_metrics
+  metric_names = [metric.name for metric in all_metrics]
+  if len(metric_names) != len(set(metric_names)):
+    error_message = "Metric names must be unique."
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return secondary_metrics
+
+
+@pydantic.AfterValidator
+def check_runtime_weeks_candidates_not_empty(
+    runtime_weeks_candidates: list[int],
+) -> list[int]:
+  """Checks that the runtime weeks candidates are not empty."""
+  if not runtime_weeks_candidates:
+    error_message = "Runtime weeks candidates must not be empty."
+    logger.error(error_message)
+    raise ValueError(error_message)
+  return runtime_weeks_candidates
+
+
+ValidatedMetric = Annotated[Metric, cast_string_to_metric]
+ValidatedMetricList = Annotated[
+    list[ValidatedMetric],
+    ensure_list,
+    check_secondary_metric_names_do_not_overlap,
+]
+ValidatedAlternativeHypothesis = Annotated[
+    str, check_alternative_hypothesis_is_valid
+]
+ValidatedAlpha = Annotated[float, check_alpha_is_between_0_and_1]
+ValidatedExperimentBudget = Annotated[
+    ExperimentBudget,
+    cast_none_budget_to_zero_spend,
+    check_budget_is_consistent_with_metrics,
+    check_experiment_budget_is_valid,
+]
+ValidatedExperimentBudgetCandidates = Annotated[
+    list[ValidatedExperimentBudget],
+    ensure_list,
+    drop_extra_budget_candidates_if_no_cost_metrics,
+]
+ValidatedCellVolumeConstraint = Annotated[
+    CellVolumeConstraint,
+    cast_none_cell_volume_constraint_to_unconstrained,
+    check_cell_volume_constraint_matches_n_cells,
+]
+ValidatedCellVolumeConstraintCandidates = Annotated[
+    list[ValidatedCellVolumeConstraint], ensure_list
+]
+ValidatedGeoEligibility = Annotated[
+    GeoEligibility,
+    fix_empty_geo_eligibility,
+    check_geo_eligibility_matches_n_cells,
+]
+ValidatedGeoEligibilityCandidates = Annotated[
+    list[ValidatedGeoEligibility], ensure_list
+]
+ValidatedEligibleMethodologies = Annotated[list[str], ensure_list]
+ValidatedRuntimeWeeksCandidates = Annotated[
+    list[int], ensure_list, check_runtime_weeks_candidates_not_empty
+]
+ValidatedNCells = Annotated[int, check_n_cells_greater_than_1]
+ValidatedSeedList = Annotated[list[int], ensure_seed_is_list_and_not_empty]
+
+
 class ExperimentDesignSpec(pydantic.BaseModel):
   """All the inputs needed for geoflex to design an experiment.
 
@@ -347,383 +738,31 @@ class ExperimentDesignSpec(pydantic.BaseModel):
   """
 
   experiment_type: ExperimentType
-  primary_metric: Metric
-  experiment_budget_candidates: list[ExperimentBudget] = [None]
-  secondary_metrics: list[Metric] = []
-  alternative_hypothesis: str = "two-sided"
-  alpha: float = 0.1
-  eligible_methodologies: list[str] = ("TBR_MM", "TBR", "TM", "GBR")
-  runtime_weeks_candidates: list[int] = [4, 6]
-  n_cells: int = 2
-  cell_volume_constraint_candidates: list[CellVolumeConstraint] = [None]
-  geo_eligibility_candidates: list[GeoEligibility] = [None]
-  random_seeds: list[int] = [0]
-  effect_scope: EffectScope = EffectScope.ALL_GEOS
-
-  model_config = pydantic.ConfigDict(extra="forbid")
-
-  @pydantic.model_validator(mode="before")
-  @classmethod
-  def cast_none_cell_volume_constraint_candidates_to_unconstrained(
-      cls, values: dict[str, Any]
-  ) -> dict[str, Any]:
-    """Casts None cell volume constraint candidates to unconstrained."""
-    cell_volume_constraint_candidates = values.get(
-        "cell_volume_constraint_candidates", [None]
-    )
-    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
-    new_cell_volume_constraint_candidates = []
-    for cell_volume_constraint in cell_volume_constraint_candidates:
-      if cell_volume_constraint is None:
-        new_cell_volume_constraint_candidates.append(
-            CellVolumeConstraint(
-                values=[None]*n_cells,
-                constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS
-            )
-        )
-      else:
-        new_cell_volume_constraint_candidates.append(cell_volume_constraint)
-
-    values["cell_volume_constraint_candidates"] = (
-        new_cell_volume_constraint_candidates
-    )
-    return values
-
-  @pydantic.field_validator("experiment_budget_candidates", mode="before")
-  @classmethod
-  def cast_none_budget_candidates_to_zero_spend(
-      cls, experiment_budget_candidates: list[ExperimentBudget | None]
-  ) -> list[ExperimentBudget]:
-    """Casts None budget candidates to zero spend."""
-    new_budget_candidates = []
-    for budget_candidate in experiment_budget_candidates:
-      if budget_candidate is None:
-        new_budget_candidates.append(
-            ExperimentBudget(
-                value=0, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
-            )
-        )
-      else:
-        new_budget_candidates.append(budget_candidate)
-    return new_budget_candidates
-
-  @pydantic.model_validator(mode="after")
-  def validate_budget_candidates_match_metrics(
-      self,
-  ) -> "ExperimentDesignSpec":
-    """Ensures that the budget candidates are consistent with the metrics.
-
-    1. If none of the metrics have a cost then budget doesn't matter.
-
-    The budget only matters when looking at metrics like ROAS and CPA. For
-    other metrics the budget doesn't matter for the purposes of the experiment
-    design and analysis.
-
-    In this case, if the user has specified multiple budget candidates but
-    no cost metrics, then we warn the user and select the first budget candidate
-    as the budget that will be used for the experiment design and analysis.
-
-    2. If any of the metrics have a cost then all budget candidates must be
-    non-zero.
-
-    If any of the metrics have a cost then all budget candidates must be
-    non-zero. If any of the budget candidates are zero then we raise an error.
-
-    Returns:
-      The values with the budget candidates possibly modified.
-    """
-    all_metrics = [self.primary_metric] + self.secondary_metrics
-    has_cost_metric = any(
-        metric.cost_per_metric or metric.metric_per_cost
-        for metric in all_metrics
-    )
-    if not has_cost_metric:
-      if len(self.experiment_budget_candidates) > 1:
-        logger.warning(
-            "None of the metrics have a cost, but there are multiple budget"
-            " candidates. Dropping all but the first budget candidate, since"
-            " the budget will have no influence on the design or the analysis"
-            " results without any cost metrics."
-        )
-      self.experiment_budget_candidates = self.experiment_budget_candidates[:1]
-    elif has_cost_metric:
-      for budget_candidate in self.experiment_budget_candidates:
-        if budget_candidate.value == 0.0:
-          error_message = (
-              "The experiment has cost metrics, but one of the budget"
-              " candidates is zero. The cost metrics can only be used for a"
-              " non-zero budget."
-          )
-          logger.error(error_message)
-          raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_experiment_budget_candidates_are_consistent_with_experiment_type(
-      self,
-  ) -> "ExperimentDesignSpec":
-    for budget in self.experiment_budget_candidates:
-      # Go dark experiment budgets must be a negative percentage change.
-      if self.experiment_type == ExperimentType.GO_DARK:
-        if budget.value >= 0:
-          error_message = (
-              "The percentage change budget must be negative for a go-dark"
-              " experiment."
-          )
-          logger.error(error_message)
-          raise ValueError(error_message)
-        if budget.budget_type != ExperimentBudgetType.PERCENTAGE_CHANGE:
-          error_message = (
-              "The budget type must be 'percentage_change' for a go-dark"
-              " experiment."
-          )
-          logger.error(error_message)
-          raise ValueError(error_message)
-
-      # Heavy-up and hold-back experiment budgets must be positive.
-      if self.experiment_type in [
-          ExperimentType.HEAVY_UP,
-          ExperimentType.HOLD_BACK,
-      ]:
-        if budget.value <= 0:
-          error_message = (
-              "The daily budget must be positive for a heavy-up or hold-back"
-              " experiment."
-          )
-          logger.error(error_message)
-          raise ValueError(error_message)
-
-      # Hold-back experiment budgets cannot be a percentage change.
-      if self.experiment_type == ExperimentType.HOLD_BACK:
-        if budget.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
-          error_message = (
-              "The budget type cannot be 'percentage_change' for a hold-back"
-              " experiment."
-          )
-          logger.error(error_message)
-          raise ValueError(error_message)
-
-      # AB test experiment budgets must be zero.
-      if self.experiment_type == ExperimentType.AB_TEST:
-        if budget.value != 0:
-          error_message = "The budget must be zero for an A/B test experiment."
-          logger.error(error_message)
-          raise ValueError(error_message)
-    return self
-
-  @pydantic.field_validator("alpha", mode="after")
-  @classmethod
-  def check_alpha_is_between_0_and_1(cls, alpha: float) -> float:
-    if alpha < 0 or alpha > 1:
-      error_message = "alpha must be between 0 and 1"
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return alpha
-
-  @pydantic.field_validator("alternative_hypothesis", mode="after")
-  @classmethod
-  def check_alternative_hypothesis_is_valid(
-      cls, alternative_hypothesis: str
-  ) -> str:
-    if alternative_hypothesis not in ["two-sided", "greater", "less"]:
-      error_message = (
-          "alternative_hypothesis must be one of 'two-sided', 'greater', or"
-          " 'less'"
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return alternative_hypothesis
-
-  @pydantic.field_validator("primary_metric", mode="before")
-  @classmethod
-  def cast_primary_metric(cls, metric: Metric | str) -> Metric:
-    if isinstance(metric, str):
-      return Metric(name=metric)
-    return metric
-
-  @pydantic.field_validator("secondary_metrics", mode="before")
-  @classmethod
-  def cast_secondary_metrics(cls, metrics: list[Metric | str]) -> list[Metric]:
-    return [
-        Metric(name=metric) if isinstance(metric, str) else metric
-        for metric in metrics
-    ]
-
-  @pydantic.model_validator(mode="before")
-  @classmethod
-  def cast_geo_eligibility_candidates(
-      cls, values: dict[str, Any]
-  ) -> dict[str, Any]:
-    raw_geo_eligibility_candidates = values.get("geo_eligibility_candidates")
-    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
-    n_treatment_groups = n_cells - 1
-
-    unconstrained_fixed_geos = GeoEligibility(
-        control=[],
-        treatment=[set()] * n_treatment_groups,
-        exclude=[],
-    )
-
-    if raw_geo_eligibility_candidates is None:
-      values["geo_eligibility_candidates"] = [
-          unconstrained_fixed_geos.model_copy()
-      ]
-    else:
-      values["geo_eligibility_candidates"] = [
-          fixed_geos
-          if fixed_geos is not None
-          else unconstrained_fixed_geos.model_copy()
-          for fixed_geos in raw_geo_eligibility_candidates
-      ]
-    return values
-
-  @pydantic.field_validator("random_seeds", mode="after")
-  @classmethod
-  def check_at_least_one_random_seed(cls, random_seeds: list[int]) -> list[int]:
-    if not random_seeds:
-      error_message = "At least one random seed must be provided."
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return random_seeds
-
-  @pydantic.model_validator(mode="after")
-  def check_runtime_weeks_candidates_is_not_empty(
-      self,
-  ) -> "ExperimentDesignConstraints":
-    """Checks that the runtime week candidates is not empty.
-
-    Raises:
-      ValueError: If runtime_weeks_candidates is empty.
-
-    Returns:
-      The ExperimentDesignConstraints object.
-    """
-    if not self.runtime_weeks_candidates:
-      error_message = "runtime_weeks_candidates must be non-empty."
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_n_cells_greater_than_1(self) -> "ExperimentDesignConstraints":
-    """Checks that n_cells is greater than or equal to 2.
-
-    Raises:
-        ValueError: If n_cells is less than 2.
-
-    Returns:
-        The ExperimentDesignConstraints object.
-    """
-    if self.n_cells < 2:
-      error_message = "n_cells must be greater than or equal to 2"
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_cell_volume_constraint_candidates_match_n_cells(
-      self,
-  ) -> "ExperimentDesignConstraints":
-    """Checks if cell volume constraint candidates matches number of cells.
-
-    Raises:
-        ValueError: If the number of cell volume constraints does not match
-        the number of cells.
-
-    Returns:
-        The ExperimentDesignConstraints object.
-    """
-    for candidate in self.cell_volume_constraint_candidates:
-      if candidate is not None:
-        if len(candidate.values) != self.n_cells:
-          error_message = (
-              "The number of cell volume constraint values does not match the"
-              " number of cells."
-          )
-          logger.error(error_message)
-          raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_geo_eligibility_matches_n_cells(
-      self
-  ) -> "ExperimentDesignConstraints":
-    """Checks if number of treamtment arms matches n_cells."""
-    for geo_eligibility in self.geo_eligibility_candidates:
-      num_treatment_arms_in_geoeligibility = len(geo_eligibility.treatment)
-      expected_num_treatment_arms = self.n_cells - 1
-
-      if num_treatment_arms_in_geoeligibility != expected_num_treatment_arms:
-        error_message = (
-            "The number of treatment arms in the geo eligibility does not match"
-            " the number of cells."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_metric_names_do_not_overlap(
-      self,
-  ) -> "ExperimentDesignSpec":
-    all_metrics = [self.primary_metric] + self.secondary_metrics
-    metric_names = [metric.name for metric in all_metrics]
-    if len(metric_names) != len(set(metric_names)):
-      error_message = "Metric names must be unique."
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def validate_that_volume_constraints_match_geo_eligibility_candidates(
-      self,
-  ) -> "ExperimentDesignSpec":
-    """Check that the geo eligibility works with the volume constraints."""
-    for geo_eligibility in self.geo_eligibility_candidates:
-      for cell_volume_constraint in self.cell_volume_constraint_candidates:
-        if cell_volume_constraint.constraint_type != (
-            CellVolumeConstraintType.NUMBER_OF_GEOS
-        ):
-          continue
-
-        if cell_volume_constraint.flexible:
-          return self
-
-        group_eligibility = [
-            geo_eligibility.control
-        ] + geo_eligibility.treatment
-        for i in range(len(group_eligibility)):
-          if cell_volume_constraint.values[i] is None:
-            continue
-
-          group = group_eligibility[i].copy()
-          group -= geo_eligibility.exclude
-          for j in range(len(group_eligibility)):
-            if j == i:
-              continue
-            group -= group_eligibility[j]
-
-          if len(group) > cell_volume_constraint.values[i]:
-            error_message = (
-                "The geo eligibility does not work with the cell volume"
-                " constraint. The cell volume constraint requires"
-                f" {cell_volume_constraint.values[i]} geos in cell {i}, but the"
-                f" geo eligibility specifies {len(group)} geos that must be in"
-                " that cell."
-            )
-            logger.error(error_message)
-            raise ValueError(error_message)
-
-    return self
-
-
-class ExperimentDesignEvaluation(pydantic.BaseModel):
-  """The evaluation results of an experiment design."""
-
-  design_id: str
-  minimum_detectable_effects: dict[Metric, float]  # One per metric
-  false_positive_rates: dict[Metric, float]  # One per metric
-  power_at_minimum_detectable_effect: dict[Metric, float]  # One per metric
+  primary_metric: ValidatedMetric
+  n_cells: ValidatedNCells = 2
+  secondary_metrics: ValidatedMetricList = []
+  experiment_budget_candidates: ValidatedExperimentBudgetCandidates = (
+      pydantic.Field(default=[None], validate_default=True)
+  )
+  alternative_hypothesis: ValidatedAlternativeHypothesis = "two-sided"
+  alpha: ValidatedAlpha = 0.1
+  eligible_methodologies: ValidatedEligibleMethodologies = [
+      "TBR_MM",
+      "TBR",
+      "TM",
+      "GBR",
+  ]
+  runtime_weeks_candidates: ValidatedRuntimeWeeksCandidates = [4]
+  cell_volume_constraint_candidates: ValidatedCellVolumeConstraintCandidates = (
+      pydantic.Field(default=[None], validate_default=True)
+  )
+  geo_eligibility_candidates: ValidatedGeoEligibilityCandidates = (
+      pydantic.Field(default=[None], validate_default=True)
+  )
+  random_seeds: ValidatedSeedList = [0]
+  effect_scope: EffectScope = pydantic.Field(
+      default=EffectScope.ALL_GEOS, validate_default=True
+  )
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -772,19 +811,25 @@ class ExperimentDesign(pydantic.BaseModel):
       the EffectScope enum for more details.
   """
   experiment_type: ExperimentType
-  primary_metric: Metric
-  experiment_budget: ExperimentBudget = None
-  secondary_metrics: list[Metric] = []
+  n_cells: ValidatedNCells = 2
+  alpha: ValidatedAlpha = 0.1
+  primary_metric: ValidatedMetric
+  secondary_metrics: ValidatedMetricList = []
+  experiment_budget: ValidatedExperimentBudget = pydantic.Field(
+      default=None, validate_default=True
+  )
   methodology: str
   runtime_weeks: int
-  n_cells: int = 2
-  alpha: float = 0.1
-  alternative_hypothesis: str = "two-sided"
-  geo_eligibility: GeoEligibility = None
+  alternative_hypothesis: ValidatedAlternativeHypothesis = "two-sided"
+  geo_eligibility: ValidatedGeoEligibility = pydantic.Field(
+      default=None, validate_default=True
+  )
   methodology_parameters: dict[str, Any] = {}
   random_seed: int = 0
   effect_scope: EffectScope = EffectScope.ALL_GEOS
-  cell_volume_constraint: CellVolumeConstraint = None
+  cell_volume_constraint: ValidatedCellVolumeConstraint = pydantic.Field(
+      default=None, validate_default=True
+  )
 
   # The design id is autogenerated for a new design.
   design_id: str = pydantic.Field(default_factory=lambda: str(uuid.uuid4()))
@@ -793,197 +838,3 @@ class ExperimentDesign(pydantic.BaseModel):
   geo_assignment: GeoAssignment | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
-
-  @property
-  def pretest_weeks(self) -> int:
-    """The number of weeks in the pretest period.
-
-      If a pretest period is to be used, this should be set as the pretest_weeks
-      parameter in the methodology_parameters. If this parameter is not set then
-      no pretest period is used.
-    """
-    return self.methodology_parameters.get("pretest_weeks", 0)
-
-  @pydantic.field_validator("primary_metric", mode="before")
-  @classmethod
-  def cast_primary_metric(cls, metric: Metric | str) -> Metric:
-    if isinstance(metric, str):
-      return Metric(name=metric)
-    return metric
-
-  @pydantic.field_validator("secondary_metrics", mode="before")
-  @classmethod
-  def cast_secondary_metrics(cls, metrics: list[Metric | str]) -> list[Metric]:
-    return [
-        Metric(name=metric) if isinstance(metric, str) else metric
-        for metric in metrics
-    ]
-
-  @pydantic.model_validator(mode="after")
-  def check_cell_volume_constraint_per_group_matches_n_cells(
-      self,
-  ) -> "ExperimentDesign":
-    """Checks that the cell volume constraint matches the number of cells."""
-    if self.cell_volume_constraint is not None:
-      if len(self.cell_volume_constraint.values) != self.n_cells:
-        error_message = (
-            "Length of cell_volume_constraint"
-            f" ({len(self.cell_volume_constraint.values)}) does not match"
-            f" n_cells ({self.n_cells})."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_geoassignment_matches_n_cells(self) -> "ExperimentDesign":
-    """Checks if number of treatment arms in geoassignment matches n_cells."""
-    if self.geo_assignment is not None:
-      num_treatment_arms_in_assignment = len(
-          self.geo_assignment.treatment
-      )
-      expected_num_treatment_arms = self.n_cells - 1
-      if num_treatment_arms_in_assignment != expected_num_treatment_arms:
-        error_message = (
-            f"Expected {expected_num_treatment_arms} treatment arms "
-            f"in geo_assignment (based on n_cells={self.n_cells}), "
-            f"but found {num_treatment_arms_in_assignment}."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="before")
-  @classmethod
-  def cast_geo_eligibility(cls, values: dict[str, Any]) -> dict[str, Any]:
-    raw_geo_eligibility = values.get("geo_eligibility")
-    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
-    n_treatment_groups = n_cells - 1
-
-    if raw_geo_eligibility is None:
-      values["geo_eligibility"] = GeoEligibility(
-          control=[],
-          treatment=[set()] * n_treatment_groups,
-          exclude=[],
-      )
-    return values
-
-  @pydantic.model_validator(mode="after")
-  def check_metric_names_do_not_overlap(
-      self,
-  ) -> "ExperimentDesign":
-    all_metrics = [self.primary_metric] + self.secondary_metrics
-    metric_names = [metric.name for metric in all_metrics]
-    if len(metric_names) != len(set(metric_names)):
-      error_message = "Metric names must be unique."
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="after")
-  def check_experiment_budget_is_valid(
-      self,
-  ) -> "ExperimentDesign":
-    # Go dark experiment budgets must be a negative percentage change.
-    if self.experiment_type == ExperimentType.GO_DARK:
-      if self.experiment_budget.value >= 0:
-        error_message = (
-            "The percentage change budget must be negative for a go-dark"
-            " experiment."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-      if (
-          self.experiment_budget.budget_type
-          != ExperimentBudgetType.PERCENTAGE_CHANGE
-      ):
-        error_message = (
-            "The budget type must be 'percentage_change' for a go-dark"
-            " experiment."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-
-    # Heavy-up and hold-back experiment budgets must be positive.
-    if self.experiment_type in [
-        ExperimentType.HEAVY_UP,
-        ExperimentType.HOLD_BACK,
-    ]:
-      if self.experiment_budget.value <= 0:
-        error_message = (
-            "The daily budget must be positive for a heavy-up or hold-back"
-            " experiment."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-
-    # Hold-back experiment budgets cannot be a percentage change.
-    if self.experiment_type == ExperimentType.HOLD_BACK:
-      if (
-          self.experiment_budget.budget_type
-          == ExperimentBudgetType.PERCENTAGE_CHANGE
-      ):
-        error_message = (
-            "The budget type cannot be 'percentage_change' for a hold-back"
-            " experiment."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-
-    # AB test experiment budgets must be zero.
-    if self.experiment_type == ExperimentType.AB_TEST:
-      if self.experiment_budget.value != 0:
-        error_message = "The budget must be zero for an A/B test experiment."
-        logger.error(error_message)
-        raise ValueError(error_message)
-
-    return self
-
-  @pydantic.field_validator("experiment_budget", mode="before")
-  @classmethod
-  def cast_none_budget_to_zero_spend(
-      cls, experiment_budget: ExperimentBudget | None
-  ) -> ExperimentBudget:
-    """Casts None budget to zero spend."""
-    if experiment_budget is None:
-      return ExperimentBudget(
-          value=0, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
-      )
-
-    return experiment_budget
-
-  @pydantic.model_validator(mode="after")
-  def ensure_budget_is_consistent_with_metrics(
-      self,
-  ) -> "ExperimentDesignSpec":
-    """If any of the metrics have a cost then the budget must be non-zero."""
-    all_metrics = [self.primary_metric] + self.secondary_metrics
-    has_cost_metric = any(
-        metric.cost_per_metric or metric.metric_per_cost
-        for metric in all_metrics
-    )
-    if has_cost_metric and self.experiment_budget.value == 0.0:
-      error_message = (
-          "The experiment has cost metrics, but one of the budget"
-          " candidates is zero. The cost metrics can only be used for a"
-          " non-zero budget."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-    return self
-
-  @pydantic.model_validator(mode="before")
-  @classmethod
-  def cast_none_cell_volume_constraint_to_unconstrained(
-      cls, values: dict[str, Any]
-  ) -> dict[str, Any]:
-    """Casts None cell volume constraint to unconstrained."""
-    cell_volume_constraint = values.get("cell_volume_constraint")
-    n_cells = values.get("n_cells", 2)  # Default to 2 cells if not set.
-    if cell_volume_constraint is None:
-      values["cell_volume_constraint"] = CellVolumeConstraint(
-          values=[None] * n_cells,
-          constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
-      )
-
-    return values
