@@ -13,7 +13,7 @@
 # limitations under the License.
 """Application logger setup."""
 
-# pylint: disable=C0330, g-bad-import-order, g-multiple-import
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import os
 import logging
 import env

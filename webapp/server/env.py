@@ -13,7 +13,7 @@
 #  limitations under the License.
 """Handling environment specific."""
 
-# pylint: disable=C0330, g-bad-import-order, g-multiple-import
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import os
 
 IS_GAE = bool(os.getenv('GAE_APPLICATION'))

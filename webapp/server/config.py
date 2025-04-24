@@ -13,7 +13,7 @@
 # limitations under the License.
 """Working with configuration."""
 
-# pylint: disable=C0330, g-bad-import-order, g-multiple-import
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import argparse
 import os
 import json
@@ -42,18 +42,21 @@ class ConfigItemBase:
     for attr in members:
       setattr(self, attr, getattr(self, attr))
 
-  def update(self, kw):
+  def update(self, kw: dict):
     """Update current object with values from json/dict.
 
-    Only know properties (i.e. those that exist in object's class
+    Only known properties (i.e. those that exist in object's class
     as class attributes) are set.
+
+    Args:
+      kw: dict with values (usually from json load)
     """
     cls = type(self)
     for k in kw:
       if hasattr(cls, k):
         new_val = kw[k]
         def_val = getattr(cls, k)
-        if (new_val == '' and def_val != ''):
+        if new_val == '' and def_val != '':
           new_val = def_val
         setattr(self, k, new_val)
 
@@ -77,6 +80,9 @@ class Config(ConfigItemBase):
 def parse_arguments(only_known: bool = True) -> argparse.Namespace:
   """Initialize command line parser using argparse.
 
+  Args:
+    only_known: true to parse only known properties
+
   Returns:
     An argparse.ArgumentParser.
   """
@@ -84,7 +90,6 @@ def parse_arguments(only_known: bool = True) -> argparse.Namespace:
   parser.add_argument('--config', help='Config file path')
   parser.add_argument('--project_id', '--project-id', help='GCP project id.')
 
-  #auth.add_auth_arguments(parser)
   if only_known:
     args = parser.parse_known_args()[0]
   else:
@@ -102,6 +107,15 @@ def find_project_id(args: argparse.Namespace):
 
 
 def get_config_url(args: argparse.Namespace):
+  """Return a config file path.
+
+  Args:
+    args: cli arguments.
+
+  Raises
+    InvalidConfigurationError: config file path contains PROJECT_ID macro
+      but we can't detect a GCP project in the environment.
+  """
   config_file_name = args.config or os.environ.get('CONFIG') or 'config.json'
   if config_file_name.find('$PROJECT_ID') > -1:
     project_id = find_project_id(args)
@@ -115,14 +129,16 @@ def get_config_url(args: argparse.Namespace):
 
 def get_config(args: argparse.Namespace | None = None,
                fail_if_not_exists=False) -> Config:
-  """
-  Read config file and merge settings from it, command line args and env vars.
+  """Read config file.
+
+  Read and merge settings from a config file, command line args and env vars.
 
   Args:
-    args: cli arguments
-    fail_ok: pass true to raise an exception if config is invalid
+    args: CLI arguments.
+    fail_if_not_exists: pass true to raise an exception if no config found.
 
-  Returns: a config object
+  Returns:
+    a config object
   """
   if not args:
     args = parse_arguments()
@@ -162,7 +178,14 @@ def get_config(args: argparse.Namespace | None = None,
 
 
 def save_config(config: Config, args: argparse.Namespace | None = None):
-  """Save the current config into a file"""
+  """Save the current config into a file.
+
+  Output location is determined by get_config_url.
+
+  Args:
+    config: config object.
+    args: CLI arguments.
+  """
   if not args:
     args = parse_arguments()
   config_file_name = get_config_url(args)

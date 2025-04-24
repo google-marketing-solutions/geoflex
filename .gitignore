@@ -1,6 +1,9 @@
 __pycache__
 .work
 work
+/lib/build/
+/lib/dist/
+
 .venv
 .DS_Store
 node_modules
