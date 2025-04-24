@@ -77,7 +77,7 @@ class RCT(_base.Methodology):
     """
     return {}  # No parameters for RCT
 
-  def assign_geos(
+  def _methodology_assign_geos(
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,

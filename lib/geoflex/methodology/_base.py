@@ -71,17 +71,17 @@ class Methodology(abc.ABC):
     pass
 
   @abc.abstractmethod
-  def assign_geos(
+  def _methodology_assign_geos(
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
       rng: np.random.Generator,
   ) -> GeoAssignment:
-    """Assigns geos to the control and treatment groups.
+    """How the methodology assigns geos to the control and treatment groups.
 
-    This should return two lists of geos, one for the treatment and one for the
-    control. The geos should be chosen based on the parameters in the experiment
-    design.
+    This should return a Geo Assignment object containing the assignment to
+    control and treatment groups. It must respect the geo eligibility, cell
+    volume and number of cells from the experiment design.
 
     Args:
       experiment_design: The experiment design to assign geos for.
@@ -94,6 +94,72 @@ class Methodology(abc.ABC):
       treatment groups, and optionally a list of geos that should be ignored.
     """
     pass
+
+  def assign_geos(
+      self,
+      experiment_design: ExperimentDesign,
+      historical_data: GeoPerformanceDataset,
+      rng: np.random.Generator,
+  ) -> GeoAssignment:
+    """Assigns geos to the control and treatment groups.
+
+    This will call the _methodology_assign_geos() method to do the actual
+    assignment, and it will ensure that the assignment is valid and contains
+    all the geos in the historical data.
+
+    Args:
+      experiment_design: The experiment design to assign geos for.
+      historical_data: The historical data for the experiment. Can be used to
+        choose geos that are similar to geos that have been used in the past.
+      rng: The random number generator to use for randomization, if needed.
+
+    Returns:
+      A GeoAssignment object containing the lists of geos for the control and
+      treatment groups, and optionally a list of geos that should be ignored.
+    """
+    geo_assignment = self._methodology_assign_geos(
+        experiment_design, historical_data, rng
+    )
+
+    # Put missing geos into the exclude list.
+    missing_geos = (
+        set(historical_data.geos)
+        - set().union(*geo_assignment.treatment)
+        - set(geo_assignment.control)
+    )
+    if missing_geos:
+      excluded_geos = geo_assignment.exclude | missing_geos
+      geo_assignment = geo_assignment.model_copy(
+          update={"exclude": excluded_geos}
+      )
+
+    # Check that the number of treatment groups is correct.
+    if len(geo_assignment.treatment) != (experiment_design.n_cells - 1):
+      error_message = (
+          f"Assign_geos created {len(geo_assignment.treatment)} treatment"
+          " groups, but the experiment design requires"
+          f" {experiment_design.n_cells - 1}."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    # Check that the control group is not empty.
+    if not geo_assignment.control:
+      error_message = "Assign_geos assigned no geos to the control group."
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    # Check that the treatment groups are not empty.
+    for i, treatment_group in enumerate(geo_assignment.treatment):
+      if not treatment_group:
+        error_message = (
+            "Assign_geos assigned no geos to treatment"
+            f" group {i+1}, but at least 1 geo is required."
+        )
+        logger.error(error_message)
+        raise ValueError(error_message)
+
+    return geo_assignment
 
   @abc.abstractmethod
   def analyze_experiment(
