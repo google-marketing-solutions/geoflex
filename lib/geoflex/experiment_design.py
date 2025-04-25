@@ -328,7 +328,8 @@ def cast_string_to_metric(metric: str | Metric) -> Metric:
 
 @pydantic.BeforeValidator
 def fix_empty_geo_eligibility(
-    geo_eligibility: GeoEligibility | None, info: pydantic.ValidationInfo
+    geo_eligibility: GeoEligibility | dict[str, Any] | None,
+    info: pydantic.ValidationInfo,
 ) -> GeoEligibility:
   """Fixes empty geo eligibility.
 
@@ -352,6 +353,9 @@ def fix_empty_geo_eligibility(
         treatment=[set()] * n_treatment_groups,
         exclude=[],
     )
+
+  if isinstance(geo_eligibility, dict):
+    geo_eligibility = GeoEligibility.model_validate(geo_eligibility)
 
   all_treatment_geos = set().union(*geo_eligibility.treatment)
   if not all_treatment_geos:

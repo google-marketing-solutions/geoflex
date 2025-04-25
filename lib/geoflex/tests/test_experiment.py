@@ -17,103 +17,11 @@ ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 EffectScope = geoflex.experiment_design.EffectScope
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
 # pylint: disable=invalid-name
-
-
-def test_experiment_can_record_new_designs():
-  experiment = geoflex.experiment.Experiment(
-      name="test_experiment",
-      historical_data=mock.MagicMock(),
-      design_spec=mock.MagicMock(),
-  )
-
-  mock_design = mock.MagicMock()
-  mock_design.design_id = "test_design_id"
-  mock_raw_eval_metrics = mock.MagicMock()
-  mock_primary_metric_standard_error = mock.MagicMock()
-  mock_representiveness_score = mock.MagicMock()
-
-  experiment.record_design(
-      design=mock_design,
-      raw_eval_metrics=mock_raw_eval_metrics,
-      primary_metric_standard_error=mock_primary_metric_standard_error,
-      representiveness_score=mock_representiveness_score,
-  )
-
-  assert experiment.n_experiment_designs == 1
-
-  recorded_design_results = experiment.get_experiment_design_results(
-      "test_design_id"
-  )
-  assert recorded_design_results == {
-      "design": mock_design,
-      "raw_eval_metrics": mock_raw_eval_metrics,
-      "representiveness_score": mock_representiveness_score,
-      "primary_metric_standard_error": mock_primary_metric_standard_error,
-  }
-
-
-def test_experiment_clear_designs():
-  experiment = geoflex.experiment.Experiment(
-      name="test_experiment",
-      historical_data=mock.MagicMock(),
-      design_spec=mock.MagicMock(),
-  )
-  experiment.record_design(
-      design=mock.MagicMock(),
-      raw_eval_metrics=mock.MagicMock(),
-      primary_metric_standard_error=mock.MagicMock(),
-      representiveness_score=mock.MagicMock(),
-  )
-  experiment.clear_designs()
-  assert experiment.n_experiment_designs == 0
-
-
-def test_experiment_get_all_raw_eval_metrics():
-  experiment = geoflex.experiment.Experiment(
-      name="test_experiment",
-      historical_data=mock.MagicMock(),
-      design_spec=mock.MagicMock(),
-  )
-
-  mock_design_1 = mock.MagicMock()
-  mock_design_1.design_id = "test_design_id_1"
-  mock_raw_eval_metrics_1 = pd.DataFrame({
-      "col_1": [1, 2, 3],
-      "col_2": [4, 5, 6],
-  })
-  mock_design_2 = mock.MagicMock()
-  mock_design_2.design_id = "test_design_id_2"
-  mock_raw_eval_metrics_2 = pd.DataFrame({
-      "col_1": [7, 8, 9],
-      "col_2": [10, 11, 12],
-  })
-  experiment.record_design(
-      design=mock_design_1,
-      raw_eval_metrics=mock_raw_eval_metrics_1,
-      primary_metric_standard_error=mock.MagicMock(),
-      representiveness_score=mock.MagicMock(),
-  )
-  experiment.record_design(
-      design=mock_design_2,
-      raw_eval_metrics=mock_raw_eval_metrics_2,
-      primary_metric_standard_error=mock.MagicMock(),
-      representiveness_score=mock.MagicMock(),
-  )
-
-  expected_all_raw_eval_metrics = pd.DataFrame({
-      "design_id": ["test_design_id_1"] * 3 + ["test_design_id_2"] * 3,
-      "col_1": [1, 2, 3, 7, 8, 9],
-      "col_2": [4, 5, 6, 10, 11, 12],
-  })
-  pd.testing.assert_frame_equal(
-      experiment.all_raw_eval_metrics,
-      expected_all_raw_eval_metrics,
-      check_like=True,
-  )
 
 
 @pytest.fixture(name="historical_data")
@@ -173,6 +81,146 @@ def mock_design_spec_fixture():
       geo_eligibility_candidates=[None],
       effect_scope=EffectScope.ALL_GEOS,
   )
+
+
+def test_experiment_can_record_new_designs(
+    historical_data, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+
+  mock_design = mock.MagicMock(spec=ExperimentDesign)
+  mock_design.design_id = "test_design_id"
+  mock_raw_eval_metrics = mock.MagicMock(spec=pd.DataFrame)
+  mock_primary_metric_standard_error = 0.5
+  mock_representiveness_score = 0.8
+
+  experiment.record_design(
+      design=mock_design,
+      raw_eval_metrics=mock_raw_eval_metrics,
+      primary_metric_standard_error=mock_primary_metric_standard_error,
+      representiveness_score=mock_representiveness_score,
+  )
+
+  assert experiment.n_experiment_designs == 1
+
+  recorded_design_results = experiment.get_experiment_design_results(
+      "test_design_id"
+  )
+
+  assert isinstance(
+      recorded_design_results, geoflex.experiment.RawExperimentSimulationResults
+  )
+  assert recorded_design_results.design == mock_design
+  assert recorded_design_results.raw_eval_metrics == mock_raw_eval_metrics
+  assert (
+      recorded_design_results.primary_metric_standard_error
+      == mock_primary_metric_standard_error
+  )
+  assert (
+      recorded_design_results.representiveness_score
+      == mock_representiveness_score
+  )
+
+
+def test_experiment_clear_designs(historical_data, default_design_spec):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+
+  mock_design = mock.MagicMock(spec=ExperimentDesign)
+  mock_design.design_id = "test_design_id"
+  experiment.record_design(
+      design=mock_design,
+      raw_eval_metrics=mock.MagicMock(spec=pd.DataFrame),
+      primary_metric_standard_error=0.8,
+      representiveness_score=0.7,
+  )
+  experiment.clear_designs()
+  assert experiment.n_experiment_designs == 0
+
+
+def test_experiment_get_all_raw_eval_metrics(
+    historical_data, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+
+  mock_design_1 = mock.MagicMock(spec=ExperimentDesign)
+  mock_design_1.design_id = "test_design_id_1"
+  mock_raw_eval_metrics_1 = pd.DataFrame({
+      "col_1": [1, 2, 3],
+      "col_2": [4, 5, 6],
+  })
+  mock_design_2 = mock.MagicMock(spec=ExperimentDesign)
+  mock_design_2.design_id = "test_design_id_2"
+  mock_raw_eval_metrics_2 = pd.DataFrame({
+      "col_1": [7, 8, 9],
+      "col_2": [10, 11, 12],
+  })
+  experiment.record_design(
+      design=mock_design_1,
+      raw_eval_metrics=mock_raw_eval_metrics_1,
+      primary_metric_standard_error=0.5,
+      representiveness_score=0.6,
+  )
+  experiment.record_design(
+      design=mock_design_2,
+      raw_eval_metrics=mock_raw_eval_metrics_2,
+      primary_metric_standard_error=0.7,
+      representiveness_score=0.8,
+  )
+
+  expected_all_raw_eval_metrics = pd.DataFrame({
+      "design_id": ["test_design_id_1"] * 3 + ["test_design_id_2"] * 3,
+      "col_1": [1, 2, 3, 7, 8, 9],
+      "col_2": [4, 5, 6, 10, 11, 12],
+  })
+  pd.testing.assert_frame_equal(
+      experiment.all_raw_eval_metrics,
+      expected_all_raw_eval_metrics,
+      check_like=True,
+  )
+
+
+def test_experiment_get_selected_design_returns_correct_design(
+    historical_data, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data,
+      design_spec=default_design_spec,
+  )
+
+  mock_design_1 = mock.MagicMock(spec=ExperimentDesign)
+  mock_design_1.design_id = "test_design_id_1"
+  mock_raw_eval_metrics_1 = mock.MagicMock(spec=pd.DataFrame)
+  mock_design_2 = mock.MagicMock(spec=ExperimentDesign)
+  mock_design_2.design_id = "test_design_id_2"
+  mock_raw_eval_metrics_2 = mock.MagicMock(spec=pd.DataFrame)
+  experiment.record_design(
+      design=mock_design_1,
+      raw_eval_metrics=mock_raw_eval_metrics_1,
+      primary_metric_standard_error=0.5,
+      representiveness_score=0.6,
+  )
+  experiment.record_design(
+      design=mock_design_2,
+      raw_eval_metrics=mock_raw_eval_metrics_2,
+      primary_metric_standard_error=0.7,
+      representiveness_score=0.8,
+  )
+
+  experiment.select_design("test_design_id_2")
+  assert experiment.get_selected_design() == mock_design_2
 
 
 def test_experiment_bootstrapper_is_initialized_correctly(
@@ -601,3 +649,60 @@ def test_count_all_eligible_designs_returns_correct_data(
   )
   counts = experiment.count_all_eligible_designs()
   assert counts == {"RCT": 4}
+
+
+def test_can_write_experiment_to_json(
+    historical_data_lots_of_geos, default_design_spec
+):
+  experiment = geoflex.experiment.Experiment(
+      name="test_experiment",
+      historical_data=historical_data_lots_of_geos,
+      design_spec=default_design_spec,
+  )
+  experiment.explore_experiment_designs(
+      max_trials=3, simulations_per_trial=5, n_jobs=1
+  )
+  json_string = experiment.model_dump_json()
+
+  new_experiment = geoflex.experiment.Experiment.model_validate_json(
+      json_string
+  )
+  assert new_experiment.name == experiment.name
+
+  pd.testing.assert_frame_equal(
+      new_experiment.get_all_design_summaries(
+          target_power=0.8,
+          target_primary_metric_mde=None,
+          pareto_front_only=False,
+          include_design_parameters=True,
+          use_relative_effects_where_possible=True,
+      ),
+      experiment.get_all_design_summaries(
+          target_power=0.8,
+          target_primary_metric_mde=None,
+          pareto_front_only=False,
+          include_design_parameters=True,
+          use_relative_effects_where_possible=True,
+      ),
+      check_like=True,
+  )
+
+  pd.testing.assert_frame_equal(
+      new_experiment.get_all_design_summaries(
+          target_power=0.8,
+          target_primary_metric_mde=None,
+          pareto_front_only=True,
+          include_design_parameters=True,
+          use_relative_effects_where_possible=True,
+      ),
+      experiment.get_all_design_summaries(
+          target_power=0.8,
+          target_primary_metric_mde=None,
+          pareto_front_only=True,
+          include_design_parameters=True,
+          use_relative_effects_where_possible=True,
+      ),
+      check_like=True,
+  )
+
+  assert new_experiment.study is None  # Study cannot be written to JSON.

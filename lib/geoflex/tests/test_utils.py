@@ -1,11 +1,11 @@
 """Tests for the utils module."""
 
-import geoflex.utils
+from geoflex import utils
 import pandas as pd
 import pydantic
 import pytest
 
-ParquetDataFrame = geoflex.utils.ParquetDataFrame
+ParquetDataFrame = utils.ParquetDataFrame
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring

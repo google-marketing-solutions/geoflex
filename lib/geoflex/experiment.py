@@ -2,8 +2,8 @@
 
 import functools
 import logging
-from typing import Any
 import warnings
+from geoflex import utils
 import geoflex.bootstrap
 import geoflex.data
 import geoflex.evaluation
@@ -11,6 +11,7 @@ import geoflex.experiment_design
 import numpy as np
 import optuna as op
 import pandas as pd
+import pydantic
 from scipy import stats
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -23,6 +24,7 @@ GeoAssignmentRepresentivenessScorer = (
     geoflex.evaluation.GeoAssignmentRepresentivenessScorer
 )
 EffectScope = geoflex.experiment_design.EffectScope
+ParquetDataFrame = utils.ParquetDataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -91,25 +93,33 @@ class MaxTrialsCallback:
       study.stop()
 
 
-class Experiment:
-  """The main experiment class for GeoFleX."""
+class RawExperimentSimulationResults(pydantic.BaseModel):
+  """The results of a simulation of an experiment design."""
 
-  _VALIDATION_CHECK_THRESHOLD = (
-      0.001  # 99.9% confidence level for failing a validation check
+  design: ExperimentDesign
+  raw_eval_metrics: ParquetDataFrame
+  representiveness_score: float
+  primary_metric_standard_error: float
+
+  model_config = pydantic.ConfigDict(
+      extra="forbid",
+      arbitrary_types_allowed=True,
   )
 
-  def __init__(
+  @pydantic.model_validator(mode="after")
+  def check_design_id_is_in_raw_eval_metrics(
       self,
-      name: str,
-      historical_data: GeoPerformanceDataset,
-      design_spec: ExperimentDesignSpec,
-      bootstrapper_seasons_per_block: int = 2,
-      bootstrapper_log_transform: bool = True,
-      bootstrapper_seasonality: int = 7,
-  ):
-    """Initializes the experiment.
+  ) -> "RawExperimentSimulationResults":
+    """Sets the design id in raw eval metrics if it is not already present."""
+    if "design_id" not in self.raw_eval_metrics.columns:
+      self.raw_eval_metrics["design_id"] = self.design.design_id
+    return self
 
-    Args:
+
+class Experiment(pydantic.BaseModel):
+  """The main experiment class for GeoFleX.
+
+  Attributes:
       name: The name of the experiment. This should be a short, descriptive but
         unique name for the experiment. It will be used when saving and loading
         from Google Drive, so it must be unique.
@@ -121,25 +131,68 @@ class Experiment:
         bootstrapper. Only do this if all your metrics are non-negative.
       bootstrapper_seasonality: The seasonality for the bootstrapper. Defaults
         to 7 which assumes you have daily data with a weekly seasonality.
+      runtime_data: The runtime data for the experiment. This will be used for
+        the experiment analysis and will be added once the experiment is
+        complete - it is not available before the experiment starts.
+      experiment_start_date: The start date of the experiment. Defaults to None
+        and can be set once the experiment has begun.
+      experiment_simulation_results: The results of the experiment simulations.
+        This will be populated as the simulations are run.
+      validation_check_threhold: The threshold for failing a validation check.
+        Defaults to 0.001, which is a 99.9% confidence level. Typically this
+        does not need to be changed.
+      selected_design_id: The ID of the selected design. This is the design that
+        will be used for the experiment.
+      study: The Optuna study for the experiment design exploration.
+      pareto_front_design_ids: The design IDs that are on the Pareto front of
+        the Optuna study. These are the designs that have the best combination
+        of power and representativeness.
+  """
+
+  name: str
+  historical_data: GeoPerformanceDataset
+  design_spec: ExperimentDesignSpec
+  bootstrapper_seasons_per_block: int = 2
+  bootstrapper_log_transform: bool = True
+  bootstrapper_seasonality: int = 7
+
+  study: op.Study | None = None
+  pareto_front_design_ids: list[str] = []
+  experiment_simulation_results: dict[str, RawExperimentSimulationResults] = {}
+  selected_design_id: str | None = None
+
+  runtime_data: ParquetDataFrame | None = None
+  experiment_start_date: str | None = None
+
+  # 99.9% confidence level for failing a validation check
+  validation_check_threhold: float = 0.001
+
+  model_config = pydantic.ConfigDict(
+      extra="forbid", arbitrary_types_allowed=True
+  )
+
+  @pydantic.field_serializer("study")
+  def serialize_study_as_none(
+      self, study: op.Study | None, info: pydantic.SerializationInfo
+  ) -> None:
+    """Ensures that study is always None in the JSON output.
+
+    This is because Optuna does not support JSON serialization.
+
+    Args:
+      study: The Optuna study.
+      info: The serialization info.
+
+    Returns:
+      None
     """
-    self.name = name
-    self.historical_data = historical_data
-    self.design_spec = design_spec
-    self.runtime_data = None
-    self.experiment_start_date = None
-
-    self.bootstrapper_seasons_per_block = bootstrapper_seasons_per_block
-    self.bootstrapper_log_transform = bootstrapper_log_transform
-    self.bootstrapper_seasonality = bootstrapper_seasonality
-
-    self._drive_folder_url = None  # Will be set when saving to Google Drive.
-    self.clear_designs()
+    del info, study  # unused
+    return None
 
   def clear_designs(self) -> None:
     """Clears the designs."""
     logger.info("Clearing designs for experiment %s.", self.name)
-    self._eligible_experiment_design_results = {}
-    self._selected_design_id = None
+    self.experiment_simulation_results = {}
 
   def record_design(
       self,
@@ -156,33 +209,34 @@ class Experiment:
       primary_metric_standard_error: The standard error of the primary metric.
       representiveness_score: The representiveness score of the design.
     """
-    self._eligible_experiment_design_results[design.design_id] = {
-        "design": design,
-        "raw_eval_metrics": raw_eval_metrics,
-        "representiveness_score": representiveness_score,
-        "primary_metric_standard_error": primary_metric_standard_error,
-    }
-    self._eligible_experiment_design_results[design.design_id][
-        "raw_eval_metrics"
-    ]["design_id"] = design.design_id
+    self.experiment_simulation_results[design.design_id] = (
+        RawExperimentSimulationResults(
+            design=design,
+            raw_eval_metrics=raw_eval_metrics,
+            representiveness_score=representiveness_score,
+            primary_metric_standard_error=primary_metric_standard_error,
+        )
+    )
 
-  def get_experiment_design_results(self, design_id: str) -> dict[str, Any]:
+  def get_experiment_design_results(
+      self, design_id: str
+  ) -> RawExperimentSimulationResults:
     """Returns the experiment design results for a given design_id."""
-    return self._eligible_experiment_design_results[design_id]
+    return self.experiment_simulation_results[design_id]
 
   @property
   def all_raw_eval_metrics(self) -> pd.DataFrame:
     """Returns all raw evaluation metrics for all experiment designs."""
     raw_eval_metrics_list = [
-        results["raw_eval_metrics"]
-        for results in self._eligible_experiment_design_results.values()
+        results.raw_eval_metrics
+        for results in self.experiment_simulation_results.values()
     ]
     return pd.concat(raw_eval_metrics_list, ignore_index=True)
 
   @property
   def n_experiment_designs(self) -> int:
     """Returns the number of experiment designs."""
-    return len(self._eligible_experiment_design_results)
+    return len(self.experiment_simulation_results)
 
   @functools.cached_property
   def bootstrapper(self) -> MultivariateTimeseriesBootstrap:
@@ -326,7 +380,7 @@ class Experiment:
     for sample in self.bootstrapper.sample_dataframes(simulations_per_trial):
       # Design the experiment with the pre-test data
       is_pretest = sample.index.values < exp_start_date
-      pretest_dataset = geoflex.GeoPerformanceDataset.from_pivoted_data(
+      pretest_dataset = GeoPerformanceDataset.from_pivoted_data(
           sample.loc[is_pretest],
           geo_id_column=self.historical_data.geo_id_column,
           date_column=self.historical_data.date_column,
@@ -350,7 +404,7 @@ class Experiment:
 
       # Create the runtime dataset from the bootstrapped sample, simulate the \
       # experiment in it, and analyse it.
-      runtime_dataset = geoflex.GeoPerformanceDataset.from_pivoted_data(
+      runtime_dataset = GeoPerformanceDataset.from_pivoted_data(
           sample,
           geo_id_column=self.historical_data.geo_id_column,
           date_column=self.historical_data.date_column,
@@ -401,10 +455,10 @@ class Experiment:
     ).pvalue
 
     absolute_effect_is_unbiased = (
-        unbiased_absolute_effect_pval >= self._VALIDATION_CHECK_THRESHOLD
+        unbiased_absolute_effect_pval >= self.validation_check_threhold
     )
     absolute_effect_has_coverage = (
-        coverage_absolute_effect_pval >= self._VALIDATION_CHECK_THRESHOLD
+        coverage_absolute_effect_pval >= self.validation_check_threhold
     )
 
     all_checks_pass = (
@@ -441,10 +495,10 @@ class Experiment:
       ).pvalue
 
       relative_effect_is_unbiased = (
-          unbiased_relative_effect_pval >= self._VALIDATION_CHECK_THRESHOLD
+          unbiased_relative_effect_pval >= self.validation_check_threhold
       )
       relative_effect_has_coverage = (
-          coverage_relative_effect_pval >= self._VALIDATION_CHECK_THRESHOLD
+          coverage_relative_effect_pval >= self.validation_check_threhold
       )
 
       all_checks_pass = (
@@ -692,6 +746,7 @@ class Experiment:
       n_jobs: int = -1,
       seed: int = 0,
       ignore_designs_with_failing_checks: bool = True,
+      warm_start: bool = True,
   ) -> None:
     """Explores how the different eligible experiment designs perform.
 
@@ -714,6 +769,9 @@ class Experiment:
         included in the results, and the exploration will look for max_trials of
         designs with passing checks. If set to false, the exploration will look
         for max_trials of designs, regardless of whether the checks pass.
+      warm_start: Whether to warm start the exploration. If set to true, the
+        exploration will warm start from the previous best designs. If set to
+        false, the exploration will start from scratch.
     """
 
     objective = lambda trial: self._design_evaluation_objective(
@@ -722,26 +780,52 @@ class Experiment:
         ignore_designs_with_failing_checks=ignore_designs_with_failing_checks,
     )
 
+    if warm_start and self.study is None and self.n_experiment_designs > 0:
+      error_message = (
+          "Warm start is not supported when there are existing experiment"
+          " designs but no existing study. This usually happens if you are"
+          " loading the experiment from json and then exploring with warm"
+          " start, as the study cannot be serialized."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    if not warm_start:
+      logger.info(
+          "Warm start is disabled, clearing existing designs and study."
+      )
+      self.clear_designs()
+
     with warnings.catch_warnings():
       # Hide the experiment warning about the BruteForceSampler being
       # experimental.
       warnings.filterwarnings(
           "ignore", message="BruteForceSampler is experimental"
       )
-
-      self.study = op.create_study(
-          sampler=op.samplers.BruteForceSampler(seed=seed),
-          directions=[
-              "minimize",
-              "maximize",
-          ],  # Minimise standard error, maximise representiveness
-      )
+      if self.study is None or not warm_start:
+        logger.info("Creating new study.")
+        self.study = op.create_study(
+            sampler=op.samplers.BruteForceSampler(seed=seed),
+            directions=[
+                "minimize",
+                "maximize",
+            ],  # Minimise standard error, maximise representiveness
+        )
+      else:
+        logger.info("Continuing existing study.")
 
     self.study.optimize(
         objective,
         n_trials=max_trials * 10,
         callbacks=[MaxTrialsCallback(max_trials)],
         n_jobs=n_jobs,
+    )
+
+    best_trial_numbers = [trial.number for trial in self.study.best_trials]
+    self.pareto_front_design_ids = (
+        self.study.trials_dataframe()
+        .loc[best_trial_numbers, "user_attrs_design_id"]
+        .values.tolist()
     )
 
   def _summarise_single_design_results(
@@ -818,8 +902,8 @@ class Experiment:
     """Returns summaries of the experiment designs as a dataframe."""
     out = (
         pd.DataFrame([
-            design_results["design"].model_dump()
-            for design_results in self._eligible_experiment_design_results.values()
+            design_results.design.model_dump()
+            for design_results in self.experiment_simulation_results.values()
         ])
         .set_index("design_id")
         .drop(
@@ -901,14 +985,8 @@ class Experiment:
     raw_data = self.all_raw_eval_metrics
 
     if pareto_front_only:
-      best_trial_numbers = [trial.number for trial in self.study.best_trials]
-      pareto_front_design_ids = (
-          self.study.trials_dataframe()
-          .loc[best_trial_numbers, "user_attrs_design_id"]
-          .values
-      )
       raw_data = raw_data.loc[
-          raw_data["design_id"].isin(pareto_front_design_ids)
+          raw_data["design_id"].isin(self.pareto_front_design_ids)
       ]
 
     # The design summary metrics are calculated by evaluating each simulation
@@ -963,8 +1041,8 @@ class Experiment:
     if self.design_spec.effect_scope == EffectScope.ALL_GEOS:
       design_summary_metrics["treatment_groups_representiveness_score"] = (
           pd.Series({
-              design_id: values["representiveness_score"]
-              for design_id, values in self._eligible_experiment_design_results.items()
+              design_id: values.representiveness_score
+              for design_id, values in self.experiment_simulation_results.items()
           })
       )
 
@@ -972,7 +1050,7 @@ class Experiment:
 
   def select_design(self, design_id: str) -> None:
     """Sets the selected design, based on the design_id."""
-    raise NotImplementedError()
+    self.selected_design_id = design_id
 
   def get_selected_design(self) -> ExperimentDesign:
     """Returns the selected design.
@@ -981,17 +1059,15 @@ class Experiment:
       ValueError: If no design has been selected, or if the selected design
       does not exist.
     """
-    if self._selected_design_id is None:
+    if self.selected_design_id is None:
       error_message = "No design has been selected."
       logger.error(error_message)
       raise ValueError(error_message)
-    if self._selected_design_id not in self._eligible_experiment_design_results:
-      error_message = f"Design {self._selected_design_id} does not exist."
+    if self.selected_design_id not in self.experiment_simulation_results:
+      error_message = f"Design {self.selected_design_id} does not exist."
       logger.error(error_message)
       raise ValueError(error_message)
-    return self._eligible_experiment_design_results[self._selected_design_id][
-        "design"
-    ]
+    return self.experiment_simulation_results[self.selected_design_id].design
 
   def save_to_file(self, file_path: str) -> None:
     """Saves the experiment to a file."""

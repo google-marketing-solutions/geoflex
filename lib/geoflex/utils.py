@@ -24,29 +24,33 @@ def serialize_dataframe_to_parquet_b64(data: pd.DataFrame) -> str:
   return base64.b64encode(parquet_bytes).decode('utf-8')
 
 
-def deserialize_df_from_parquet_b64_if_string(value: str) -> pd.DataFrame:
+def deserialize_df_from_parquet_b64_if_string(
+    value: str | pd.DataFrame, handler: pydantic.ValidatorFunctionWrapHandler
+) -> pd.DataFrame:
   """Deserializes a DataFrame from a Base64 encoded Parquet string.
 
   Used with pydantic for deserialization of DataFrames from json.
 
   Args:
     value: The Base64 encoded Parquet string.
+    handler: The handler which represents all the other validators. This is
+      called after the serialization to pandas.
 
   Returns:
     The deserialized DataFrame.
   """
   if not isinstance(value, str):  # Not a string
-    return value
+    return handler(value)
 
   if not value:  # Empty string
-    return pd.DataFrame()
+    return handler(pd.DataFrame())
 
   try:
     base64_decoded_bytes = base64.b64decode(value.encode('utf-8'))
     if not base64_decoded_bytes:  # Empty bytes after decoding
-      return pd.DataFrame()
+      return handler(pd.DataFrame())
     parquet_file_like = io.BytesIO(base64_decoded_bytes)
-    return pd.read_parquet(parquet_file_like)
+    return handler(pd.read_parquet(parquet_file_like))
   except Exception as e:
     raise ValueError(
         f'Failed to deserialize DataFrame from Parquet string: {e}'
@@ -60,5 +64,5 @@ ParquetDataFrame = Annotated[
     pydantic.PlainSerializer(
         serialize_dataframe_to_parquet_b64, when_used='json'
     ),
-    pydantic.BeforeValidator(deserialize_df_from_parquet_b64_if_string),
+    pydantic.WrapValidator(deserialize_df_from_parquet_b64_if_string),
 ]
