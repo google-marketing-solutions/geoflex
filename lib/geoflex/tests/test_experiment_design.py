@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 
 
-ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
 ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -42,9 +41,8 @@ def test_geo_assignment_raises_exception_if_geos_in_multiple_groups(
   exclude_set = set(exclude)
   with pytest.raises(ValueError, match="multiple groups"):
     GeoAssignment(
-        treatment=treatment_sets,
-        control=control_set,
-        exclude=exclude_set)
+        treatment=treatment_sets, control=control_set, exclude=exclude_set
+    )
 
 
 def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
@@ -52,266 +50,6 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
     # Treatment must be a list of lists to be able to have multiple treatment
     # arms.
     GeoAssignment(treatment=["US", "UK"], control=["US", "AU"])
-
-
-@pytest.mark.parametrize(
-    "invalid_args",
-    [
-        pytest.param(
-            {"runtime_weeks_candidates": []},
-            id="runtime_weeks_candidates_is_empty",
-        ),
-        pytest.param(
-            {"n_cells": 1},
-            id="n_cells_less_than_2",
-        ),
-        pytest.param(
-            {
-                "cell_volume_constraint_candidates": [
-                    CellVolumeConstraint(values=[5, 1])
-                ],
-                "n_cells": 3,
-            },
-            id="cell_volume_constraint_not_match_n_cells",
-        ),
-        pytest.param(
-            {
-                "n_cells": 3,
-                "geo_eligibility_candidates": [
-                    GeoEligibility(treatment=[{"US"}])
-                ],
-            },
-            id="geo_eligibility_does_not_match_n_cells",
-        ),
-        pytest.param(
-            {"alternative_hypothesis": "something_else"},
-            id="alternative_hypothesis_is_invalid",
-        ),
-        pytest.param(
-            {"alpha": 1.1},
-            id="alpha_is_greater_than_1",
-        ),
-        pytest.param(
-            {"alpha": -0.1},
-            id="alpha_is_less_than_0",
-        ),
-        pytest.param(
-            {
-                "fixed_geo_candidates": [
-                    GeoAssignment(treatment=[["US", "UK"], ["CA"]])
-                ]
-            },
-            id="fixed_geo_candidates_does_not_match_n_cells",
-        ),
-        pytest.param(
-            {"secondary_metrics": ["revenue", "conversions"]},
-            id="secondary_metrics_contains_duplicate_names",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.HEAVY_UP,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=-10,
-                        budget_type=ExperimentBudgetType.DAILY_BUDGET,
-                    )
-                ],
-            },
-            id="heavy_up_experiment_must_have_positive_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.HOLD_BACK,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=-10,
-                        budget_type=ExperimentBudgetType.DAILY_BUDGET,
-                    )
-                ],
-            },
-            id="hold_back_experiment_must_have_positive_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.HOLD_BACK,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=0.5,
-                        budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-                    )
-                ],
-            },
-            id="hold_back_experiment_cannot_have_percentage_change_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=0.5,
-                        budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-                    )
-                ],
-            },
-            id="go_dark_experiment_cannot_have_positive_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=-0.5,
-                        budget_type=ExperimentBudgetType.DAILY_BUDGET,
-                    )
-                ],
-            },
-            id="go_dark_experiment_cannot_have_daily_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=-0.5,
-                        budget_type=ExperimentBudgetType.TOTAL_BUDGET,
-                    )
-                ],
-            },
-            id="go_dark_experiment_cannot_have_total_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.AB_TEST,
-                "experiment_budget_candidates": [
-                    ExperimentBudget(
-                        value=-0.5,
-                        budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-                    )
-                ],
-            },
-            id="ab_experiment_cannot_have_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.GO_DARK,
-                "experiment_budget_candidates": [None],
-            },
-            id="go_dark_cannot_have_zero_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.HOLD_BACK,
-                "experiment_budget_candidates": [None],
-            },
-            id="hold_back_cannot_have_zero_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.HEAVY_UP,
-                "experiment_budget_candidates": [None],
-            },
-            id="heavy_up_cannot_have_zero_budget",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.AB_TEST,
-                "experiment_budget_candidates": [None],
-                "secondary_metrics": [geoflex.metrics.ROAS()],
-            },
-            id="ab_test_cannot_have_cost_secondary_metrics",
-        ),
-        pytest.param(
-            {
-                "experiment_type": ExperimentType.AB_TEST,
-                "experiment_budget_candidates": [None],
-                "primary_metric": geoflex.metrics.ROAS(),
-            },
-            id="ab_test_cannot_have_cost_secondary_metrics",
-        ),
-    ],
-)
-def test_design_spec_raise_exception_inputs_are_invalid(invalid_args):
-  default_args = {
-      "experiment_type": ExperimentType.GO_DARK,
-      "primary_metric": "revenue",
-      "experiment_budget_candidates": [
-          ExperimentBudget(
-              value=-0.1,
-              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-          )
-      ],
-  }
-  default_args.update(invalid_args)
-  with pytest.raises(ValueError):
-    ExperimentDesignSpec(**default_args)
-
-
-@pytest.mark.parametrize(
-    "valid_args",
-    [
-        {
-            "geo_eligibility_candidates": [
-                GeoAssignment(treatment=[["US", "UK"]], control=["CA", "AU"])
-            ],
-            "runtime_weeks_candidates": [2, 4],
-        },
-        {},
-        {"geo_eligibility_candidates": [None]},
-        {
-            "cell_volume_constraint_candidates": [
-                CellVolumeConstraint(values=[2, 2]),
-                CellVolumeConstraint(values=[1, 5]),
-                None,
-            ]
-        },
-        {"n_cells": 3},
-        {"secondary_metrics": ["conversions"]},
-        {
-            "experiment_type": ExperimentType.GO_DARK,
-            "experiment_budget_candidates": [
-                ExperimentBudget(
-                    value=-0.1,
-                    budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-                )
-            ],
-        },
-    ],
-)
-def test_design_spec_can_be_created_with_valid_input(valid_args):
-  default_args = {
-      "experiment_type": ExperimentType.AB_TEST,
-      "primary_metric": "revenue",
-  }
-  default_args.update(valid_args)
-
-  ExperimentDesignSpec(**default_args)
-
-
-def test_design_spec_takes_first_budget_candidate_if_budget_is_irrelevant():
-  # Budget is irrelevant because no cost metrics are used,
-  design_spec = ExperimentDesignSpec(
-      experiment_type=ExperimentType.GO_DARK,
-      primary_metric="revenue",
-      secondary_metrics=["conversions"],
-      experiment_budget_candidates=[
-          ExperimentBudget(
-              value=-0.1,
-              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-          ),
-          ExperimentBudget(
-              value=100,
-              budget_type=ExperimentBudgetType.DAILY_BUDGET,
-          ),
-      ],
-  )
-
-  expected_budget_candidates = [
-      ExperimentBudget(
-          value=-0.1,
-          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-      )
-  ]
-  assert design_spec.experiment_budget_candidates == expected_budget_candidates
 
 
 def test_metric_names_must_be_unique():
@@ -337,7 +75,7 @@ def test_geoeligibilty_inflexible_2cell():
       treatment=[{"g3"}],  # 1 treatment arm, 2 cells total
       exclude={"g4"},
       all_geos={"g1", "g2", "g3", "g4", "g5"},
-      flexible=False
+      flexible=False,
   )
   data_frames = eligibility.data
 
@@ -354,20 +92,20 @@ def test_geoeligibilty_inflexible_2cell():
   # check values of specific geos
   assert df.loc["g1"].equals(
       pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g1")
-      )
+  )
   assert df.loc["g2"].equals(
       pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g2")
-      )
+  )
   assert df.loc["g3"].equals(
       pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="g3")
-      )
+  )
   assert df.loc["g4"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="g4")
-      )
+  )
   # g5 is not explicitly defined and flexible=False -> should be all 0s
   assert df.loc["g5"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="g5")
-      )
+  )
 
 
 def test_geoeligibility_flexible_2cell():
@@ -376,7 +114,7 @@ def test_geoeligibility_flexible_2cell():
       treatment=[{"g2"}],
       exclude={"g5"},
       all_geos={"g1", "g2", "g3", "g4", "g5", "g6"},
-      flexible=True
+      flexible=True,
   )
   data_frames = eligibility.data
 
@@ -394,35 +132,32 @@ def test_geoeligibility_flexible_2cell():
   # g1 is not defined and flexible=True -> flexible control and treatment
   assert df.loc["g1"].equals(
       pd.Series({"control": 1, "treatment": 1, "exclude": 0}, name="g1")
-      )
+  )
   assert df.loc["g2"].equals(
       pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="g2")
-      )
+  )
   assert df.loc["g3"].equals(
       pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g3")
-      )
+  )
   assert df.loc["g4"].equals(
       pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="g4")
-      )
+  )
   assert df.loc["g5"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="g5")
-      )
+  )
   # g6 is not defined and flexible=True -> flexible control and treatment
   assert df.loc["g6"].equals(
       pd.Series({"control": 1, "treatment": 1, "exclude": 0}, name="g6")
-      )
+  )
 
 
 def test_geoeligibility_multiarm_3cell():
   eligibililty = GeoEligibility(
       control={"c1"},
-      treatment=[
-          {"t1", "t3"},
-          {"t2", "t3"}
-      ],
+      treatment=[{"t1", "t3"}, {"t2", "t3"}],
       exclude={"e1"},
       all_geos={"c1", "t1", "t2", "t3", "e1", "u1"},
-      flexible=False
+      flexible=False,
   )
   data_frames = eligibililty.data
 
@@ -441,50 +176,50 @@ def test_geoeligibility_multiarm_3cell():
   # check eligibility for t1 which is only eligible for treatment in arm1
   assert df_arm1.loc["t1"].equals(
       pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t1")
-      )
+  )
   assert df_arm2.loc["t1"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="t1")
-      )
+  )
 
   # check eligibility for t2 which is only eligible for treatment in arm2
   assert df_arm1.loc["t2"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="t2")
-      )
+  )
   assert df_arm2.loc["t2"].equals(
       pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t2")
-      )
+  )
 
   # check eligibility for t3 which is eligible for treatment in both arms
   assert df_arm1.loc["t3"].equals(
       pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t3")
-      )
+  )
   assert df_arm2.loc["t3"].equals(
       pd.Series({"control": 0, "treatment": 1, "exclude": 0}, name="t3")
-      )
+  )
 
   # check eligibility for c1 which is only eligible for control
   assert df_arm1.loc["c1"].equals(
       pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="c1")
-      )
+  )
   assert df_arm2.loc["c1"].equals(
       pd.Series({"control": 1, "treatment": 0, "exclude": 0}, name="c1")
-      )
+  )
 
   # check eligibility for e1 which is only eligible for exclude
   assert df_arm1.loc["e1"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="e1")
-      )
+  )
   assert df_arm2.loc["e1"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 1}, name="e1")
-      )
+  )
 
   # check eligibility for u1 which is not defined and flexible=False
   assert df_arm1.loc["u1"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="u1")
-      )
+  )
   assert df_arm2.loc["u1"].equals(
       pd.Series({"control": 0, "treatment": 0, "exclude": 0}, name="u1")
-      )
+  )
 
 
 def test_make_geo_assignment_array_returns_correct_array():
@@ -495,3 +230,388 @@ def test_make_geo_assignment_array_returns_correct_array():
   ).make_geo_assignment_array(["US", "CA", "UK", "FR", "DE", "Other"])
   expected_assignment = np.array([1, 2, 1, 0, -1, -1])
   assert np.array_equal(assignment, expected_assignment)
+
+
+def test_can_write_design_to_json():
+  design = ExperimentDesign(
+      experiment_type=ExperimentType.GO_DARK,
+      primary_metric="revenue",
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      secondary_metrics=["conversions"],
+      methodology="test_methodology",
+      runtime_weeks=4,
+      n_cells=2,
+      alpha=0.1,
+      geo_eligibility=None,
+  )
+  design_as_json = design.model_dump_json()
+  new_design = ExperimentDesign.model_validate_json(design_as_json)
+
+  assert new_design == design
+
+
+def test_can_write_design_to_dict():
+  design = ExperimentDesign(
+      experiment_type=ExperimentType.GO_DARK,
+      primary_metric="revenue",
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      secondary_metrics=["conversions"],
+      methodology="test_methodology",
+      runtime_weeks=4,
+      n_cells=2,
+      alpha=0.1,
+      geo_eligibility=None,
+  )
+  design_as_dict = design.model_dump()
+  new_design = ExperimentDesign.model_validate(design_as_dict)
+
+  assert new_design == design
+
+
+@pytest.fixture(name="mock_design")
+def mock_design_fixture():
+  """Fixture for a mock design."""
+  return ExperimentDesign(
+      experiment_type=ExperimentType.GO_DARK,
+      primary_metric="revenue",
+      secondary_metrics=[
+          geoflex.metrics.ROAS(),
+          geoflex.metrics.CPA(),
+      ],
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      methodology="RCT",
+      runtime_weeks=4,
+      n_cells=3,
+      alpha=0.1,
+      geo_eligibility=None,
+  )
+
+
+@pytest.fixture(name="mock_design_evaluation_results")
+def mock_design_evaluation_results_fixture():
+  """Fixture for a mock design evaluation results."""
+  return geoflex.evaluation.ExperimentDesignEvaluationResults(
+      is_valid_design=True,
+      primary_metric_name="revenue",
+      alpha=0.1,
+      alternative_hypothesis="two-sided",
+      representiveness_scores_per_cell=[1.0, 2.0],
+      all_metric_results_per_cell={
+          "revenue": [
+              geoflex.evaluation.SingleEvaluationResult(
+                  standard_error_absolute_effect=1.3,
+                  standard_error_relative_effect=1.2,
+                  coverage_absolute_effect=0.4,
+                  coverage_relative_effect=0.5,
+                  all_checks_pass=True,
+                  failing_checks=[],
+              ),
+              geoflex.evaluation.SingleEvaluationResult(
+                  standard_error_absolute_effect=2.2,
+                  standard_error_relative_effect=2.1,
+                  coverage_absolute_effect=0.9,
+                  coverage_relative_effect=0.99,
+                  all_checks_pass=True,
+                  failing_checks=[],
+              ),
+          ],
+          "ROAS": [
+              geoflex.evaluation.SingleEvaluationResult(
+                  standard_error_absolute_effect=1.3,
+                  standard_error_relative_effect=None,
+                  coverage_absolute_effect=0.5,
+                  coverage_relative_effect=None,
+                  all_checks_pass=True,
+                  failing_checks=[],
+              ),
+              geoflex.evaluation.SingleEvaluationResult(
+                  standard_error_absolute_effect=2.2,
+                  standard_error_relative_effect=None,
+                  coverage_absolute_effect=0.7,
+                  coverage_relative_effect=None,
+                  all_checks_pass=False,
+                  failing_checks=["something failed"],
+              ),
+          ],
+          "CPA __INVERTED__": [
+              geoflex.evaluation.SingleEvaluationResult(
+                  standard_error_absolute_effect=1.3,
+                  standard_error_relative_effect=None,
+                  coverage_absolute_effect=0.5,
+                  coverage_relative_effect=None,
+                  all_checks_pass=True,
+                  failing_checks=[],
+              ),
+              geoflex.evaluation.SingleEvaluationResult(
+                  standard_error_absolute_effect=2.2,
+                  standard_error_relative_effect=None,
+                  coverage_absolute_effect=0.7,
+                  coverage_relative_effect=None,
+                  all_checks_pass=False,
+                  failing_checks=["something else failed"],
+              ),
+          ],
+      },
+  )
+
+
+def test_experiment_design_evaluation_results_primary_metric_results_per_cell(
+    mock_design_evaluation_results,
+):
+  assert mock_design_evaluation_results.primary_metric_results_per_cell == (
+      mock_design_evaluation_results.all_metric_results_per_cell["revenue"]
+  )
+
+
+def test_experiment_design_evaluation_results_representiveness_score_is_least_representative(
+    mock_design_evaluation_results,
+):
+  assert mock_design_evaluation_results.representiveness_score == min(
+      mock_design_evaluation_results.representiveness_scores_per_cell
+  )
+
+
+def test_experiment_design_evaluation_results_all_metric_results_is_worst_case(
+    mock_design_evaluation_results,
+):
+
+  assert mock_design_evaluation_results.all_metric_results[
+      "revenue"
+  ] == geoflex.evaluation.SingleEvaluationResult(
+      standard_error_absolute_effect=2.2,
+      standard_error_relative_effect=2.1,
+      coverage_absolute_effect=0.4,
+      coverage_relative_effect=0.5,
+      all_checks_pass=True,
+      failing_checks=[],
+  )
+  assert mock_design_evaluation_results.all_metric_results[
+      "ROAS"
+  ] == geoflex.evaluation.SingleEvaluationResult(
+      standard_error_absolute_effect=2.2,
+      standard_error_relative_effect=None,
+      coverage_absolute_effect=0.5,
+      coverage_relative_effect=None,
+      all_checks_pass=False,
+      failing_checks=["something failed"],
+  )
+  assert mock_design_evaluation_results.all_metric_results[
+      "CPA __INVERTED__"
+  ] == geoflex.evaluation.SingleEvaluationResult(
+      standard_error_absolute_effect=2.2,
+      standard_error_relative_effect=None,
+      coverage_absolute_effect=0.5,
+      coverage_relative_effect=None,
+      all_checks_pass=False,
+      failing_checks=["something else failed"],
+  )
+
+
+def test_experiment_design_evaluation_results_primary_metric_results(
+    mock_design_evaluation_results,
+):
+  assert (
+      mock_design_evaluation_results.primary_metric_results
+      == geoflex.evaluation.SingleEvaluationResult(
+          standard_error_absolute_effect=2.2,
+          standard_error_relative_effect=2.1,
+          coverage_absolute_effect=0.4,
+          coverage_relative_effect=0.5,
+          all_checks_pass=True,
+          failing_checks=[],
+      )
+  )
+
+
+def test_invalid_experiment_design_results_has_none_for_all_properties():
+  invalid_design_results = geoflex.evaluation.ExperimentDesignEvaluationResults(
+      is_valid_design=False,
+      primary_metric_name="revenue",
+      alpha=0.1,
+      alternative_hypothesis="two-sided",
+      representiveness_scores_per_cell=None,
+      all_metric_results_per_cell=None,
+  )
+
+  assert invalid_design_results.primary_metric_results is None
+  assert invalid_design_results.primary_metric_results_per_cell is None
+  assert invalid_design_results.all_metric_results is None
+  assert invalid_design_results.representiveness_score is None
+  assert invalid_design_results.get_mde(target_power=0.8, relative=False, aggregate_across_cells=True) == {}  # pylint: disable=g-explicit-bool-comparison
+
+
+def test_get_mde_returns_correct_mde_for_relative_effects(
+    mock_design_evaluation_results,
+):
+  assert mock_design_evaluation_results.get_mde(
+      target_power=0.8, relative=True, aggregate_across_cells=True
+  ) == {"revenue": 5.221597207101212, "ROAS": None, "CPA": None}
+
+
+def test_get_mde_returns_correct_mde_for_absolute_effects(
+    mock_design_evaluation_results,
+):
+  assert mock_design_evaluation_results.get_mde(
+      target_power=0.8, relative=False, aggregate_across_cells=True
+  ) == {
+      "revenue": 5.47024469315365,
+      "ROAS": 5.47024469315365,
+      "CPA": 0.18280717885464282,
+  }
+
+
+def test_get_mde_returns_per_cell_mde_if_aggregate_across_cells_is_false(
+    mock_design_evaluation_results,
+):
+  assert mock_design_evaluation_results.get_mde(
+      target_power=0.8, relative=False, aggregate_across_cells=False
+  ) == {
+      "revenue": [3.2324173186817022, 5.47024469315365],
+      "ROAS": [3.2324173186817022, 5.47024469315365],
+      "CPA": [0.3093659949847802, 0.18280717885464282],
+  }
+
+
+def test_get_summary_dict_returns_correct_dict(
+    mock_design_evaluation_results,
+):
+  assert mock_design_evaluation_results.get_summary_dict(
+      target_power=0.8, use_relative_effects_where_possible=True
+  ) == {
+      "failing_checks": ["something failed", "something else failed"],
+      "all_checks_pass": False,
+      "representiveness_score": 1.0,
+      "primary_metric_failing_checks": [],
+      "primary_metric_all_checks_pass": True,
+      "primary_metric_standard_error": 2.1,
+      "Relative MDE (revenue, primary metric)": 5.221597207101212,
+      "MDE (ROAS)": 5.47024469315365,
+      "MDE (CPA)": 0.18280717885464282,
+  }
+
+
+def test_experiment_design_get_summary_dict_returns_correct_dict_without_evaluation_results(
+    mock_design,
+):
+  assert mock_design.get_summary_dict() == {
+      "design_id": mock_design.design_id,
+      "experiment_type": "go_dark",
+      "experiment_budget": "-10%",
+      "primary_metric": "revenue",
+      "secondary_metrics": ["ROAS", "CPA"],
+      "methodology": "RCT",
+      "runtime_weeks": 4,
+      "n_cells": 3,
+      "cell_volume_constraint": (
+          "control: None, treatment_1: None, treatment_2: None"
+      ),
+      "effect_scope": "all_geos",
+      "alpha": 0.1,
+      "alternative_hypothesis": "two-sided",
+      "random_seed": 0,
+  }
+
+
+def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluation_results(
+    mock_design, mock_design_evaluation_results
+):
+  mock_design.evaluation_results = mock_design_evaluation_results
+  assert mock_design.get_summary_dict() == {
+      "design_id": mock_design.design_id,
+      "experiment_type": "go_dark",
+      "experiment_budget": "-10%",
+      "primary_metric": "revenue",
+      "secondary_metrics": ["ROAS", "CPA"],
+      "methodology": "RCT",
+      "runtime_weeks": 4,
+      "n_cells": 3,
+      "cell_volume_constraint": (
+          "control: None, treatment_1: None, treatment_2: None"
+      ),
+      "effect_scope": "all_geos",
+      "alpha": 0.1,
+      "alternative_hypothesis": "two-sided",
+      "random_seed": 0,
+      "failing_checks": ["something failed", "something else failed"],
+      "all_checks_pass": False,
+      "representiveness_score": 1.0,
+      "primary_metric_failing_checks": [],
+      "primary_metric_all_checks_pass": True,
+      "primary_metric_standard_error": 2.1,
+      "Relative MDE (revenue, primary metric)": 5.221597207101212,
+      "MDE (ROAS)": 5.47024469315365,
+      "MDE (CPA)": 0.18280717885464282,
+  }
+
+
+def test_experiment_design_print_summary_dict_returns_correct_dict_with_geo_assignment(
+    mock_design,
+):
+  mock_design.geo_assignment = GeoAssignment(
+      treatment=[{"US", "UK"}, {"CA"}],
+      control={"FR", "AU"},
+      exclude={"DE", "JP"},
+  )
+  assert mock_design.get_summary_dict() == {
+      "design_id": mock_design.design_id,
+      "experiment_type": "go_dark",
+      "experiment_budget": "-10%",
+      "primary_metric": "revenue",
+      "secondary_metrics": ["ROAS", "CPA"],
+      "methodology": "RCT",
+      "runtime_weeks": 4,
+      "n_cells": 3,
+      "cell_volume_constraint": (
+          "control: None, treatment_1: None, treatment_2: None"
+      ),
+      "effect_scope": "all_geos",
+      "alpha": 0.1,
+      "alternative_hypothesis": "two-sided",
+      "random_seed": 0,
+      "geo_assignment_control": "AU, FR",
+      "geo_assignment_exclude": "DE, JP",
+      "geo_assignment_treatment_1": "UK, US",
+      "geo_assignment_treatment_2": "CA",
+  }
+
+
+def test_make_variation_returns_correct_design(
+    mock_design, mock_design_evaluation_results
+):
+  mock_design.evaluation_results = mock_design_evaluation_results
+  mock_design.geo_assignment = GeoAssignment(
+      treatment=[{"US", "UK"}, {"CA"}],
+      control={"FR", "AU"},
+      exclude={"DE", "JP"},
+  )
+
+  variation = mock_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          value=-0.5,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+  )
+
+  assert variation.design_id != mock_design.design_id
+  assert variation.evaluation_results is None
+  assert variation.geo_assignment is None
+  assert variation.experiment_budget == ExperimentBudget(
+      value=-0.5,
+      budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+  )
+  assert variation.geo_eligibility == mock_design.geo_eligibility
+  assert variation.methodology == mock_design.methodology
+  assert variation.runtime_weeks == mock_design.runtime_weeks
+  assert variation.n_cells == mock_design.n_cells
+  assert variation.alpha == mock_design.alpha
+  assert variation.alternative_hypothesis == mock_design.alternative_hypothesis
+  assert variation.random_seed == mock_design.random_seed

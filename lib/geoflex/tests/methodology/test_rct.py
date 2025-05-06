@@ -2,15 +2,17 @@
 
 import geoflex.data
 import geoflex.experiment_design
+import geoflex.exploration_spec
 import geoflex.methodology.rct
 import geoflex.metrics
-import numpy as np
 import optuna as op
 import pandas as pd
 import pytest
 
 RCT = geoflex.methodology.rct.RCT
-ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
+ExperimentDesignExplorationSpec = (
+    geoflex.exploration_spec.ExperimentDesignExplorationSpec
+)
 ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
@@ -156,7 +158,7 @@ def test_rct_suggests_no_methodology_parameters():
   study = op.create_study()
   trial = study.ask()
   parameters = RCT().suggest_methodology_parameters(
-      ExperimentDesignSpec(
+      ExperimentDesignExplorationSpec(
           experiment_type=ExperimentType.GO_DARK,
           primary_metric="revenue",
           experiment_budget_candidates=[
@@ -199,7 +201,6 @@ def test_rct_assign_geos(
         values=n_geos_per_group,
         constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
     )
-  rng = np.random.default_rng(seed=42)
   experiment_design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
@@ -214,7 +215,7 @@ def test_rct_assign_geos(
       geo_eligibility=GeoEligibility(exclude=set(exclude_geos)),
       cell_volume_constraint=cell_volume_constraint,
   )
-  geo_assignment = RCT().assign_geos(experiment_design, performance_data, rng)
+  geo_assignment = RCT().assign_geos(experiment_design, performance_data)
   geo_counts = [len(geo_assignment.control)] + list(
       map(len, geo_assignment.treatment)
   )

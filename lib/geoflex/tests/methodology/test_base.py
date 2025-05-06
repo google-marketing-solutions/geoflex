@@ -3,6 +3,7 @@
 from typing import Any
 import geoflex.data
 import geoflex.experiment_design
+import geoflex.exploration_spec
 import geoflex.methodology._base
 import geoflex.metrics
 import numpy as np
@@ -16,7 +17,9 @@ ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
-ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
+ExperimentDesignExplorationSpec = (
+    geoflex.exploration_spec.ExperimentDesignExplorationSpec
+)
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -65,7 +68,6 @@ def mock_test_methodology_fixture():
         self,
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
-        rng: np.random.Generator,
     ) -> GeoAssignment:
       return GeoAssignment()
 
@@ -75,7 +77,7 @@ def mock_test_methodology_fixture():
 
     def suggest_methodology_parameters(
         self,
-        design_spec: ExperimentDesignSpec,
+        design_spec: ExperimentDesignExplorationSpec,
         trial: op.Trial,
     ) -> dict[str, Any]:
       # Not used in this test
@@ -102,9 +104,8 @@ def test_methodology_assign_geos_puts_missing_geos_into_exclude_list(
         self,
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
-        rng: np.random.Generator,
     ) -> GeoAssignment:
-      del experiment_design, rng, historical_data
+      del experiment_design, historical_data
 
       return GeoAssignment(
           treatment=[{"geo_2", "geo_3"}, {"geo_4", "geo_5"}],
@@ -113,7 +114,7 @@ def test_methodology_assign_geos_puts_missing_geos_into_exclude_list(
       )
 
   geo_assignment = AssignGeosMockMethodology().assign_geos(
-      default_experiment_design, historical_data, np.random.default_rng(seed=42)
+      default_experiment_design, historical_data
   )
 
   assert {"geo_0", "geo_1"}.issubset(geo_assignment.exclude)
@@ -135,9 +136,8 @@ def test_methodology_assign_geos_raises_error_if_no_control_geos(
         self,
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
-        rng: np.random.Generator,
     ) -> GeoAssignment:
-      del experiment_design, rng, historical_data
+      del experiment_design, historical_data
 
       return GeoAssignment(
           treatment=[{"geo_2", "geo_3"}, {"geo_4", "geo_5"}],
@@ -149,7 +149,6 @@ def test_methodology_assign_geos_raises_error_if_no_control_geos(
     AssignGeosMockMethodology().assign_geos(
         default_experiment_design,
         historical_data,
-        np.random.default_rng(seed=42),
     )
 
 
@@ -162,9 +161,8 @@ def test_methodology_assign_geos_raises_error_if_no_treatment_geos(
         self,
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
-        rng: np.random.Generator,
     ) -> GeoAssignment:
-      del experiment_design, rng, historical_data
+      del experiment_design, historical_data
 
       return GeoAssignment(
           treatment=[set(), {"geo_4", "geo_5"}],
@@ -176,7 +174,6 @@ def test_methodology_assign_geos_raises_error_if_no_treatment_geos(
     AssignGeosMockMethodology().assign_geos(
         default_experiment_design,
         historical_data,
-        np.random.default_rng(seed=42),
     )
 
 
@@ -189,9 +186,8 @@ def test_methodology_assign_geos_raises_error_if_too_few_treatment_groups(
         self,
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
-        rng: np.random.Generator,
     ) -> GeoAssignment:
-      del experiment_design, rng, historical_data
+      del experiment_design, historical_data
 
       return GeoAssignment(
           treatment=[{"geo_2", "geo_3"}],
@@ -203,7 +199,6 @@ def test_methodology_assign_geos_raises_error_if_too_few_treatment_groups(
     AssignGeosMockMethodology().assign_geos(
         default_experiment_design,
         historical_data,
-        np.random.default_rng(seed=42),
     )
 
 
@@ -216,9 +211,8 @@ def test_methodology_assign_geos_raises_error_if_too_many_treatment_groups(
         self,
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
-        rng: np.random.Generator,
     ) -> GeoAssignment:
-      del experiment_design, rng, historical_data
+      del experiment_design, historical_data
 
       return GeoAssignment(
           treatment=[
@@ -234,5 +228,4 @@ def test_methodology_assign_geos_raises_error_if_too_many_treatment_groups(
     AssignGeosMockMethodology().assign_geos(
         default_experiment_design,
         historical_data,
-        np.random.default_rng(seed=42),
     )

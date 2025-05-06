@@ -3,27 +3,38 @@
 import logging
 from geoflex import data
 from geoflex import evaluation
-from geoflex import experiment
 from geoflex import experiment_design
+from geoflex import exploration_spec
+from geoflex import explore
 from geoflex import methodology
 from geoflex import metrics
 import optuna as op
 
-ExperimentDesignSpec = experiment_design.ExperimentDesignSpec
-Methodology = methodology.Methodology
+ExperimentDesignExplorationSpec = (
+    exploration_spec.ExperimentDesignExplorationSpec
+)
 ExperimentType = experiment_design.ExperimentType
 GeoPerformanceDataset = data.GeoPerformanceDataset
-Experiment = experiment.Experiment
+GeoEligibility = experiment_design.GeoEligibility
+GeoAssignment = experiment_design.GeoAssignment
 ExperimentDesign = experiment_design.ExperimentDesign
+ExperimentDesignEvaluator = evaluation.ExperimentDesignEvaluator
+ExperimentDesignEvaluationResults = evaluation.ExperimentDesignEvaluationResults
+ExperimentDesignExplorer = explore.ExperimentDesignExplorer
 ExperimentBudget = experiment_design.ExperimentBudget
 ExperimentBudgetType = experiment_design.ExperimentBudgetType
 CellVolumeConstraint = experiment_design.CellVolumeConstraint
 CellVolumeConstraintType = experiment_design.CellVolumeConstraintType
 EffectScope = experiment_design.EffectScope
+Methodology = methodology.Methodology
 register_methodology = methodology.register_methodology
 list_methodologies = methodology.list_methodologies
+assign_geos = methodology.assign_geos
+analyze_experiment = methodology.analyze_experiment
+design_is_valid = methodology.design_is_valid
+compare_designs = experiment_design.compare_designs
 
-__version__ = "0.0.1"
+__version__ = "0.2.0"
 
 logger = logging.getLogger(__name__)
 
