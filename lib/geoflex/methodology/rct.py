@@ -4,20 +4,18 @@ from typing import Any
 from feedx import statistics
 import geoflex.data
 import geoflex.experiment_design
+import geoflex.exploration_spec
 from geoflex.methodology import _base
-import numpy as np
 import optuna as op
 import pandas as pd
 
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
-ExperimentDesignSpec = geoflex.experiment_design.ExperimentDesignSpec
-GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
-ExperimentDesignEvaluation = (
-    geoflex.experiment_design.ExperimentDesignEvaluation
+ExperimentDesignExplorationSpec = (
+    geoflex.exploration_spec.ExperimentDesignExplorationSpec
 )
+GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 GeoAssignment = geoflex.experiment_design.GeoAssignment
-ExperimentType = geoflex.experiment_design.ExperimentType
 CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 register_methodology = _base.register_methodology
@@ -63,13 +61,13 @@ class RCT(_base.Methodology):
 
   def suggest_methodology_parameters(
       self,
-      design_spec: ExperimentDesignSpec,
+      explore_spec: ExperimentDesignExplorationSpec,
       trial: op.Trial,
   ) -> dict[str, Any]:
     """Suggests the parameters for this trial.
 
     Args:
-      design_spec: The design specification for the experiment.
+      explore_spec: The design specification for the experiment.
       trial: The Optuna trial to use to suggest the parameters.
 
     Returns:
@@ -77,11 +75,10 @@ class RCT(_base.Methodology):
     """
     return {}  # No parameters for RCT
 
-  def assign_geos(
+  def _methodology_assign_geos(
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
-      rng: np.random.Generator,
   ) -> GeoAssignment:
     """Randomly assigns all geos to the treatment and control groups.
 
@@ -94,12 +91,13 @@ class RCT(_base.Methodology):
       experiment_design: The experiment design to assign geos for.
       historical_data: The historical data for the experiment. Can be used to
         choose geos that are similar to geos that have been used in the past.
-      rng: The random number generator to use for randomization, if needed.
 
     Returns:
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
+    rng = experiment_design.get_rng()
+
     if experiment_design.geo_eligibility is None:
       exclude_geos = set()
     else:

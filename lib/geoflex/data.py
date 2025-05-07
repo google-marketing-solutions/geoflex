@@ -8,6 +8,7 @@ import logging
 import warnings
 
 import geoflex.experiment_design
+import geoflex.utils
 import numpy as np
 import pandas as pd
 import pydantic
@@ -15,6 +16,7 @@ import pydantic
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 ExperimentType = geoflex.experiment_design.ExperimentType
+ParquetDataFrame = geoflex.utils.ParquetDataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 class GeoPerformanceDataset(pydantic.BaseModel):
   """Performance data for each geo and day."""
 
-  data: pd.DataFrame
+  data: ParquetDataFrame
   geo_id_column: str = "geo_id"
   date_column: str = "date"
   allow_missing_dates: bool = False
@@ -31,22 +33,13 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       arbitrary_types_allowed=True, extra="forbid"
   )
 
-  @pydantic.model_validator(mode="before")
-  @classmethod
-  def check_input_data_column(cls, values):
+  @pydantic.model_validator(mode="after")
+  def check_input_data_column(self) -> "GeoPerformanceDataset":
     """Checks that input data has required columns."""
-    data = values.get("data")
-    geo_col = values.get("geo_id_column", "geo_id")
-    date_col = values.get("date_column", "date")
-
-    if data is None:
-      return values
-
-    if not isinstance(data, pd.DataFrame):
-      return values
-
-    required_columns = [geo_col, date_col]
-    missing_cols = [col for col in required_columns if col not in data.columns]
+    required_columns = [self.geo_id_column, self.date_column]
+    missing_cols = [
+        col for col in required_columns if col not in self.data.columns
+    ]
 
     if missing_cols:
       error_message = (
@@ -55,23 +48,18 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       logger.error(error_message)
       raise ValueError(error_message)
 
-    return values
+    return self
 
-  @pydantic.model_validator(mode="before")
-  @classmethod
-  def check_input_geos_na(cls, values):
+  @pydantic.model_validator(mode="after")
+  def check_input_geos_na(self) -> "GeoPerformanceDataset":
     """Checks that input geos are not NA."""
-    data = values.get("data")
-    geo_col = values.get("geo_id_column", "geo_id")
-
-    if data is None or geo_col not in data.columns:
-      return values
-
-    if data[geo_col].isna().any():
-      error_message = f"Data must have non-NA values in the {geo_col} column."
+    if self.data[self.geo_id_column].isna().any():
+      error_message = (
+          f"Data must have non-NA values in the {self.geo_id_column} column."
+      )
       logger.error(error_message)
       raise ValueError(error_message)
-    return values
+    return self
 
   @functools.cached_property
   def parsed_data(self) -> pd.DataFrame:

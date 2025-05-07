@@ -15,6 +15,8 @@ dependencies = [
   "statsmodels",
   "dcor",
   "scikit-learn",
+  "pyarrow",
+  "PyYAML",
 ]
 requires-python = ">=3.8"
 authors = [
