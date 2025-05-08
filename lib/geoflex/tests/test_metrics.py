@@ -25,29 +25,29 @@ def test_metric_column_defaults_to_name():
   assert metric.column == "test_metric"
 
 
-def test_roas_metric_has_correct_defaults():
-  """Tests that the ROAS metric has the correct defaults."""
-  roas = geoflex.metrics.ROAS()
-  assert roas.name == "ROAS"
-  assert roas.column == "revenue"
-  assert roas.metric_per_cost
-  assert not roas.cost_per_metric
-  assert roas.cost_column == "cost"
+def test_iroas_metric_has_correct_defaults():
+  """Tests that the iROAS metric has the correct defaults."""
+  iroas = geoflex.metrics.iROAS()
+  assert iroas.name == "iROAS"
+  assert iroas.column == "revenue"
+  assert iroas.metric_per_cost
+  assert not iroas.cost_per_metric
+  assert iroas.cost_column == "cost"
 
 
-def test_cpa_metric_has_correct_defaults():
-  """Tests that the CPA metric has the correct defaults."""
-  cpa = geoflex.metrics.CPA()
-  assert cpa.name == "CPA"
-  assert cpa.column == "conversions"
-  assert not cpa.metric_per_cost
-  assert cpa.cost_per_metric
-  assert cpa.cost_column == "cost"
+def test_cpia_metric_has_correct_defaults():
+  """Tests that the CPiA metric has the correct defaults."""
+  cpia = geoflex.metrics.CPiA()
+  assert cpia.name == "CPiA"
+  assert cpia.column == "conversions"
+  assert not cpia.metric_per_cost
+  assert cpia.cost_per_metric
+  assert cpia.cost_column == "cost"
 
 
 @pytest.mark.parametrize(
     "metric_cls",
-    [geoflex.metrics.ROAS, geoflex.metrics.CPA],
+    [geoflex.metrics.iROAS, geoflex.metrics.CPiA],
 )
 @pytest.mark.parametrize(
     "invalid_args",
@@ -57,8 +57,8 @@ def test_cpa_metric_has_correct_defaults():
         {"cost_per_metric": True},
     ],
 )
-def test_can_only_set_column_for_roas_and_cpa(metric_cls, invalid_args):
-  """Tests that the column can only be set for ROAS and CPA."""
+def test_can_only_set_column_for_iroas_and_cpia(metric_cls, invalid_args):
+  """Tests that the column can only be set for iROAS and CPiA."""
   metric_cls()  # Should not raise an error.
   with pytest.raises(TypeError):
     metric_cls(**invalid_args)  # Should not raise an error.
@@ -78,8 +78,8 @@ def test_metric_per_cost_and_cost_per_metric_are_mutually_exclusive():
 @pytest.mark.parametrize(
     "metric_cls, args",
     [
-        (geoflex.metrics.ROAS, {"cost_column": ""}),
-        (geoflex.metrics.CPA, {"cost_column": ""}),
+        (geoflex.metrics.iROAS, {"cost_column": ""}),
+        (geoflex.metrics.CPiA, {"cost_column": ""}),
         (
             geoflex.metrics.Metric,
             {"metric_per_cost": True, "name": "test_metric"},

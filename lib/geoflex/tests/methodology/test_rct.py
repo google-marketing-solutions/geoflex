@@ -221,12 +221,12 @@ def test_rct_assign_geos(
 def test_rct_analyze_experiment(performance_data):
   experiment_design = ExperimentDesign(
       experiment_type=ExperimentType.GO_DARK,
-      primary_metric=geoflex.metrics.ROAS(),
+      primary_metric=geoflex.metrics.iROAS(),
       experiment_budget=ExperimentBudget(
           value=-0.1,
           budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
       ),
-      secondary_metrics=[geoflex.metrics.CPA(), "revenue", "conversions"],
+      secondary_metrics=[geoflex.metrics.CPiA(), "revenue", "conversions"],
       methodology="RCT",
       runtime_weeks=4,
       alpha=0.1,
@@ -242,7 +242,7 @@ def test_rct_analyze_experiment(performance_data):
 
   expected_results = pd.DataFrame({
       "cell": [1, 1, 1, 1],
-      "metric": ["ROAS", "CPA", "revenue", "conversions"],
+      "metric": ["iROAS", "CPiA", "revenue", "conversions"],
       "is_primary_metric": [True, False, False, False],
       "point_estimate": [10.0, -0.002867, -400.0, 13950.0],
       "lower_bound": [-0.323708, -0.010241, -812.948321, 3905.762437],

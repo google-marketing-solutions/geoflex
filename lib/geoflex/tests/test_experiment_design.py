@@ -281,8 +281,8 @@ def mock_design_fixture():
       experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       secondary_metrics=[
-          geoflex.metrics.ROAS(),
-          geoflex.metrics.CPA(),
+          geoflex.metrics.iROAS(),
+          geoflex.metrics.CPiA(),
       ],
       experiment_budget=ExperimentBudget(
           value=-0.1,
@@ -324,7 +324,7 @@ def mock_design_evaluation_results_fixture():
                   failing_checks=[],
               ),
           ],
-          "ROAS": [
+          "iROAS": [
               geoflex.evaluation.SingleEvaluationResult(
                   standard_error_absolute_effect=1.3,
                   standard_error_relative_effect=None,
@@ -342,7 +342,7 @@ def mock_design_evaluation_results_fixture():
                   failing_checks=["something failed"],
               ),
           ],
-          "CPA __INVERTED__": [
+          "CPiA __INVERTED__": [
               geoflex.evaluation.SingleEvaluationResult(
                   standard_error_absolute_effect=1.3,
                   standard_error_relative_effect=None,
@@ -395,7 +395,7 @@ def test_experiment_design_evaluation_results_all_metric_results_is_worst_case(
       failing_checks=[],
   )
   assert mock_design_evaluation_results.all_metric_results[
-      "ROAS"
+      "iROAS"
   ] == geoflex.evaluation.SingleEvaluationResult(
       standard_error_absolute_effect=2.2,
       standard_error_relative_effect=None,
@@ -405,7 +405,7 @@ def test_experiment_design_evaluation_results_all_metric_results_is_worst_case(
       failing_checks=["something failed"],
   )
   assert mock_design_evaluation_results.all_metric_results[
-      "CPA __INVERTED__"
+      "CPiA __INVERTED__"
   ] == geoflex.evaluation.SingleEvaluationResult(
       standard_error_absolute_effect=2.2,
       standard_error_relative_effect=None,
@@ -454,7 +454,7 @@ def test_get_mde_returns_correct_mde_for_relative_effects(
 ):
   assert mock_design_evaluation_results.get_mde(
       target_power=0.8, relative=True, aggregate_across_cells=True
-  ) == {"revenue": 5.221597207101212, "ROAS": None, "CPA": None}
+  ) == {"revenue": 5.221597207101212, "iROAS": None, "CPiA": None}
 
 
 def test_get_mde_returns_correct_mde_for_absolute_effects(
@@ -464,8 +464,8 @@ def test_get_mde_returns_correct_mde_for_absolute_effects(
       target_power=0.8, relative=False, aggregate_across_cells=True
   ) == {
       "revenue": 5.47024469315365,
-      "ROAS": 5.47024469315365,
-      "CPA": 0.18280717885464282,
+      "iROAS": 5.47024469315365,
+      "CPiA": 0.18280717885464282,
   }
 
 
@@ -476,8 +476,8 @@ def test_get_mde_returns_per_cell_mde_if_aggregate_across_cells_is_false(
       target_power=0.8, relative=False, aggregate_across_cells=False
   ) == {
       "revenue": [3.2324173186817022, 5.47024469315365],
-      "ROAS": [3.2324173186817022, 5.47024469315365],
-      "CPA": [0.3093659949847802, 0.18280717885464282],
+      "iROAS": [3.2324173186817022, 5.47024469315365],
+      "CPiA": [0.3093659949847802, 0.18280717885464282],
   }
 
 
@@ -494,8 +494,8 @@ def test_get_summary_dict_returns_correct_dict(
       "primary_metric_all_checks_pass": True,
       "primary_metric_standard_error": 2.1,
       "Relative MDE (revenue, primary metric)": 5.221597207101212,
-      "MDE (ROAS)": 5.47024469315365,
-      "MDE (CPA)": 0.18280717885464282,
+      "MDE (iROAS)": 5.47024469315365,
+      "MDE (CPiA)": 0.18280717885464282,
   }
 
 
@@ -507,7 +507,7 @@ def test_experiment_design_get_summary_dict_returns_correct_dict_without_evaluat
       "experiment_type": "go_dark",
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
-      "secondary_metrics": ["ROAS", "CPA"],
+      "secondary_metrics": ["iROAS", "CPiA"],
       "methodology": "RCT",
       "runtime_weeks": 4,
       "n_cells": 3,
@@ -530,7 +530,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "experiment_type": "go_dark",
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
-      "secondary_metrics": ["ROAS", "CPA"],
+      "secondary_metrics": ["iROAS", "CPiA"],
       "methodology": "RCT",
       "runtime_weeks": 4,
       "n_cells": 3,
@@ -548,8 +548,8 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "primary_metric_all_checks_pass": True,
       "primary_metric_standard_error": 2.1,
       "Relative MDE (revenue, primary metric)": 5.221597207101212,
-      "MDE (ROAS)": 5.47024469315365,
-      "MDE (CPA)": 0.18280717885464282,
+      "MDE (iROAS)": 5.47024469315365,
+      "MDE (CPiA)": 0.18280717885464282,
   }
 
 
@@ -566,7 +566,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_geo_assi
       "experiment_type": "go_dark",
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
-      "secondary_metrics": ["ROAS", "CPA"],
+      "secondary_metrics": ["iROAS", "CPiA"],
       "methodology": "RCT",
       "runtime_weeks": 4,
       "n_cells": 3,

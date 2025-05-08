@@ -354,7 +354,7 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
       del runtime_data, experiment_design, experiment_start_date
 
       return pd.DataFrame({
-          "metric": ["revenue", "CPA", "ROAS"],
+          "metric": ["revenue", "CPiA", "iROAS"],
           "is_primary_metric": [True, False, False],
           "cell": [1, 1, 1],
           "point_estimate": [1.0, 1.0, 1.0],
@@ -367,7 +367,7 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
       })
 
   experiment_design = default_experiment_design.make_variation(
-      secondary_metrics=[geoflex.metrics.CPA(), geoflex.metrics.ROAS()],
+      secondary_metrics=[geoflex.metrics.CPiA(), geoflex.metrics.iROAS()],
       experiment_budget=geoflex.experiment_design.ExperimentBudget(
           value=-0.1,
           budget_type=geoflex.experiment_design.ExperimentBudgetType.PERCENTAGE_CHANGE,
@@ -380,7 +380,7 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
   )
 
   expected_results = pd.DataFrame({
-      "metric": ["revenue", "CPA", "ROAS"],
+      "metric": ["revenue", "CPiA", "iROAS"],
       "is_primary_metric": [True, False, False],
       "cell": [1, 1, 1],
       "point_estimate": [1.0, 1.0, 1.0],

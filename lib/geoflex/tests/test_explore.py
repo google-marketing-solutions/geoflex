@@ -67,8 +67,8 @@ def mock_explore_spec_fixture():
       primary_metric="revenue",
       secondary_metrics=[
           "conversions",
-          geoflex.metrics.ROAS(),
-          geoflex.metrics.CPA(),
+          geoflex.metrics.iROAS(),
+          geoflex.metrics.CPiA(),
       ],
       experiment_budget_candidates=[
           ExperimentBudget(
@@ -321,8 +321,8 @@ def test_get_design_summaries_returns_correct_data_relative_effects(
       "failing_checks": "object",
       "all_checks_pass": "bool",
       "representiveness_score": "float64",
-      "MDE (CPA)": "float64",
-      "MDE (ROAS)": "float64",
+      "MDE (CPiA)": "float64",
+      "MDE (iROAS)": "float64",
       "Relative MDE (conversions)": "float64",
       "primary_metric_failing_checks": "object",
       "primary_metric_all_checks_pass": "bool",
@@ -366,8 +366,8 @@ def test_get_design_summaries_returns_correct_data_absolute_effects(
       "failing_checks": "object",
       "all_checks_pass": "bool",
       "representiveness_score": "float64",
-      "MDE (CPA)": "float64",
-      "MDE (ROAS)": "float64",
+      "MDE (CPiA)": "float64",
+      "MDE (iROAS)": "float64",
       "MDE (conversions)": "float64",
       "primary_metric_failing_checks": "object",
       "primary_metric_all_checks_pass": "bool",

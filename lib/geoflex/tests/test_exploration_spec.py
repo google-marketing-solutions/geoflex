@@ -183,7 +183,7 @@ CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
             {
                 "experiment_type": ExperimentType.AB_TEST,
                 "experiment_budget_candidates": [None],
-                "secondary_metrics": [geoflex.metrics.ROAS()],
+                "secondary_metrics": [geoflex.metrics.iROAS()],
             },
             id="ab_test_cannot_have_cost_secondary_metrics",
         ),
@@ -191,7 +191,7 @@ CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
             {
                 "experiment_type": ExperimentType.AB_TEST,
                 "experiment_budget_candidates": [None],
-                "primary_metric": geoflex.metrics.ROAS(),
+                "primary_metric": geoflex.metrics.iROAS(),
             },
             id="ab_test_cannot_have_cost_secondary_metrics",
         ),

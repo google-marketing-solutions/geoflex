@@ -100,28 +100,53 @@ class Metric(pydantic.BaseModel):
       raise ValueError(error_message)
 
 
-class ROAS(Metric):
-  """The return of advertising spend."""
+class iROAS(Metric):  # pylint: disable=invalid-name  Align with the name of the metric.
+  """The incremental return of advertising spend.
 
-  def __init__(
-      self, revenue_column: str = "revenue", cost_column: str = "cost"
-  ):
+  iROAS is defined as the incremental revenue divided by the incremental cost.
+  This is a ratio metric, where the numerator is the incremental revenue and
+  the denominator is the incremental cost. Mathematically, it is defined as:
+
+  ```
+  iROAS = (treatment_revenue - control_revenue) / (treatment_cost -
+  control_cost)
+  ```
+
+  iROAS can only be used when there is a spend change, so it cannot be used for
+  a simple A/B test.
+  """
+
+  def __init__(self, return_column: str = "revenue", cost_column: str = "cost"):
     super().__init__(
-        name="ROAS",
-        column=revenue_column,
+        name="iROAS",
+        column=return_column,
         metric_per_cost=True,
         cost_column=cost_column,
     )
 
 
-class CPA(Metric):
-  """The cost per acquisition."""
+class CPiA(Metric):
+  """The cost per incremental acquisition.
+
+  CPiA is defined as the incremental cost divided by the incremental
+  acquisitions (conversions). This is a ratio metric, where the numerator is the
+  incremental cost and the denominator is the incremental acquisition.
+  Mathematically, it is defined as:
+
+  ```
+  CPiA = (treatment_cost - control_cost) / (treatment_conversions -
+  control_conversions)
+  ```
+
+  CPiA can only be used when there is a spend change, so it cannot be used
+  for a simple A/B test.
+  """
 
   def __init__(
       self, conversions_column: str = "conversions", cost_column: str = "cost"
   ):
     super().__init__(
-        name="CPA",
+        name="CPiA",
         column=conversions_column,
         cost_per_metric=True,
         cost_column=cost_column,

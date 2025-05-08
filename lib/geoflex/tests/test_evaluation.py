@@ -24,8 +24,8 @@ def mock_design_fixture():
       primary_metric="revenue",
       secondary_metrics=[
           "conversions",
-          geoflex.metrics.ROAS(),
-          geoflex.metrics.CPA(),
+          geoflex.metrics.iROAS(),
+          geoflex.metrics.CPiA(),
       ],
       experiment_budget=geoflex.experiment_design.ExperimentBudget(
           value=-0.1,
