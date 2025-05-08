@@ -6,7 +6,6 @@ from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
-import optuna as op
 import pandas as pd
 
 
@@ -41,33 +40,24 @@ class Methodology(abc.ABC):
     """
     pass
 
-  @abc.abstractmethod
-  def suggest_methodology_parameters(
-      self,
-      exploration_spec: ExperimentDesignExplorationSpec,
-      trial: op.Trial,
-  ) -> dict[str, Any]:
-    """Suggests the parameters for this trial.
+  @property
+  def default_methodology_parameter_candidates(self) -> dict[str, list[Any]]:
+    """All the parameters that are specific to this methodology.
 
-    It must consider the design specification, so that the parameters are within
-    the allowed ranges and are compatible with each other.
-
-    This should only add the parameters that are specific to this methodology,
+    This should add the parameters that are specific to this methodology,
     that will be placed in the ExperimentDesign.methodology_parameters dict.
     The parameter names must not overlap with any of the other parameter names
     in the ExperimentDesign object.
 
-    For more information on how to define the search space, see
-    https://oss-vizier.readthedocs.io/en/latest/guides/user/search_spaces.html
-
-    Args:
-      exploration_spec: The design specification for the experiment.
-      trial: The Optuna trial to use to suggest the parameters.
+    For each parameter, the list of valid values should be provided. The first
+    value in the list will be used as the default value for the parameter, if
+    an experiment design does not specify a value for it.
 
     Returns:
-      A dictionary of the suggested parameters.
+      A dictionary of parameter names and a list of valid values. Default is an
+      empty dictionary.
     """
-    pass
+    return {}
 
   @abc.abstractmethod
   def _methodology_assign_geos(
@@ -161,6 +151,49 @@ class Methodology(abc.ABC):
     return geo_assignment
 
   @abc.abstractmethod
+  def _methodology_analyze_experiment(
+      self,
+      runtime_data: GeoPerformanceDataset,
+      experiment_design: ExperimentDesign,
+      experiment_start_date: str,
+  ) -> pd.DataFrame:
+    """How the methodology analyzes the experiment.
+
+    Must return a dataframe with the analysis results. Each row represents each
+    metric provided in the experiment data. The columns are the following:
+
+    - metric: The metric name.
+    - cell: The cell number.
+    - point_estimate: The point estimate of the treatment effect.
+    - lower_bound: The lower bound of the confidence interval.
+    - upper_bound: The upper bound of the confidence interval.
+    - point_estimate_relative: The relative effect size of the treatment. This
+    should be NA if the metric is a cost per metric or metric per cost.
+    - lower_bound_relative: The relative lower bound of the confidence interval.
+    This should be NA if the metric is a cost per metric or metric per cost.
+    - upper_bound_relative: The relative upper bound of the confidence interval.
+    This should be NA if the metric is a cost per metric or metric per cost.
+
+    Optionally you can also provide:
+    - p_value: The p-value of the null hypothesis.
+    - is_significant: Whether the null hypothesis is rejected.
+
+    If the p_value and is_significant columns are not provided, they will be
+    inferred based on the point estimates and confidence intervals.
+
+    This will be wrapped by the analyze_experiment() method, which will apply
+    some validation to the inputs and outputs.
+
+    Args:
+      runtime_data: The runtime data for the experiment.
+      experiment_design: The design of the experiment being analyzed.
+      experiment_start_date: The start date of the experiment.
+
+    Returns:
+      A dataframe with the analysis results.
+    """
+    pass
+
   def analyze_experiment(
       self,
       runtime_data: GeoPerformanceDataset,
@@ -173,6 +206,7 @@ class Methodology(abc.ABC):
     metric provided in the experiment data. The columns are the following:
 
     - metric: The metric name.
+    - cell: The cell number.
     - point_estimate: The point estimate of the treatment effect.
     - lower_bound: The lower bound of the confidence interval.
     - upper_bound: The upper bound of the confidence interval.
@@ -190,7 +224,24 @@ class Methodology(abc.ABC):
     Returns:
       A dataframe with the analysis results.
     """
-    pass
+    validated_experiment_design = experiment_design.model_copy()
+
+    # If a parameter is missing, assign the first value in the list of
+    # candidates as the default value.
+    for (
+        param_name,
+        param_values,
+    ) in self.default_methodology_parameter_candidates.items():
+      if param_name not in validated_experiment_design.methodology_parameters:
+        validated_experiment_design.methodology_parameters[param_name] = (
+            param_values[0]
+        )
+
+    raw_results = self._methodology_analyze_experiment(
+        runtime_data, validated_experiment_design, experiment_start_date
+    )
+
+    return raw_results
 
 
 def register_methodology(

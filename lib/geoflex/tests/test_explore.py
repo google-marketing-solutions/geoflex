@@ -203,6 +203,70 @@ def test_explorer_explore_suggests_designs_within_spec(
     assert suggested_design.effect_scope == default_explore_spec.effect_scope
 
 
+def test_explorer_explore_uses_default_methodology_parameter_candidates_if_not_set(
+    historical_data, default_explore_spec
+):
+  explorer = ExperimentDesignExplorer(
+      historical_data=historical_data,
+      explore_spec=default_explore_spec,
+      simulations_per_trial=3,
+  )
+  explorer._experiment_design_evaluator = mock.MagicMock()  # pylint: disable=protected-access
+  explorer.explore(max_trials=20)
+
+  unique_methodology_parameters = {}
+  for suggested_design in explorer.get_designs():
+    for key in suggested_design.methodology_parameters:
+      if key not in unique_methodology_parameters:
+        unique_methodology_parameters[key] = set()
+
+      unique_methodology_parameters[key].add(
+          suggested_design.methodology_parameters[key]
+      )
+
+  # Based on the default_methodology_parameter_candidates in the RCT
+  # methodology.
+  expected_unique_methodology_parameters = {
+      "trimming_quantile": {0.0, 0.05},
+  }
+  assert unique_methodology_parameters == expected_unique_methodology_parameters
+
+
+def test_explorer_explore_uses_spec_methodology_parameter_candidates_if_set(
+    historical_data, default_explore_spec
+):
+  explore_spec = default_explore_spec.model_copy(
+      update={
+          "methodology_parameter_candidates": {
+              "RCT": {"trimming_quantile": [0.1, 0.2, 0.3]}
+          }
+      }
+  )
+  explorer = ExperimentDesignExplorer(
+      historical_data=historical_data,
+      explore_spec=explore_spec,
+      simulations_per_trial=3,
+  )
+  explorer._experiment_design_evaluator = mock.MagicMock()  # pylint: disable=protected-access
+  explorer.explore(max_trials=20)
+
+  unique_methodology_parameters = {}
+  for suggested_design in explorer.get_designs():
+    for key in suggested_design.methodology_parameters:
+      if key not in unique_methodology_parameters:
+        unique_methodology_parameters[key] = set()
+
+      unique_methodology_parameters[key].add(
+          suggested_design.methodology_parameters[key]
+      )
+
+  # Based on the spec methodology parameter candidates.
+  expected_unique_methodology_parameters = {
+      "trimming_quantile": {0.1, 0.2, 0.3},
+  }
+  assert unique_methodology_parameters == expected_unique_methodology_parameters
+
+
 def test_explorer_explore_assigns_geos_and_evaluates_designs(
     historical_data, default_explore_spec
 ):
@@ -338,7 +402,7 @@ def test_count_all_eligible_designs_returns_correct_data(
       explore_spec=default_explore_spec,
   )
   counts = explorer.count_all_eligible_designs()
-  assert counts == {"RCT": 4}
+  assert counts == {"RCT": 8}
 
 
 def test_can_write_explorer_to_json(

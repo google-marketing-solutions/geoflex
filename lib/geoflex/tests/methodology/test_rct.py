@@ -5,7 +5,6 @@ import geoflex.experiment_design
 import geoflex.exploration_spec
 import geoflex.methodology.rct
 import geoflex.metrics
-import optuna as op
 import pandas as pd
 import pytest
 
@@ -154,24 +153,10 @@ def test_rct_is_eligible_for_design(design, expected_is_eligible):
   assert RCT().is_eligible_for_design(design) == expected_is_eligible
 
 
-def test_rct_suggests_no_methodology_parameters():
-  study = op.create_study()
-  trial = study.ask()
-  parameters = RCT().suggest_methodology_parameters(
-      ExperimentDesignExplorationSpec(
-          experiment_type=ExperimentType.GO_DARK,
-          primary_metric="revenue",
-          experiment_budget_candidates=[
-              ExperimentBudget(
-                  value=-1,
-                  budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-              )
-          ],
-          runtime_weeks_candidates=[2, 4],
-      ),
-      trial,
-  )
-  assert parameters == {}  # pylint: disable=g-explicit-bool-comparison
+def test_rct_has_expected_methodology_parameter_candidates():
+  assert RCT().default_methodology_parameter_candidates == {
+      "trimming_quantile": [0.0, 0.05]
+  }
 
 
 @pytest.mark.parametrize(

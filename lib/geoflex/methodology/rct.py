@@ -1,12 +1,10 @@
 """The Randomized Controlled Trial (RCT) methodology for GeoFleX."""
 
-from typing import Any
 from feedx import statistics
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
 from geoflex.methodology import _base
-import optuna as op
 import pandas as pd
 
 
@@ -36,6 +34,8 @@ class RCT(_base.Methodology):
     The evaluation is done with a simple t-test on each test statistic.
   """
 
+  default_methodology_parameter_candidates = {"trimming_quantile": [0.0, 0.05]}
+
   def is_eligible_for_design(self, design: ExperimentDesign) -> bool:
     """Checks if an RCT is eligible for the given design.
 
@@ -58,22 +58,6 @@ class RCT(_base.Methodology):
         design.geo_eligibility.control or any(design.geo_eligibility.treatment)
     )
     return not has_geo_eligibility_constraints
-
-  def suggest_methodology_parameters(
-      self,
-      explore_spec: ExperimentDesignExplorationSpec,
-      trial: op.Trial,
-  ) -> dict[str, Any]:
-    """Suggests the parameters for this trial.
-
-    Args:
-      explore_spec: The design specification for the experiment.
-      trial: The Optuna trial to use to suggest the parameters.
-
-    Returns:
-      A dictionary of parameters that are specific to the RCT methodology.
-    """
-    return {}  # No parameters for RCT
 
   def _methodology_assign_geos(
       self,
@@ -154,7 +138,7 @@ class RCT(_base.Methodology):
       geo_groups.append(new_geo_group)
     return GeoAssignment(treatment=geo_groups[1:], control=geo_groups[0])
 
-  def analyze_experiment(
+  def _methodology_analyze_experiment(
       self,
       runtime_data: GeoPerformanceDataset,
       experiment_design: ExperimentDesign,
@@ -221,7 +205,9 @@ class RCT(_base.Methodology):
         statistical_results = statistics.yuens_t_test_ind(
             treatment_data[metric.column].values,
             control_data[metric.column].values,
-            trimming_quantile=0.0,
+            trimming_quantile=experiment_design.methodology_parameters[
+                "trimming_quantile"
+            ],
             alpha=experiment_design.alpha,
             alternative=experiment_design.alternative_hypothesis,
         )

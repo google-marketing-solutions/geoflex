@@ -3,6 +3,7 @@
 import datetime as dt
 import functools
 import logging
+from typing import Any
 import warnings
 import geoflex.data
 import geoflex.evaluation
@@ -14,7 +15,6 @@ import optuna as op
 import pandas as pd
 import pydantic
 
-
 ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
 )
@@ -24,6 +24,7 @@ ExperimentDesignEvaluator = geoflex.evaluation.ExperimentDesignEvaluator
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 assign_geos = geoflex.methodology.assign_geos
 design_is_valid = geoflex.methodology.design_is_valid
+get_methodology = geoflex.methodology.get_methodology
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,54 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     ].max()
     return final_date - dt.timedelta(weeks=max_runtime_weeks)
 
+  def _suggest_methodology_parameters(
+      self,
+      trial: op.Trial,
+      methodology_name: str,
+  ) -> dict[str, Any]:
+    """Suggests methodology parameters for the given methodology and trial.
+
+    This will suggest values for the methodology parameters that are specific
+    to the methodology, based on the design and the trial. The suggested
+    values will be added to the design. It will check the explore spec for
+    any parameter candidates and will use those if they are specified, otherwise
+    it will use the default parameter candidates that are specific to the
+    methodology.
+
+    Args:
+      trial: The trial to use to suggest the parameters.
+      methodology_name: The methodology to suggest parameters for.
+
+    Returns:
+      A dictionary of parameter names and values.
+    """
+    methodology = get_methodology(methodology_name)
+
+    restricted_parameter_candidates = (
+        self.explore_spec.methodology_parameter_candidates.get(
+            methodology_name, {}
+        )
+    )
+    methodology_parameters = {}
+    for (
+        parameter_name,
+        default_parameter_candidates,
+    ) in methodology.default_methodology_parameter_candidates.items():
+      parameter_candidates = restricted_parameter_candidates.get(
+          parameter_name, default_parameter_candidates
+      )
+      parameter_candidates_ids = list(range(len(parameter_candidates)))
+      parameter_id_name = f"{methodology_name}_{parameter_name}_id"
+
+      parameter_id = trial.suggest_categorical(
+          parameter_id_name, parameter_candidates_ids
+      )
+      methodology_parameters[parameter_name] = parameter_candidates[
+          parameter_id
+      ]
+
+    return methodology_parameters
+
   def _suggest_experiment_design(self, trial: op.Trial) -> ExperimentDesign:
     """Suggests an experiment design for the given trial.
 
@@ -181,9 +230,8 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         experiment_budget_id
     ]
 
-    methodology = geoflex.methodology.get_methodology(methodology_name)
-    methodology_parameters = methodology.suggest_methodology_parameters(
-        self.explore_spec, trial
+    methodology_parameters = self._suggest_methodology_parameters(
+        trial, methodology_name
     )
 
     design = ExperimentDesign(

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated
+from typing import Any
 import geoflex.experiment_design
 import pydantic
 
@@ -156,6 +157,12 @@ class ExperimentDesignExplorationSpec(pydantic.BaseModel):
     effect_scope: The scope of the effect to be measured in the experiment. This
       can be either "all_geos" or "treatment_geos". Defaults to "all_geos". See
       the EffectScope enum for more details.
+    methodology_parameter_candidates: A dictionary of methodology parameter
+      candidates. The key is the methodology name, and the value is a dictionary
+      of parameter name and parameter candidates. The parameter candidates are a
+      list of values that can be used for that parameter and methodology. If a
+      parameter is not specified then the methodology will suggest a value for
+      it from the default candidates.
   """
 
   experiment_type: ExperimentType
@@ -185,5 +192,6 @@ class ExperimentDesignExplorationSpec(pydantic.BaseModel):
   effect_scope: EffectScope = pydantic.Field(
       default=EffectScope.ALL_GEOS, validate_default=True
   )
+  methodology_parameter_candidates: dict[str, dict[str, list[Any]]] = {}
 
   model_config = pydantic.ConfigDict(extra="forbid")

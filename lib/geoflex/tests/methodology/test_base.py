@@ -1,13 +1,11 @@
 """Tests for the base methodology module."""
 
-from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
 import geoflex.methodology._base
 import geoflex.metrics
 import numpy as np
-import optuna as op
 import pandas as pd
 import pytest
 
@@ -75,15 +73,7 @@ def mock_test_methodology_fixture():
       # Not used in this test
       return True
 
-    def suggest_methodology_parameters(
-        self,
-        design_spec: ExperimentDesignExplorationSpec,
-        trial: op.Trial,
-    ) -> dict[str, Any]:
-      # Not used in this test
-      return {}
-
-    def analyze_experiment(
+    def _methodology_analyze_experiment(
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
