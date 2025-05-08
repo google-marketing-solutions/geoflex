@@ -226,6 +226,33 @@ class GeoPerformanceDataset(pydantic.BaseModel):
     return data_copy
 
   @pydantic.model_validator(mode="after")
+  def check_date_format(self) -> "GeoPerformanceDataset":
+    """Checks that the input date column is either a string or a date object."""
+    if pd.api.types.is_datetime64_any_dtype(self.data[self.date_column]):
+      # If it's already a datetime object, then it's valid.
+      return self
+
+    if pd.api.types.is_string_dtype(self.data[self.date_column]):
+      try:
+        # Check that the string is in iso format.
+        pd.to_datetime(self.data[self.date_column], format="%Y-%m-%d")
+      except ValueError as e:
+        error_message = (
+            "Date column is a string but is not in ISO format (YYYY-MM-DD)."
+        )
+        logger.error(error_message)
+        raise ValueError(error_message) from e
+      return self
+
+    error_message = (
+        f"Date column ({self.date_column}) must be either a string in ISO"
+        " format (YYYY-MM-DD) or a datetime object, but got"
+        f" {self.data[self.date_column].dtype}"
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  @pydantic.model_validator(mode="after")
   def check_date_gaps(self) -> "GeoPerformanceDataset":
     """Checks that the data has no date gaps."""
     if len(self.dates) < 2:

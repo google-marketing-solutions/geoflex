@@ -700,3 +700,26 @@ def test_simulate_experiment_returns_correct_data_for_hold_back_daily_budget(
         100.0,
         decimal=7,
     )
+
+
+def test_geo_performance_dataset_check_date_format_raises_error_for_non_iso_string_date(
+    raw_data,
+):
+  raw_data["date"] = pd.to_datetime(raw_data["date"]).dt.strftime("%Y/%m/%d")
+  with pytest.raises(ValueError):
+    GeoPerformanceDataset(data=raw_data)
+
+
+def test_geo_performance_dataset_check_date_format_raises_error_for_non_string_or_date_column(
+    raw_data,
+):
+  raw_data["date"] = pd.to_datetime(raw_data["date"]).astype(int)
+  with pytest.raises(ValueError):
+    GeoPerformanceDataset(data=raw_data)
+
+
+def test_geo_performance_dataset_check_date_format_does_not_raise_error_for_valid_date_column(
+    raw_data,
+):
+  raw_data["date"] = pd.to_datetime(raw_data["date"])
+  GeoPerformanceDataset(data=raw_data)
