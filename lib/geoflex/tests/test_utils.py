@@ -1,9 +1,12 @@
 """Tests for the utils module."""
 
+from feedx import statistics
 from geoflex import utils
+import numpy as np
 import pandas as pd
 import pydantic
 import pytest
+
 
 ParquetDataFrame = utils.ParquetDataFrame
 
@@ -151,3 +154,39 @@ def test_serialize_deserialize_parquet_dataframe_empty_dataframe_with_columns(
   assert new_model.optional_df is None
   assert new_model.list_of_dfs == []
   assert new_model.a == 1
+
+
+@pytest.mark.parametrize(
+    "alternative_hypothesis", ["two-sided", "greater", "less"]
+)
+@pytest.mark.parametrize("alpha", [0.05, 0.1, 0.2])
+def test_infer_p_value_returns_correct_p_value(alternative_hypothesis, alpha):
+  rng = np.random.default_rng(seed=0)
+  values1 = rng.normal(size=10000)
+  values2 = rng.normal(size=10000)
+
+  statistical_test_results = statistics.yuens_t_test_ind(
+      values1=values1,
+      values2=values2,
+      trimming_quantile=0.0,
+      alternative=alternative_hypothesis,
+      alpha=alpha,
+  )
+
+  mean = statistical_test_results.absolute_difference
+  confidence_interval = (
+      statistical_test_results.absolute_difference_lower_bound,
+      statistical_test_results.absolute_difference_upper_bound,
+  )
+  inferred_p_value = utils.infer_p_value(
+      mean=mean,
+      confidence_interval=confidence_interval,
+      alpha=alpha,
+      alternative_hypothesis=alternative_hypothesis,
+  )
+
+  # Only close, not identical, because the inferred p-value assumes a normal
+  # distribution, while the statistical test uses a t-distribution.
+  assert np.isclose(
+      inferred_p_value, statistical_test_results.p_value, atol=1e-6
+  )
