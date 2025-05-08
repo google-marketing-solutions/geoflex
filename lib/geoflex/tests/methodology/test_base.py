@@ -219,3 +219,242 @@ def test_methodology_assign_geos_raises_error_if_too_many_treatment_groups(
         default_experiment_design,
         historical_data,
     )
+
+
+@pytest.mark.parametrize(
+    "missing_column",
+    [
+        "metric",
+        "is_primary_metric",
+        "cell",
+        "point_estimate",
+        "lower_bound",
+        "upper_bound",
+        "point_estimate_relative",
+        "lower_bound_relative",
+        "upper_bound_relative",
+    ],
+)
+def test_methodology_analyze_experiment_raises_error_if_missing_required_columns(
+    historical_data, default_experiment_design, MockMethodology, missing_column
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: str,
+    ) -> pd.DataFrame:
+      del runtime_data, experiment_design, experiment_start_date
+
+      return pd.DataFrame({
+          "metric": ["revenue"],
+          "is_primary_metric": [True],
+          "cell": [1],
+          "point_estimate": [1.0],
+          "lower_bound": [0.5],
+          "upper_bound": [1.5],
+          "point_estimate_relative": [0.1],
+          "lower_bound_relative": [0.05],
+          "upper_bound_relative": [0.15],
+          "p_value": [0.01],
+      }).drop([missing_column], axis=1)
+
+  with pytest.raises(ValueError):
+    AnalyzeExperimentMockMethodology().analyze_experiment(
+        historical_data, default_experiment_design, "2024-01-01"
+    )
+
+
+def test_methodology_analyze_experiment_drops_extra_columns(
+    historical_data, default_experiment_design, MockMethodology
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: str,
+    ) -> pd.DataFrame:
+      del runtime_data, experiment_design, experiment_start_date
+
+      return pd.DataFrame({
+          "metric": ["revenue"],
+          "is_primary_metric": [True],
+          "cell": [1],
+          "point_estimate": [1.0],
+          "lower_bound": [0.5],
+          "upper_bound": [1.5],
+          "point_estimate_relative": [0.1],
+          "lower_bound_relative": [0.05],
+          "upper_bound_relative": [0.15],
+          "p_value": [0.01],
+          "extra_column": [1],
+      })
+
+  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+      historical_data, default_experiment_design, "2024-01-01"
+  )
+  assert "extra_column" not in results.columns
+
+
+def test_methodology_analyze_experiment_raises_error_if_missing_metrics(
+    historical_data, default_experiment_design, MockMethodology
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: str,
+    ) -> pd.DataFrame:
+      del runtime_data, experiment_design, experiment_start_date
+
+      return pd.DataFrame({
+          "metric": ["revenue"],
+          "is_primary_metric": [True],
+          "cell": [1],
+          "point_estimate": [1.0],
+          "lower_bound": [0.5],
+          "upper_bound": [1.5],
+          "point_estimate_relative": [0.1],
+          "lower_bound_relative": [0.05],
+          "upper_bound_relative": [0.15],
+          "p_value": [0.01],
+      })
+
+  experiment_design = default_experiment_design.make_variation(
+      secondary_metrics=["conversions"]
+  )
+
+  with pytest.raises(ValueError):
+    AnalyzeExperimentMockMethodology().analyze_experiment(
+        historical_data, experiment_design, "2024-01-01"
+    )
+
+
+def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_cost_per_metric_and_metric_per_cost_metrics(
+    historical_data, default_experiment_design, MockMethodology
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: str,
+    ) -> pd.DataFrame:
+      del runtime_data, experiment_design, experiment_start_date
+
+      return pd.DataFrame({
+          "metric": ["revenue", "CPA", "ROAS"],
+          "is_primary_metric": [True, False, False],
+          "cell": [1, 1, 1],
+          "point_estimate": [1.0, 1.0, 1.0],
+          "lower_bound": [0.5, 0.5, 0.5],
+          "upper_bound": [1.5, 1.5, 1.5],
+          "point_estimate_relative": [0.1, 0.1, 0.1],
+          "lower_bound_relative": [0.05, 0.05, 0.05],
+          "upper_bound_relative": [0.15, 0.15, 0.15],
+          "p_value": [0.01, 0.01, 0.01],
+      })
+
+  experiment_design = default_experiment_design.make_variation(
+      secondary_metrics=[geoflex.metrics.CPA(), geoflex.metrics.ROAS()],
+      experiment_budget=geoflex.experiment_design.ExperimentBudget(
+          value=-0.1,
+          budget_type=geoflex.experiment_design.ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      experiment_type=geoflex.experiment_design.ExperimentType.GO_DARK,
+  )
+
+  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+      historical_data, experiment_design, "2024-01-01"
+  )
+
+  expected_results = pd.DataFrame({
+      "metric": ["revenue", "CPA", "ROAS"],
+      "is_primary_metric": [True, False, False],
+      "cell": [1, 1, 1],
+      "point_estimate": [1.0, 1.0, 1.0],
+      "lower_bound": [0.5, 0.5, 0.5],
+      "upper_bound": [1.5, 1.5, 1.5],
+      "point_estimate_relative": [0.1, np.nan, np.nan],
+      "lower_bound_relative": [0.05, np.nan, np.nan],
+      "upper_bound_relative": [0.15, np.nan, np.nan],
+      "p_value": [0.01, 0.01, 0.01],
+      "is_significant": [True, True, True],
+  })
+  pd.testing.assert_frame_equal(results, expected_results, check_like=True)
+
+
+def test_methodology_analyze_experiment_infers_p_value_if_not_set(
+    historical_data, default_experiment_design, MockMethodology
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: str,
+    ) -> pd.DataFrame:
+      del runtime_data, experiment_design, experiment_start_date
+
+      return pd.DataFrame({
+          "metric": ["revenue"],
+          "is_primary_metric": [True],
+          "cell": [1],
+          "point_estimate": [1.0],
+          "lower_bound": [0.5],
+          "upper_bound": [1.5],
+          "point_estimate_relative": [0.1],
+          "lower_bound_relative": [0.05],
+          "upper_bound_relative": [0.15],
+      })
+
+  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+      historical_data, default_experiment_design, "2024-01-01"
+  )
+  assert "p_value" in results.columns
+
+
+def test_methodology_analyze_experiment_sets_is_significant_correctly(
+    historical_data, default_experiment_design, MockMethodology
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: str,
+    ) -> pd.DataFrame:
+      del runtime_data, experiment_design, experiment_start_date
+
+      return pd.DataFrame({
+          "metric": ["revenue", "revenue"],
+          "is_primary_metric": [True, True],
+          "cell": [1, 2],
+          "point_estimate": [1.0, 1.0],
+          "lower_bound": [0.5, 0.5],
+          "upper_bound": [1.5, 1.5],
+          "point_estimate_relative": [0.1, 0.1],
+          "lower_bound_relative": [0.05, 0.05],
+          "upper_bound_relative": [0.15, 0.15],
+          "p_value": [0.01, 0.1],
+      })
+
+  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+      historical_data, default_experiment_design, "2024-01-01"
+  )
+  assert results["is_significant"].tolist() == [True, False]

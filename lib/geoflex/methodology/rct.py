@@ -150,6 +150,8 @@ class RCT(_base.Methodology):
     metric provided in the experiment data. The columns are the following:
 
     - metric: The metric name.
+    - is_primary_metric: Whether the metric is a primary metric.
+    - cell: The cell number.
     - point_estimate: The point estimate of the treatment effect.
     - lower_bound: The lower bound of the confidence interval.
     - upper_bound: The upper bound of the confidence interval.
@@ -157,7 +159,6 @@ class RCT(_base.Methodology):
     - lower_bound_relative: The relative lower bound of the confidence interval.
     - upper_bound_relative: The relative upper bound of the confidence interval.
     - p_value: The p-value of the null hypothesis.
-    - is_significant: Whether the null hypothesis is rejected.
 
     Args:
       runtime_data: The runtime data for the experiment.
@@ -274,6 +275,5 @@ class RCT(_base.Methodology):
             "lower_bound_relative": lower_bound_relative,
             "upper_bound_relative": upper_bound_relative,
             "p_value": statistical_results.p_value,
-            "is_significant": statistical_results.is_significant,
         })
     return pd.DataFrame(results)

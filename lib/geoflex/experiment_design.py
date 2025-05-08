@@ -1099,7 +1099,9 @@ class ExperimentDesign(pydantic.BaseModel):
     kwargs["evaluation_results"] = None
     kwargs["geo_assignment"] = None
 
-    variation = self.model_copy(deep=True, update=kwargs)
+    model_copy = self.model_copy(deep=True).model_dump()
+    variation = self.model_validate(model_copy | kwargs)
+
     return variation
 
 

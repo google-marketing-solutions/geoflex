@@ -6,6 +6,7 @@ from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
+import geoflex.utils
 import pandas as pd
 
 
@@ -163,6 +164,7 @@ class Methodology(abc.ABC):
     metric provided in the experiment data. The columns are the following:
 
     - metric: The metric name.
+    - is_primary_metric: Whether the metric is a primary metric.
     - cell: The cell number.
     - point_estimate: The point estimate of the treatment effect.
     - lower_bound: The lower bound of the confidence interval.
@@ -176,9 +178,8 @@ class Methodology(abc.ABC):
 
     Optionally you can also provide:
     - p_value: The p-value of the null hypothesis.
-    - is_significant: Whether the null hypothesis is rejected.
 
-    If the p_value and is_significant columns are not provided, they will be
+    If the p_value column is not provided, it will be
     inferred based on the point estimates and confidence intervals.
 
     This will be wrapped by the analyze_experiment() method, which will apply
@@ -206,6 +207,7 @@ class Methodology(abc.ABC):
     metric provided in the experiment data. The columns are the following:
 
     - metric: The metric name.
+    - is_primary_metric: Whether the metric is a primary metric.
     - cell: The cell number.
     - point_estimate: The point estimate of the treatment effect.
     - lower_bound: The lower bound of the confidence interval.
@@ -239,6 +241,94 @@ class Methodology(abc.ABC):
 
     raw_results = self._methodology_analyze_experiment(
         runtime_data, validated_experiment_design, experiment_start_date
+    )
+
+    # Check that the required columns are present.
+    required_columns = {
+        "metric",
+        "is_primary_metric",
+        "cell",
+        "point_estimate",
+        "lower_bound",
+        "upper_bound",
+        "point_estimate_relative",
+        "lower_bound_relative",
+        "upper_bound_relative",
+    }
+    optional_columns = set(["p_value"])
+    missing_columns = required_columns - set(raw_results.columns)
+    if missing_columns:
+      error_message = (
+          "The analysis results are missing the following columns:"
+          f" {missing_columns}"
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    extra_columns = (
+        set(raw_results.columns) - required_columns - optional_columns
+    )
+    if extra_columns:
+      logger.warning(
+          "The analysis results contain the following extra columns, which will"
+          " be dropped: %s",
+          extra_columns,
+      )
+      raw_results = raw_results.drop(extra_columns, axis=1)
+
+    # Check that all metrics are present in the results.
+    all_metrics = [
+        validated_experiment_design.primary_metric
+    ] + validated_experiment_design.secondary_metrics
+    all_metrics_names = [metric.name for metric in all_metrics]
+    missing_metrics = set(all_metrics_names) - set(raw_results["metric"])
+    if missing_metrics:
+      error_message = (
+          "The analysis results are missing the following metrics:"
+          f" {missing_metrics}"
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    # Check that for cost_per_metric and metric_per_cost metrics, the relative
+    # effect size columns are NA.
+    metrics_without_relative = [
+        metric.name
+        for metric in all_metrics
+        if metric.cost_per_metric or metric.metric_per_cost
+    ]
+    is_metric_without_relative = raw_results["metric"].isin(
+        metrics_without_relative
+    )
+    has_non_na_relative = raw_results["point_estimate_relative"].notna()
+    if (is_metric_without_relative & has_non_na_relative).any():
+      logger.warning(
+          "The analysis results contain non-NA relative effect sizes for"
+          " metrics that are cost per metric or metric per cost. These will be"
+          " forced to NA."
+      )
+
+    raw_results.loc[is_metric_without_relative, "point_estimate_relative"] = (
+        pd.NA
+    )
+    raw_results.loc[is_metric_without_relative, "lower_bound_relative"] = pd.NA
+    raw_results.loc[is_metric_without_relative, "upper_bound_relative"] = pd.NA
+
+    if "p_value" not in raw_results.columns:
+      # Infer p-value if not provided.
+      raw_results["p_value"] = raw_results.apply(
+          lambda row: geoflex.utils.infer_p_value(
+              row["point_estimate"],
+              (row["lower_bound"], row["upper_bound"]),
+              validated_experiment_design.alpha,
+              validated_experiment_design.alternative_hypothesis,
+          ),
+          axis=1,
+      )
+
+    # Calculate is_significant based on p-value and alpha.
+    raw_results["is_significant"] = (
+        raw_results["p_value"] < validated_experiment_design.alpha
     )
 
     return raw_results
