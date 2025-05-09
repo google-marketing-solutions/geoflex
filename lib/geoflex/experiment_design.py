@@ -16,15 +16,6 @@ logger = logging.getLogger(__name__)
 Metric = geoflex.metrics.Metric
 
 
-class ExperimentType(enum.StrEnum):
-  GO_DARK = "go_dark"  # Reduce spend in a campaign to measure incrementality.
-  HEAVY_UP = (  # Increase spend in a campaign to measure incrementality.
-      "heavy_up"
-  )
-  HOLD_BACK = "hold_back"  # Hold back a new campaign to measure incrementality.
-  AB_TEST = "ab_test"  # Measure a campaign change without a change in spend.
-
-
 class GeoEligibility(pydantic.BaseModel):
   """The geo eligibility for a geoflex experiment.
 
@@ -223,12 +214,14 @@ class ExperimentBudget(pydantic.BaseModel):
   spend $100,000.
 
   Attributes:
-    value: The value of the budget.
+    value: The value of the budget. This can be either a single value or a list
+      of values, one for each cell. If a single value is provided, then it will
+      assume the same budget for all cells.
     budget_type: The type of the budget, one of "percentage_change",
       "daily_budget", or "total_budget".
   """
 
-  value: float
+  value: float | list[float]
   budget_type: ExperimentBudgetType
 
   model_config = pydantic.ConfigDict(extra="forbid")
@@ -237,27 +230,43 @@ class ExperimentBudget(pydantic.BaseModel):
   def check_percentage_change_is_not_below_minus_1(
       self,
   ) -> "ExperimentBudget":
-    if (
-        self.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE
-        and self.value < -1.0
-    ):
-      error_message = (
-          "Cannot have a percentage change budget below -1.0 (-100%)."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
+    values_list = self.value if isinstance(self.value, list) else [self.value]
+    for value in values_list:
+      if (
+          self.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE
+          and value < -1.0
+      ):
+        error_message = (
+            "Cannot have a percentage change budget below -1.0 (-100%)."
+        )
+        logger.error(error_message)
+        raise ValueError(error_message)
     return self
 
-  def __str__(self) -> str:
-    if self.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
-      return f"{self.value:.0%}"
+  def _single_value_to_string(self, value: float) -> str:
+    if np.isclose(value, 0.0):
+      return "No Budget"
+    elif self.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
+      return f"{value:.0%}"
     elif self.budget_type == ExperimentBudgetType.DAILY_BUDGET:
-      return f"${self.value} per day"
+      return f"${value} per day"
     elif self.budget_type == ExperimentBudgetType.TOTAL_BUDGET:
-      return f"${self.value} total"
+      return f"${value} total"
     else:
       # Fallback, not needed now, in case we add more budget types in future.
-      return f"Value = {self.value}, Type = {self.budget_type}"
+      return f"Value = {value}, Type = {self.budget_type}"
+
+  def __str__(self) -> str:
+    if isinstance(self.value, list):
+      return ", ".join([
+          f"Cell {i}: {self._single_value_to_string(value)}"
+          for i, value in enumerate(self.value, 1)
+      ])
+    else:
+      final_string = self._single_value_to_string(self.value)
+      if self.budget_type != ExperimentBudgetType.PERCENTAGE_CHANGE:
+        final_string += " per cell"
+      return final_string
 
 
 class EffectScope(enum.StrEnum):
@@ -786,78 +795,6 @@ def check_geo_eligibility_matches_n_cells(
 
 
 @pydantic.AfterValidator
-def check_experiment_budget_is_valid(
-    experiment_budget: ExperimentBudget, info: pydantic.ValidationInfo
-) -> "ExperimentBudget":
-  """Checks if the experiment budget is valid.
-
-  Go dark experiments must have a negative percentage change budget.
-  Heavy-up and hold-back experiments must have a positive budget.
-  Hold-back experiments cannot have a percentage change budget.
-  A/B test experiments must have a zero budget.
-
-  Args:
-    experiment_budget: The experiment budget to check.
-    info: The validation info.
-
-  Returns:
-    The validated experiment budget.
-
-  Raises:
-    ValueError: If the experiment budget is not valid.
-  """
-  # Go dark experiment budgets must be a negative percentage change.
-  experiment_type = info.data["experiment_type"]
-  if experiment_type == ExperimentType.GO_DARK:
-    if experiment_budget.value >= 0:
-      error_message = (
-          "The percentage change budget must be negative for a go-dark"
-          " experiment."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-    if experiment_budget.budget_type != ExperimentBudgetType.PERCENTAGE_CHANGE:
-      error_message = (
-          "The budget type must be 'percentage_change' for a go-dark"
-          " experiment."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-
-  # Heavy-up and hold-back experiment budgets must be positive.
-  if experiment_type in [
-      ExperimentType.HEAVY_UP,
-      ExperimentType.HOLD_BACK,
-  ]:
-    if experiment_budget.value <= 0:
-      error_message = (
-          "The daily budget must be positive for a heavy-up or hold-back"
-          " experiment."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-
-  # Hold-back experiment budgets cannot be a percentage change.
-  if experiment_type == ExperimentType.HOLD_BACK:
-    if experiment_budget.budget_type == ExperimentBudgetType.PERCENTAGE_CHANGE:
-      error_message = (
-          "The budget type cannot be 'percentage_change' for a hold-back"
-          " experiment."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-
-  # AB test experiment budgets must be zero.
-  if experiment_type == ExperimentType.AB_TEST:
-    if experiment_budget.value != 0:
-      error_message = "The budget must be zero for an A/B test experiment."
-      logger.error(error_message)
-      raise ValueError(error_message)
-
-  return experiment_budget
-
-
-@pydantic.AfterValidator
 def check_budget_is_consistent_with_metrics(
     experiment_budget: ExperimentBudget,
     info: pydantic.ValidationInfo,
@@ -869,14 +806,21 @@ def check_budget_is_consistent_with_metrics(
   has_cost_metric = any(
       metric.cost_per_metric or metric.metric_per_cost for metric in all_metrics
   )
-  if has_cost_metric and experiment_budget.value == 0.0:
-    error_message = (
-        "The experiment has cost metrics, but one of the budget"
-        " candidates is zero. The cost metrics can only be used for a"
-        " non-zero budget."
-    )
-    logger.error(error_message)
-    raise ValueError(error_message)
+
+  budget_values = experiment_budget.value
+  if not isinstance(budget_values, list):
+    budget_values = [budget_values]
+
+  for budget_value in budget_values:
+    if has_cost_metric and budget_value == 0.0:
+      error_message = (
+          "The experiment has cost metrics, but one of the budget values is"
+          " zero. The cost metrics can only be used with non-zero budgets in"
+          " all treatment cells."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
   return experiment_budget
 
 
@@ -904,6 +848,28 @@ def check_secondary_metric_names_do_not_overlap(
   return secondary_metrics
 
 
+@pydantic.AfterValidator
+def check_budget_is_consistent_with_n_cells(
+    budget: ExperimentBudget, info: pydantic.ValidationInfo
+) -> list[Any]:
+  """Checks that the number of budgets matches the number of treatment cells."""
+  if not isinstance(budget.value, list):
+    return budget
+
+  n_cells = info.data.get("n_cells", 2)
+  num_treatment_cells = n_cells - 1
+  num_budget_values = len(budget.value)
+  if num_budget_values != num_treatment_cells:
+    error_message = (
+        f"Length of list ({num_budget_values}) does not match"
+        f" the number of treatment cells ({num_treatment_cells})."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  return budget
+
+
 ValidatedMetric = Annotated[Metric, cast_string_to_metric]
 ValidatedMetricList = Annotated[
     list[ValidatedMetric],
@@ -917,8 +883,8 @@ ValidatedAlpha = Annotated[float, check_alpha_is_between_0_and_1]
 ValidatedExperimentBudget = Annotated[
     ExperimentBudget,
     cast_none_budget_to_zero_spend,
+    check_budget_is_consistent_with_n_cells,
     check_budget_is_consistent_with_metrics,
-    check_experiment_budget_is_valid,
 ]
 ValidatedCellVolumeConstraint = Annotated[
     CellVolumeConstraint,
@@ -937,7 +903,6 @@ class ExperimentDesign(pydantic.BaseModel):
   """An experiment design for a GeoFleX experiment.
 
   Attributes:
-    experiment_type: The type of experiment to run.
     design_id: The unique identifier for the experiment design. This is
       autogenerated for a new design.
     primary_metric: The primary response metric for the experiment. This is the
@@ -945,7 +910,7 @@ class ExperimentDesign(pydantic.BaseModel):
       main decision making metric.
     experiment_budget: The experiment budget for the experiment. This can be a
       percentage change, daily budget, or total budget. For a go-dark
-      experiment, the budget value should be a negative percentage change. For a
+      experiment, the budget value should be negative. For a
       heavy-up or hold-back experiment, the budget value should be positive and
       is usually defined as a daily budget or a total budget. For a heavy-up
       experiment, this is the incremental budget, meaning the increase on top of
@@ -979,7 +944,6 @@ class ExperimentDesign(pydantic.BaseModel):
       is set after the design is created, when the design is evaluated.
   """
 
-  experiment_type: ExperimentType
   primary_metric: ValidatedMetric
   methodology: str
   runtime_weeks: int
@@ -1030,7 +994,6 @@ class ExperimentDesign(pydantic.BaseModel):
 
     summary = {
         "design_id": self.design_id,
-        "experiment_type": self.experiment_type.value,
         "experiment_budget": str(self.experiment_budget),
         "primary_metric": self.primary_metric.name,
         "secondary_metrics": [m.name for m in self.secondary_metrics],

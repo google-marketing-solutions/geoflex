@@ -15,7 +15,6 @@ GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
-ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 Metric = geoflex.metrics.Metric
 
@@ -325,7 +324,6 @@ def default_design_fixture():
               metric_per_cost=True,
           )
       ],
-      experiment_type=ExperimentType.HEAVY_UP,
       runtime_weeks=4,
       methodology="test_methodology",
       n_cells=3,
@@ -381,21 +379,56 @@ def test_simulate_experiment_raises_error_for_non_zero_treatment_effect(
     )
 
 
-def test_simulate_experiment_raises_error_for_hold_back_experiment_with_cost_metric(
-    big_raw_data, default_design, experiment_start_date
+def test_simulate_experiment_raises_error_for_percentage_change_zero_historical_cost(
+    big_raw_data_zero_costs, default_design, experiment_start_date
 ):
-  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
-  design = default_design.model_copy(
-      update=dict(
-          experiment_type=ExperimentType.HOLD_BACK,
-      )
-  )
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data_zero_costs)
   with pytest.raises(ValueError):
     geo_dataset.simulate_experiment(
         experiment_start_date=experiment_start_date,
-        design=design,
+        design=default_design,
         treatment_effect_size=0.0,
     )
+
+
+def test_simulate_experiment_returns_correct_data_with_different_budgets_per_cell(
+    big_raw_data, default_design, experiment_start_date
+):
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+          value=[0.1, -0.1],
+      ),
+      n_cells=3,
+  )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=default_design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA"]) & is_experiment_date,
+      ["cost", "campaign_cost"],
+  ] *= 1.1
+  expected_data.loc[
+      expected_data.geo_id.isin(["DE", "FR"]) & is_experiment_date,
+      ["cost", "campaign_cost"],
+  ] *= 0.9
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, expected_data, check_like=True
+  )
 
 
 def test_simulate_experiment_returns_correct_data_for_heavy_up_percentage_change(
@@ -429,14 +462,14 @@ def test_simulate_experiment_returns_correct_data_for_heavy_up_total_budget(
     big_raw_data, default_design, experiment_start_date
 ):
   geo_dataset = GeoPerformanceDataset(data=big_raw_data)
-  design = default_design.model_copy(
-      update=dict(
-          experiment_budget=ExperimentBudget(
-              budget_type=ExperimentBudgetType.TOTAL_BUDGET,
-              value=100,
-          ),
-      )
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+          value=100,
+      ),
   )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
@@ -492,14 +525,14 @@ def test_simulate_experiment_returns_correct_data_for_heavy_up_daily_budget(
     big_raw_data, default_design, experiment_start_date
 ):
   geo_dataset = GeoPerformanceDataset(data=big_raw_data)
-  design = default_design.model_copy(
-      update=dict(
-          experiment_budget=ExperimentBudget(
-              budget_type=ExperimentBudgetType.DAILY_BUDGET,
-              value=100,
-          ),
-      )
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.DAILY_BUDGET,
+          value=100,
+      ),
   )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
@@ -548,15 +581,13 @@ def test_simulate_experiment_returns_correct_data_for_go_dark(
     big_raw_data, default_design, experiment_start_date
 ):
   geo_dataset = GeoPerformanceDataset(data=big_raw_data)
-  design = default_design.model_copy(
-      update=dict(
-          experiment_type=ExperimentType.GO_DARK,
-          experiment_budget=ExperimentBudget(
-              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-              value=-0.1,
-          ),
-      )
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+          value=-0.1,
+      ),
   )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
 
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
@@ -585,15 +616,14 @@ def test_simulate_experiment_returns_correct_data_for_hold_back_total_budget(
     big_raw_data_zero_costs, default_design, experiment_start_date
 ):
   geo_dataset = GeoPerformanceDataset(data=big_raw_data_zero_costs)
-  design = default_design.model_copy(
-      update=dict(
-          experiment_budget=ExperimentBudget(
-              budget_type=ExperimentBudgetType.TOTAL_BUDGET,
-              value=100,
-          ),
-          experiment_type=ExperimentType.HOLD_BACK,
-      )
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+          value=100,
+      ),
   )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
@@ -649,15 +679,14 @@ def test_simulate_experiment_returns_correct_data_for_hold_back_daily_budget(
     big_raw_data_zero_costs, default_design, experiment_start_date
 ):
   geo_dataset = GeoPerformanceDataset(data=big_raw_data_zero_costs)
-  design = default_design.model_copy(
-      update=dict(
-          experiment_budget=ExperimentBudget(
-              budget_type=ExperimentBudgetType.DAILY_BUDGET,
-              value=100,
-          ),
-          experiment_type=ExperimentType.HOLD_BACK,
-      )
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=ExperimentBudgetType.DAILY_BUDGET,
+          value=100,
+      ),
   )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,

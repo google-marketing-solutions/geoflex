@@ -14,7 +14,6 @@ ExperimentDesignEvaluation = (
     geoflex.experiment_design.ExperimentDesignEvaluation
 )
 GeoAssignment = geoflex.experiment_design.GeoAssignment
-ExperimentType = geoflex.experiment_design.ExperimentType
 CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 register_methodology = _base.register_methodology

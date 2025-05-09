@@ -7,7 +7,6 @@ import geoflex.experiment_design
 import pydantic
 
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
-ExperimentType = geoflex.experiment_design.ExperimentType
 EffectScope = geoflex.experiment_design.EffectScope
 
 ValidatedMetric = geoflex.experiment_design.ValidatedMetric
@@ -120,7 +119,6 @@ class ExperimentDesignExplorationSpec(pydantic.BaseModel):
   geos per group.
 
   Attributes:
-    experiment_type: The type of experiment to run.
     primary_metric: The primary response metric for the experiment. This is the
       metric that the experiment will be designed for.
     experiment_budget_candidates: The candidates for the experiment budget. The
@@ -165,7 +163,6 @@ class ExperimentDesignExplorationSpec(pydantic.BaseModel):
       it from the default candidates.
   """
 
-  experiment_type: ExperimentType
   primary_metric: ValidatedMetric
 
   runtime_weeks_candidates: ValidatedRuntimeWeeksCandidates = [4]

@@ -11,7 +11,6 @@ import pytest
 
 
 Methodology = geoflex.methodology._base.Methodology  # pylint: disable=protected-access
-ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -44,7 +43,6 @@ def mock_historical_data_fixture():
 def mock_experiment_design_fixture():
   """Fixture for a mock design spec."""
   return ExperimentDesign(
-      experiment_type=ExperimentType.AB_TEST,
       primary_metric="revenue",
       methodology="MockMethodology",
       runtime_weeks=2,
@@ -372,7 +370,6 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
           value=-0.1,
           budget_type=geoflex.experiment_design.ExperimentBudgetType.PERCENTAGE_CHANGE,
       ),
-      experiment_type=geoflex.experiment_design.ExperimentType.GO_DARK,
   )
 
   results = AnalyzeExperimentMockMethodology().analyze_experiment(

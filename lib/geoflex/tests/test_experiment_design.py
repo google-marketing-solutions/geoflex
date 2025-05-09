@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 
 
-ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoEligibility = geoflex.experiment_design.GeoEligibility
@@ -55,7 +54,6 @@ def test_geo_assignment_raises_exception_if_treatment_geos_are_single_list():
 def test_metric_names_must_be_unique():
   with pytest.raises(ValueError):
     ExperimentDesign(
-        experiment_type=ExperimentType.GO_DARK,
         primary_metric="revenue",
         experiment_budget=ExperimentBudget(
             value=-0.1,
@@ -65,6 +63,46 @@ def test_metric_names_must_be_unique():
         methodology="test_methodology",
         runtime_weeks=4,
         alpha=0.1,
+        geo_eligibility=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "cost_metric", [geoflex.metrics.iROAS(), geoflex.metrics.CPiA()]
+)
+@pytest.mark.parametrize("budget_values", [0.0, [-1.0, 0.0]])
+def test_budget_must_be_non_zero_if_cost_metrics_are_used(
+    budget_values, cost_metric
+):
+  with pytest.raises(ValueError):
+    ExperimentDesign(
+        primary_metric="revenue",
+        experiment_budget=ExperimentBudget(
+            value=budget_values,
+            budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+        ),
+        secondary_metrics=["conversions", cost_metric],
+        methodology="test_methodology",
+        runtime_weeks=4,
+        alpha=0.1,
+        geo_eligibility=None,
+        n_cells=3,
+    )
+
+
+def test_budget_must_be_consistent_with_n_cells():
+  with pytest.raises(ValueError):
+    ExperimentDesign(
+        primary_metric="revenue",
+        experiment_budget=ExperimentBudget(
+            value=[-0.1, -0.2, -0.3],
+            budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+        ),
+        secondary_metrics=["conversions", geoflex.metrics.iROAS()],
+        methodology="test_methodology",
+        runtime_weeks=4,
+        alpha=0.1,
+        n_cells=3,
         geo_eligibility=None,
     )
 
@@ -234,7 +272,6 @@ def test_make_geo_assignment_array_returns_correct_array():
 
 def test_can_write_design_to_json():
   design = ExperimentDesign(
-      experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       experiment_budget=ExperimentBudget(
           value=-0.1,
@@ -255,7 +292,6 @@ def test_can_write_design_to_json():
 
 def test_can_write_design_to_dict():
   design = ExperimentDesign(
-      experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       experiment_budget=ExperimentBudget(
           value=-0.1,
@@ -278,7 +314,6 @@ def test_can_write_design_to_dict():
 def mock_design_fixture():
   """Fixture for a mock design."""
   return ExperimentDesign(
-      experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       secondary_metrics=[
           geoflex.metrics.iROAS(),
@@ -504,7 +539,6 @@ def test_experiment_design_get_summary_dict_returns_correct_dict_without_evaluat
 ):
   assert mock_design.get_summary_dict() == {
       "design_id": mock_design.design_id,
-      "experiment_type": "go_dark",
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
@@ -527,7 +561,6 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
   mock_design.evaluation_results = mock_design_evaluation_results
   assert mock_design.get_summary_dict() == {
       "design_id": mock_design.design_id,
-      "experiment_type": "go_dark",
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
@@ -563,7 +596,6 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_geo_assi
   )
   assert mock_design.get_summary_dict() == {
       "design_id": mock_design.design_id,
-      "experiment_type": "go_dark",
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
@@ -615,3 +647,56 @@ def test_make_variation_returns_correct_design(
   assert variation.alpha == mock_design.alpha
   assert variation.alternative_hypothesis == mock_design.alternative_hypothesis
   assert variation.random_seed == mock_design.random_seed
+
+
+@pytest.mark.parametrize(
+    "budget, expected_string",
+    [
+        (
+            ExperimentBudget(
+                value=-0.1,
+                budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+            ),
+            "-10%",
+        ),
+        (
+            ExperimentBudget(
+                value=-0.1,
+                budget_type=ExperimentBudgetType.DAILY_BUDGET,
+            ),
+            "$-0.1 per day per cell",
+        ),
+        (
+            ExperimentBudget(
+                value=-0.1,
+                budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+            ),
+            "$-0.1 total per cell",
+        ),
+        (
+            ExperimentBudget(
+                value=[0.1, -0.1],
+                budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+            ),
+            "Cell 1: 10%, Cell 2: -10%",
+        ),
+        (
+            ExperimentBudget(
+                value=[0.1, -0.1],
+                budget_type=ExperimentBudgetType.DAILY_BUDGET,
+            ),
+            "Cell 1: $0.1 per day, Cell 2: $-0.1 per day",
+        ),
+        (
+            ExperimentBudget(
+                value=[0.1, -0.1],
+                budget_type=ExperimentBudgetType.TOTAL_BUDGET,
+            ),
+            "Cell 1: $0.1 total, Cell 2: $-0.1 total",
+        ),
+    ],
+)
+def test_experient_budget_string_representation_is_correct(
+    budget, expected_string
+):
+  assert str(budget) == expected_string

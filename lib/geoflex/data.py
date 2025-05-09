@@ -15,7 +15,6 @@ import pydantic
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
-ExperimentType = geoflex.experiment_design.ExperimentType
 ParquetDataFrame = geoflex.utils.ParquetDataFrame
 
 logger = logging.getLogger(__name__)
@@ -353,9 +352,11 @@ class GeoPerformanceDataset(pydantic.BaseModel):
 
     # Get all cost metrics.
     all_metrics = [design.primary_metric] + design.secondary_metrics
-    cost_columns = set(
-        [metric.cost_column for metric in all_metrics if metric.cost_column]
-    )
+    cost_columns = set([
+        metric.cost_column
+        for metric in all_metrics
+        if metric.cost_per_metric or metric.metric_per_cost
+    ])
 
     data = self.pivoted_data.copy()
     experiment_end_date = experiment_start_date + dt.timedelta(
@@ -373,29 +374,41 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         design.experiment_budget.budget_type
         == ExperimentBudgetType.TOTAL_BUDGET
     )
-    is_heavy_up = design.experiment_type == ExperimentType.HEAVY_UP
-    is_hold_back = design.experiment_type == ExperimentType.HOLD_BACK
+    has_existing_cost = data[list(cost_columns)].abs().sum().sum() > 0
+
+    if is_percent_change and not has_existing_cost:
+      error_message = (
+          "Cost metric found in a hold back experiment. This is not"
+          " supported."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     # Apply the experiment budget to the cost metrics.
     for cost_metric in cost_columns:
-      has_cost = data[cost_metric].sum().sum() > 0
-      if is_hold_back and has_cost:
-        error_message = (
-            "Cost metric found in a hold back experiment. This is not"
-            " supported."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
-      for treatment_cell in design.geo_assignment.treatment:
+      budget_values = design.experiment_budget.value
+      if not isinstance(budget_values, list):
+        budget_values = [budget_values] * (design.n_cells - 1)
+
+      for treatment_cell, cell_budget_value in zip(
+          design.geo_assignment.treatment, budget_values
+      ):
+        if np.isclose(cell_budget_value, 0.0):
+          # If there is no budget change then there is no cost to simulate.
+          continue
+
+        is_spend_increase = cell_budget_value > 0.0
+        is_heavy_up = is_spend_increase and has_existing_cost
+
         for treatment_geo in treatment_cell:
           if is_percent_change:
             # Simply apply the percentage change
             data.loc[treatment_dates_mask, (cost_metric, treatment_geo)] *= (
-                1 + design.experiment_budget.value
+                1 + cell_budget_value
             )
             continue
 
-          budget_value = design.experiment_budget.value
+          budget_value = cell_budget_value
           if is_total_budget:
             # Total budget is divided across runtime
             budget_value /= design.runtime_weeks * 7
@@ -418,7 +431,7 @@ class GeoPerformanceDataset(pydantic.BaseModel):
             )
 
             budget_frac = geo_cost / total_cost
-          elif is_hold_back:
+          else:  # is_hold_back
             # For a hold back experiment, the budget is shared proportional to
             # the primary response metric across geos. This is because the
             # cost does not exist yet for a hold back experiment.
@@ -436,14 +449,6 @@ class GeoPerformanceDataset(pydantic.BaseModel):
                 .sum()
             )
             budget_frac = geo_primary_response / total_primary_response
-          else:
-            error_message = (
-                "This shouldn't have happened, but somehow got an experiment"
-                " type that is neither heavy up, hold back, but a budget that"
-                " is not a percentage change."
-            )
-            logger.error(error_message)
-            raise RuntimeError(error_message)  # pylint: disable=g-doc-exception
 
           data.loc[treatment_dates_mask, (cost_metric, treatment_geo)] += (
               budget_value * budget_frac

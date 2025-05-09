@@ -235,7 +235,6 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     )
 
     design = ExperimentDesign(
-        experiment_type=self.explore_spec.experiment_type,
         primary_metric=self.explore_spec.primary_metric,
         experiment_budget=experiment_budget,
         secondary_metrics=self.explore_spec.secondary_metrics,

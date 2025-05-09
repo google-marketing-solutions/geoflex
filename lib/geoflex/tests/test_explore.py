@@ -14,7 +14,6 @@ ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
 )
 ExperimentDesignExplorer = geoflex.explore.ExperimentDesignExplorer
-ExperimentType = geoflex.experiment_design.ExperimentType
 GeoEligibility = geoflex.experiment_design.GeoEligibility
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
@@ -63,7 +62,6 @@ def mock_historical_data_lots_of_geos_fixture():
 def mock_explore_spec_fixture():
   """Fixture for a mock explore spec."""
   return ExperimentDesignExplorationSpec(
-      experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       secondary_metrics=[
           "conversions",
@@ -163,9 +161,6 @@ def test_explorer_explore_suggests_designs_within_spec(
 
   for suggested_design in explorer.get_designs():
     assert isinstance(suggested_design, ExperimentDesign)
-    assert (
-        suggested_design.experiment_type == default_explore_spec.experiment_type
-    )
     assert (
         suggested_design.primary_metric == default_explore_spec.primary_metric
     )
@@ -303,7 +298,6 @@ def test_get_design_summaries_returns_correct_data_relative_effects(
   assert isinstance(design_summaries, pd.DataFrame)
   assert design_summaries.index.names == ["design_id"]
   assert design_summaries.dtypes.to_dict() == {
-      "experiment_type": "object",
       "experiment_budget": "object",
       "primary_metric": "object",
       "secondary_metrics": "object",
@@ -348,7 +342,6 @@ def test_get_design_summaries_returns_correct_data_absolute_effects(
   assert isinstance(design_summaries, pd.DataFrame)
   assert design_summaries.index.names == ["design_id"]
   assert design_summaries.dtypes.to_dict() == {
-      "experiment_type": "object",
       "experiment_budget": "object",
       "primary_metric": "object",
       "secondary_metrics": "object",

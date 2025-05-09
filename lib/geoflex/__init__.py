@@ -13,7 +13,6 @@ import optuna as op
 ExperimentDesignExplorationSpec = (
     exploration_spec.ExperimentDesignExplorationSpec
 )
-ExperimentType = experiment_design.ExperimentType
 GeoPerformanceDataset = data.GeoPerformanceDataset
 GeoEligibility = experiment_design.GeoEligibility
 GeoAssignment = experiment_design.GeoAssignment

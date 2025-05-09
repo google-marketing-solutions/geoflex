@@ -20,7 +20,6 @@ ExperimentDesignEvaluator = geoflex.evaluation.ExperimentDesignEvaluator
 def mock_design_fixture():
   """Fixture for a mock design."""
   return geoflex.experiment_design.ExperimentDesign(
-      experiment_type=geoflex.experiment_design.ExperimentType.GO_DARK,
       primary_metric="revenue",
       secondary_metrics=[
           "conversions",

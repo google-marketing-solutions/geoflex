@@ -12,7 +12,6 @@ RCT = geoflex.methodology.rct.RCT
 ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
 )
-ExperimentType = geoflex.experiment_design.ExperimentType
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -64,7 +63,6 @@ def performance_data_fixture():
     [
         (
             ExperimentDesign(
-                experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
                 experiment_budget=ExperimentBudget(
                     value=-0.1,
@@ -80,7 +78,6 @@ def performance_data_fixture():
         ),
         (
             ExperimentDesign(
-                experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
                 experiment_budget=ExperimentBudget(
                     value=-0.1,
@@ -94,7 +91,6 @@ def performance_data_fixture():
         ),
         (
             ExperimentDesign(
-                experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
                 experiment_budget=ExperimentBudget(
                     value=-0.1,
@@ -108,7 +104,6 @@ def performance_data_fixture():
         ),
         (
             ExperimentDesign(
-                experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
                 experiment_budget=ExperimentBudget(
                     value=-0.1,
@@ -122,7 +117,6 @@ def performance_data_fixture():
         ),
         (
             ExperimentDesign(
-                experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
                 experiment_budget=ExperimentBudget(
                     value=-0.1,
@@ -136,7 +130,6 @@ def performance_data_fixture():
         ),
         (
             ExperimentDesign(
-                experiment_type=ExperimentType.GO_DARK,
                 primary_metric="revenue",
                 experiment_budget=ExperimentBudget(
                     value=-0.1,
@@ -187,7 +180,6 @@ def test_rct_assign_geos(
         constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
     )
   experiment_design = ExperimentDesign(
-      experiment_type=ExperimentType.GO_DARK,
       primary_metric="revenue",
       experiment_budget=ExperimentBudget(
           value=-0.1,
@@ -220,7 +212,6 @@ def test_rct_assign_geos(
 
 def test_rct_analyze_experiment(performance_data):
   experiment_design = ExperimentDesign(
-      experiment_type=ExperimentType.GO_DARK,
       primary_metric=geoflex.metrics.iROAS(),
       experiment_budget=ExperimentBudget(
           value=-0.1,
