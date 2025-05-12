@@ -1,11 +1,11 @@
-"""The Randomized Controlled Trial (RCT) methodology for GeoFleX."""
+"""A testing methodology for GeoFleX. Used for testing purposes only."""
 
-from feedx import statistics
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
 from geoflex.methodology import _base
 import pandas as pd
+from scipy import stats
 
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
@@ -20,29 +20,24 @@ register_methodology = _base.register_methodology
 
 
 @register_methodology
-class RCT(_base.Methodology):
-  """The Randomized Controlled Trial (RCT) methodology for GeoFleX.
-
-  It is a very simple methodolgy based on a simple A/B test. It is not
-  recommended for most experiments, but can be used as a baseline for
-  comparison.
+class TestingMethodology(_base.Methodology):
+  """A testing methodology for GeoFleX. Used for testing purposes only.
 
   Design:
     Geos are split randomly into treatment and control groups.
 
   Evaluation:
-    The evaluation is done with a simple t-test on each test statistic.
+    Always returns a fixed set of results.
   """
 
-  default_methodology_parameter_candidates = {"trimming_quantile": [0.0, 0.05]}
+  default_methodology_parameter_candidates = {"mock_parameter": [1, 2]}
 
   def is_eligible_for_design(self, design: ExperimentDesign) -> bool:
-    """Checks if an RCT is eligible for the given design.
+    """Checks if the testing methodology is eligible for the given design.
 
-    For a RCT, the only constraints that matter are the fixed geos. Because the
-    assignment is random, we can only run it if there are no fixed geos in the
-    control or treatment groups. There can be fixed geos in the exclude group,
-    these are excluded pre-randomization.
+    Returns true as long as there are no geos that are forced into a control
+    or treatment group, because this methodology will randomly assign the
+    geos.
 
     Args:
       design: The design to check against.
@@ -51,7 +46,7 @@ class RCT(_base.Methodology):
       True if an RCT is eligible for the given design, False
         otherwise.
     """
-    if design.methodology != "RCT":
+    if design.methodology != "TestingMethodology":
       return False
 
     has_geo_eligibility_constraints = design.geo_eligibility is not None and (
@@ -168,101 +163,31 @@ class RCT(_base.Methodology):
     Returns:
       A dataframe with the analysis results.
     """
-    is_during_runtime = (
-        runtime_data.parsed_data[runtime_data.date_column]
-        >= experiment_start_date
-    )
-
     all_metrics = [
         experiment_design.primary_metric
     ] + experiment_design.secondary_metrics
 
-    all_metric_columns = set()
-    for metric in all_metrics:
-      all_metric_columns.add(metric.column)
-      if metric.cost_column:
-        all_metric_columns.add(metric.cost_column)
-    all_metric_columns = list(all_metric_columns)
-
-    grouped_data = (
-        runtime_data.parsed_data.loc[is_during_runtime]
-        .groupby("geo_id")[all_metric_columns]
-        .sum()
-    )
-
-    control_data = grouped_data.loc[
-        grouped_data.index.isin(experiment_design.geo_assignment.control)
-    ]
-
     results = []
 
-    for cell, treatment_group in enumerate(
-        experiment_design.geo_assignment.treatment, 1
-    ):
-      treatment_data = grouped_data.loc[
-          grouped_data.index.isin(treatment_group)
-      ]
+    rng = experiment_design.get_rng()
+
+    for cell in range(1, experiment_design.n_cells):
       for metric in all_metrics:
-        statistical_results = statistics.yuens_t_test_ind(
-            treatment_data[metric.column].values,
-            control_data[metric.column].values,
-            trimming_quantile=experiment_design.methodology_parameters[
-                "trimming_quantile"
-            ],
-            alpha=experiment_design.alpha,
-            alternative=experiment_design.alternative_hypothesis,
+        point_estimate = rng.normal()
+        lower_bound, upper_bound = stats.norm.interval(
+            confidence=1.0 - experiment_design.alpha,
+            loc=point_estimate,
+            scale=1.0,
         )
 
-        point_estimate = statistical_results.absolute_difference
-        lower_bound = statistical_results.absolute_difference_lower_bound
-        upper_bound = statistical_results.absolute_difference_upper_bound
-        point_estimate_relative = statistical_results.relative_difference
-        lower_bound_relative = (
-            statistical_results.relative_difference_lower_bound
-        )
-        upper_bound_relative = (
-            statistical_results.relative_difference_upper_bound
-        )
-
-        # To estimate the cost change I just look at the point estimate of the
-        # cost change. This is not accurate because it means we don't take into
-        # account the variance of the cost change.
-        # DO NOT USE THIS IN REAL EXPERIMENTS.
-        if metric.metric_per_cost:
-          absolute_cost_change = (
-              treatment_data[metric.cost_column].mean()
-              - control_data[metric.cost_column].mean()
-          )
-
-          point_estimate = point_estimate / absolute_cost_change
-          lower_bound = lower_bound / absolute_cost_change
-          upper_bound = upper_bound / absolute_cost_change
-
-          # Cannot calculate relative differences if it's metric per cost.
+        if metric.cost_per_metric or metric.metric_per_cost:
           point_estimate_relative = pd.NA
           lower_bound_relative = pd.NA
           upper_bound_relative = pd.NA
-
-        elif metric.cost_per_metric:
-          absolute_cost_change = (
-              treatment_data[metric.cost_column].mean()
-              - control_data[metric.cost_column].mean()
-          )
-
-          point_estimate = absolute_cost_change / point_estimate
-          lower_bound = absolute_cost_change / lower_bound
-
-          upper_bound = absolute_cost_change / upper_bound
-          # Cannot calculate relative differences if it's cost per metric.
-          point_estimate_relative = pd.NA
-          lower_bound_relative = pd.NA
-          upper_bound_relative = pd.NA
-
-        # For cost per metric or metric per cost, if the cost and/or metric is
-        # negative, then the lower and upper bound can be flipped. Here I just
-        # force them to be in the correct order.
-        if lower_bound > upper_bound:
-          lower_bound, upper_bound = upper_bound, lower_bound
+        else:
+          point_estimate_relative = point_estimate
+          lower_bound_relative = lower_bound
+          upper_bound_relative = upper_bound
 
         results.append({
             "cell": cell,
@@ -274,6 +199,6 @@ class RCT(_base.Methodology):
             "point_estimate_relative": point_estimate_relative,
             "lower_bound_relative": lower_bound_relative,
             "upper_bound_relative": upper_bound_relative,
-            "p_value": statistical_results.p_value,
         })
+
     return pd.DataFrame(results)

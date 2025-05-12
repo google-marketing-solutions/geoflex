@@ -323,7 +323,7 @@ def mock_design_fixture():
           value=-0.1,
           budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
       ),
-      methodology="RCT",
+      methodology="TestingMethodology",
       runtime_weeks=4,
       n_cells=3,
       alpha=0.1,
@@ -542,7 +542,7 @@ def test_experiment_design_get_summary_dict_returns_correct_dict_without_evaluat
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
-      "methodology": "RCT",
+      "methodology": "TestingMethodology",
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
@@ -564,7 +564,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
-      "methodology": "RCT",
+      "methodology": "TestingMethodology",
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
@@ -599,7 +599,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_geo_assi
       "experiment_budget": "-10%",
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
-      "methodology": "RCT",
+      "methodology": "TestingMethodology",
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (

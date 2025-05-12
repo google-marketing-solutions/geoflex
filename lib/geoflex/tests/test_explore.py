@@ -76,7 +76,7 @@ def mock_explore_spec_fixture():
               value=-0.5, budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE
           ),
       ],
-      eligible_methodologies=["RCT"],
+      eligible_methodologies=["TestingMethodology"],
       runtime_weeks_candidates=[2, 4],
       n_cells=3,
       geo_eligibility_candidates=[None],
@@ -219,10 +219,10 @@ def test_explorer_explore_uses_default_methodology_parameter_candidates_if_not_s
           suggested_design.methodology_parameters[key]
       )
 
-  # Based on the default_methodology_parameter_candidates in the RCT
-  # methodology.
+  # Based on the default_methodology_parameter_candidates in the
+  # TestingMethodology methodology.
   expected_unique_methodology_parameters = {
-      "trimming_quantile": {0.0, 0.05},
+      "mock_parameter": {1, 2},
   }
   assert unique_methodology_parameters == expected_unique_methodology_parameters
 
@@ -233,7 +233,7 @@ def test_explorer_explore_uses_spec_methodology_parameter_candidates_if_set(
   explore_spec = default_explore_spec.model_copy(
       update={
           "methodology_parameter_candidates": {
-              "RCT": {"trimming_quantile": [0.1, 0.2, 0.3]}
+              "TestingMethodology": {"mock_parameter": [1, 2, 3]}
           }
       }
   )
@@ -257,7 +257,7 @@ def test_explorer_explore_uses_spec_methodology_parameter_candidates_if_set(
 
   # Based on the spec methodology parameter candidates.
   expected_unique_methodology_parameters = {
-      "trimming_quantile": {0.1, 0.2, 0.3},
+      "mock_parameter": {1, 2, 3},
   }
   assert unique_methodology_parameters == expected_unique_methodology_parameters
 
@@ -378,13 +378,15 @@ def test_get_design_summaries_returns_correct_data_pareto_front_only(
       explore_spec=default_explore_spec,
       simulations_per_trial=5,
   )
-  explorer.explore(max_trials=3, n_jobs=1)
+  explorer.explore(max_trials=10, n_jobs=1)
   design_summaries = explorer.get_design_summaries(
       pareto_front_only=True,
   )
 
   assert isinstance(design_summaries, pd.DataFrame)
-  assert len(design_summaries) == 1
+  assert (
+      len(design_summaries) == 8
+  )  # 10 designs, but 2 are dominated by the others
 
 
 def test_count_all_eligible_designs_returns_correct_data(
@@ -395,7 +397,7 @@ def test_count_all_eligible_designs_returns_correct_data(
       explore_spec=default_explore_spec,
   )
   counts = explorer.count_all_eligible_designs()
-  assert counts == {"RCT": 8}
+  assert counts == {"TestingMethodology": 8}
 
 
 def test_can_write_explorer_to_json(

@@ -1,14 +1,14 @@
-"""Tests for the RCT methodology module."""
+"""Tests for the TestingMethodology methodology module."""
 
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
-import geoflex.methodology.rct
+import geoflex.methodology.testing_methodology
 import geoflex.metrics
 import pandas as pd
 import pytest
 
-RCT = geoflex.methodology.rct.RCT
+TestingMethodology = geoflex.methodology.testing_methodology.TestingMethodology
 ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
 )
@@ -68,7 +68,7 @@ def performance_data_fixture():
                     value=-0.1,
                     budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
                 ),
-                methodology="RCT",
+                methodology="TestingMethodology",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(
                     control=["US", "UK"], treatment=[{"CA", "AU"}]
@@ -83,7 +83,7 @@ def performance_data_fixture():
                     value=-0.1,
                     budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
                 ),
-                methodology="RCT",
+                methodology="TestingMethodology",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(control={"US", "UK"}),
             ),
@@ -96,7 +96,7 @@ def performance_data_fixture():
                     value=-0.1,
                     budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
                 ),
-                methodology="RCT",
+                methodology="TestingMethodology",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(treatment=[{"CA", "AU"}]),
             ),
@@ -109,7 +109,7 @@ def performance_data_fixture():
                     value=-0.1,
                     budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
                 ),
-                methodology="RCT",
+                methodology="TestingMethodology",
                 runtime_weeks=4,
                 geo_eligibility=None,
             ),
@@ -122,7 +122,7 @@ def performance_data_fixture():
                     value=-0.1,
                     budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
                 ),
-                methodology="RCT",
+                methodology="TestingMethodology",
                 runtime_weeks=4,
                 geo_eligibility=GeoEligibility(exclude={"US"}),
             ),
@@ -142,13 +142,18 @@ def performance_data_fixture():
         ),
     ],
 )
-def test_rct_is_eligible_for_design(design, expected_is_eligible):
-  assert RCT().is_eligible_for_design(design) == expected_is_eligible
+def test_testing_methodology_is_eligible_for_design(
+    design, expected_is_eligible
+):
+  assert (
+      TestingMethodology().is_eligible_for_design(design)
+      == expected_is_eligible
+  )
 
 
-def test_rct_has_expected_methodology_parameter_candidates():
-  assert RCT().default_methodology_parameter_candidates == {
-      "trimming_quantile": [0.0, 0.05]
+def test_testing_methodology_has_expected_methodology_parameter_candidates():
+  assert TestingMethodology().default_methodology_parameter_candidates == {
+      "mock_parameter": [1, 2]
   }
 
 
@@ -165,7 +170,7 @@ def test_rct_has_expected_methodology_parameter_candidates():
         (None, ["UK"], 3, [1, 1, 1]),
     ],
 )  # "US", "UK", "CA", "AU"
-def test_rct_assign_geos(
+def test_testing_methodology_assign_geos(
     performance_data,
     n_geos_per_group,
     exclude_geos,
@@ -185,14 +190,16 @@ def test_rct_assign_geos(
           value=-0.1,
           budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
       ),
-      methodology="RCT",
+      methodology="TestingMethodology",
       runtime_weeks=4,
       n_cells=n_cells,
       alpha=0.1,
       geo_eligibility=GeoEligibility(exclude=set(exclude_geos)),
       cell_volume_constraint=cell_volume_constraint,
   )
-  geo_assignment = RCT().assign_geos(experiment_design, performance_data)
+  geo_assignment = TestingMethodology().assign_geos(
+      experiment_design, performance_data
+  )
   geo_counts = [len(geo_assignment.control)] + list(
       map(len, geo_assignment.treatment)
   )
@@ -210,7 +217,7 @@ def test_rct_assign_geos(
   assert used_geos == eligible_geos
 
 
-def test_rct_analyze_experiment(performance_data):
+def test_testing_methodology_analyze_experiment(performance_data):
   experiment_design = ExperimentDesign(
       primary_metric=geoflex.metrics.iROAS(),
       experiment_budget=ExperimentBudget(
@@ -218,7 +225,7 @@ def test_rct_analyze_experiment(performance_data):
           budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
       ),
       secondary_metrics=[geoflex.metrics.CPiA(), "revenue", "conversions"],
-      methodology="RCT",
+      methodology="TestingMethodology",
       runtime_weeks=4,
       alpha=0.1,
       geo_eligibility=None,
@@ -227,7 +234,7 @@ def test_rct_analyze_experiment(performance_data):
       treatment=[["US", "UK"]], control=["CA", "AU"]
   )
 
-  analysis_results = RCT().analyze_experiment(
+  analysis_results = TestingMethodology().analyze_experiment(
       performance_data, experiment_design, "2024-01-01"
   )
 
@@ -235,15 +242,51 @@ def test_rct_analyze_experiment(performance_data):
       "cell": [1, 1, 1, 1],
       "metric": ["iROAS", "CPiA", "revenue", "conversions"],
       "is_primary_metric": [True, False, False, False],
-      "point_estimate": [10.0, -0.002867, -400.0, 13950.0],
-      "lower_bound": [-0.323708, -0.010241, -812.948321, 3905.762437],
-      "upper_bound": [20.323708, -0.001667, 12.948321, 23994.237563],
-      "point_estimate_relative": [pd.NA, pd.NA, -0.363636, 1.029520],
-      "lower_bound_relative": [pd.NA, pd.NA, -0.645294, 0.239739],
-      "upper_bound_relative": [pd.NA, pd.NA, 0.014503, 2.470856],
-      "p_value": [0.105573, 0.061079, 0.105573, 0.061079],
-      "is_significant": [False, True, False, True],
+      "point_estimate": [
+          0.1257302210933933,
+          -0.1321048632913019,
+          0.6404226504432821,
+          0.10490011715303971,
+      ],
+      "lower_bound": [
+          -1.5191234058580796,
+          -1.7769584902427749,
+          -1.004430976508191,
+          -1.5399535097984332,
+      ],
+      "upper_bound": [
+          1.7705838480448655,
+          1.5127487636601704,
+          2.2852762773947544,
+          1.749753744104512,
+      ],
+      "point_estimate_relative": [
+          pd.NA,
+          pd.NA,
+          0.6404226504432821,
+          0.10490011715303971,
+      ],
+      "lower_bound_relative": [
+          pd.NA,
+          pd.NA,
+          -1.004430976508191,
+          -1.5399535097984332,
+      ],
+      "upper_bound_relative": [
+          pd.NA,
+          pd.NA,
+          2.2852762773947544,
+          1.749753744104512,
+      ],
+      "p_value": [
+          0.8999454787169219,
+          0.8949013492784883,
+          0.521897861133398,
+          0.9164550660076147,
+      ],
+      "is_significant": [False, False, False, False],
   })
+
   pd.testing.assert_frame_equal(
       analysis_results, expected_results, check_like=True, atol=1e-6
   )

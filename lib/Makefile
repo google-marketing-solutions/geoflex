@@ -10,7 +10,7 @@ venv:
 				$(VENV_PATH)/bin/pip install -e '.[dev]'
 test: $(VENV_PATH)
 				@echo "Running tests..."
-				$(VENV_PATH)/bin/pytest -p no:cacheprovider
+				$(VENV_PATH)/bin/pytest -p no:cacheprovider $(filter-out test,$(MAKECMDGOALS))
 clean:
 				@echo "Cleaning up virtual environment at $(VENV_PATH)..."
 				rm -rf $(VENV_PATH) ../../$(PROJECT_NAME).egg-info

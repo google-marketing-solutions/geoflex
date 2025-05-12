@@ -32,7 +32,7 @@ def mock_design_fixture():
               geoflex.experiment_design.ExperimentBudgetType.PERCENTAGE_CHANGE
           ),
       ),
-      methodology="RCT",
+      methodology="TestingMethodology",
       runtime_weeks=4,
       n_cells=3,
       alpha=0.1,
@@ -282,9 +282,11 @@ def test_evaluator_simulate_experiment_results_for_invalid_design(
       historical_data=historical_data,
   )
 
-  # Mock the RCT methodology to always say invalid design.
+  # Mock the TestingMethodology methodology to always say invalid design.
   with mock.patch.object(
-      geoflex.methodology.rct.RCT, "is_eligible_for_design", autospec=True
+      geoflex.methodology.testing_methodology.TestingMethodology,
+      "is_eligible_for_design",
+      autospec=True,
   ) as mock_is_eligible_for_design:
     mock_is_eligible_for_design.return_value = False
     raw_results = evaluator.simulate_experiment_results(

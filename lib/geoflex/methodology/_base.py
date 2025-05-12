@@ -355,7 +355,11 @@ def get_methodology(methodology_name: str) -> Methodology:
 
 def list_methodologies() -> list[str]:
   """Returns a list of all methodologies."""
-  return list(_METHODOLOGIES.keys())
+  return [
+      methodology_name
+      for methodology_name in _METHODOLOGIES.keys()
+      if methodology_name != "TestingMethodology"
+  ]
 
 
 def assign_geos(

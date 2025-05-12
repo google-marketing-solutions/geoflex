@@ -17,6 +17,9 @@ ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
 )
+list_methodologies = geoflex.methodology.list_methodologies
+register_methodology = geoflex.methodology.register_methodology
+
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -455,3 +458,14 @@ def test_methodology_analyze_experiment_sets_is_significant_correctly(
       historical_data, default_experiment_design, "2024-01-01"
   )
   assert results["is_significant"].tolist() == [True, False]
+
+
+def test_list_methodologies_includes_registered_methodology(
+    MockMethodology,
+):
+  register_methodology(MockMethodology)
+  assert "MockMethodology" in list_methodologies()
+
+
+def test_list_methodologies_excludes_testing_methodology():
+  assert "TestingMethodology" not in list_methodologies()

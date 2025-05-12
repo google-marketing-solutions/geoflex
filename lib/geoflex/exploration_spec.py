@@ -137,7 +137,6 @@ class ExperimentDesignExplorationSpec(pydantic.BaseModel):
       be one of "two-sided", "greater", or "less". Defaults to "two-sided".
     alpha: The significance level for the experiment. Defaults to 0.1.
     eligible_methodologies: The eligible methodologies for the experiment.
-      Defaults to all methodologies except RCT.
     runtime_weeks_candidates: The candidates for the number of weeks the
       experiment can run. The experiment design will choose the best
       configuration from this list.
