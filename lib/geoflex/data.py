@@ -231,6 +231,14 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       # If it's already a datetime object, then it's valid.
       return self
 
+    if (
+        self.data[self.date_column]
+        .apply(lambda x: isinstance(x, dt.date))
+        .all()
+    ):
+      # If it's a date object, then it's valid.
+      return self
+
     if pd.api.types.is_string_dtype(self.data[self.date_column]):
       try:
         # Check that the string is in iso format.

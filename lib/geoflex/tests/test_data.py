@@ -747,8 +747,16 @@ def test_geo_performance_dataset_check_date_format_raises_error_for_non_string_o
     GeoPerformanceDataset(data=raw_data)
 
 
-def test_geo_performance_dataset_check_date_format_does_not_raise_error_for_valid_date_column(
+def test_geo_performance_dataset_check_date_format_does_not_raise_error_for_valid_datetime_column(
     raw_data,
 ):
   raw_data["date"] = pd.to_datetime(raw_data["date"])
   GeoPerformanceDataset(data=raw_data)
+
+
+def test_geo_performance_dataset_check_date_format_does_not_raise_error_for_valid_date_column(
+    raw_data,
+):
+  raw_data["date"] = pd.to_datetime(raw_data["date"]).dt.date
+  dataset = GeoPerformanceDataset(data=raw_data)
+  assert isinstance(dataset.parsed_data, pd.DataFrame)
