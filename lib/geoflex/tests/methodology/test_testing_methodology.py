@@ -5,6 +5,7 @@ import geoflex.experiment_design
 import geoflex.exploration_spec
 import geoflex.methodology.testing_methodology
 import geoflex.metrics
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -56,6 +57,22 @@ def performance_data_fixture():
           ],
       })
   )
+
+
+@pytest.fixture(name="big_performance_data")
+def big_performance_data_fixture():
+  """Fixture for a mock historical data with lots of geos."""
+  rng = np.random.default_rng(seed=42)
+  data = pd.DataFrame({
+      "geo_id": [f"geo_{i}" for i in range(20) for _ in range(100)],  # pylint: disable=g-complex-comprehension
+      "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 20,
+      "revenue": rng.random(size=2000),
+      "cost": rng.random(size=2000),
+      "conversions": rng.random(size=2000),
+  })
+  data["date"] = data["date"].dt.strftime("%Y-%m-%d")
+
+  return geoflex.data.GeoPerformanceDataset(data=data)
 
 
 @pytest.mark.parametrize(
@@ -143,10 +160,12 @@ def performance_data_fixture():
     ],
 )
 def test_testing_methodology_is_eligible_for_design(
-    design, expected_is_eligible
+    design, expected_is_eligible, big_performance_data
 ):
   assert (
-      TestingMethodology().is_eligible_for_design(design)
+      TestingMethodology().is_eligible_for_design_and_data(
+          design, big_performance_data
+      )
       == expected_is_eligible
   )
 

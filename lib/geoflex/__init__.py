@@ -30,7 +30,7 @@ register_methodology = methodology.register_methodology
 list_methodologies = methodology.list_methodologies
 assign_geos = methodology.assign_geos
 analyze_experiment = methodology.analyze_experiment
-design_is_valid = methodology.design_is_valid
+design_is_eligible_for_data = methodology.design_is_eligible_for_data
 compare_designs = experiment_design.compare_designs
 
 __version__ = "0.2.0"

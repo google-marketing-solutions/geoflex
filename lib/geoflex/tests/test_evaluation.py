@@ -297,10 +297,10 @@ def test_evaluator_simulate_experiment_results_for_invalid_design(
   # Mock the TestingMethodology methodology to always say invalid design.
   with mock.patch.object(
       geoflex.methodology.testing_methodology.TestingMethodology,
-      "is_eligible_for_design",
+      "is_eligible_for_design_and_data",
       autospec=True,
-  ) as mock_is_eligible_for_design:
-    mock_is_eligible_for_design.return_value = False
+  ) as mock_is_eligible_for_design_and_data:
+    mock_is_eligible_for_design_and_data.return_value = False
     raw_results = evaluator.simulate_experiment_results(
         mock_design, n_simulations=3
     )

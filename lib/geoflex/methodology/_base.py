@@ -16,6 +16,7 @@ ExperimentDesignExplorationSpec = (
 )
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 GeoAssignment = geoflex.experiment_design.GeoAssignment
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 
 _METHODOLOGIES = {}
 logger = logging.getLogger(__name__)
@@ -28,18 +29,86 @@ class Methodology(abc.ABC):
   using different methodologies.
   """
 
-  @abc.abstractmethod
-  def is_eligible_for_design(self, design: ExperimentDesign) -> bool:
-    """Checks if this methodology is eligible for the given design.
+  def _methodology_is_eligible_for_design_and_data(
+      self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+  ) -> bool:
+    """Methodology specific checks for eligibility for the design and dataset.
+
+    This checks that the methodology can both design and analyze the given
+    dataset, based on the given design.
 
     Args:
       design: The design to check against.
+      historical_data: The historical data to check against.
 
     Returns:
-      True if this methodology is eligible for the given design,
+      True if this methodology is eligible for the given design and dataset,
       False otherwise.
     """
-    pass
+    del design, historical_data  # Unused
+    return True
+
+  def is_eligible_for_design_and_data(
+      self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+  ) -> bool:
+    """Checks if this methodology is eligible for the given design and dataset.
+
+    This will check:
+
+    1. The methodology in the design is the same as this methodology
+    2. The data has sufficient time steps
+    3. For a percentage change budget, the costs must be non-zero.
+    4. All checks defined in _methodology_is_eligible_for_design_and_data()
+
+    Args:
+      design: The design to check against.
+      historical_data: The historical data to check against.
+
+    Returns:
+      True if this methodology is eligible for the given design and dataset,
+      False otherwise.
+    """
+    if design.methodology != self.__class__.__name__:
+      logger.error(
+          "Design methodology %s does not match called methodology %s.",
+          design.methodology,
+          self.__class__.__name__,
+      )
+      return False
+
+    n_days_in_data = len(historical_data.dates)
+    n_full_weeks_in_data = n_days_in_data // 7
+
+    if n_full_weeks_in_data < 2 * design.runtime_weeks:
+      # We need double the runtime weeks, to ensure there is enough runtime and
+      # pretest data.
+      logger.error(
+          "Data has %d days, which is not enough for a %d week experiment, need"
+          " double the runtime weeks.",
+          n_days_in_data,
+          design.runtime_weeks,
+      )
+      return False
+
+    if (
+        design.experiment_budget.budget_type
+        == ExperimentBudgetType.PERCENTAGE_CHANGE
+    ):
+      for metric in [design.primary_metric] + design.secondary_metrics:
+        if metric.cost_per_metric or metric.metric_per_cost:
+          if historical_data.parsed_data[metric.cost_column].sum() <= 0:
+            # The costs are zero, so a percentage change budget is not possible.
+            logger.error(
+                "Costs are zero or negative for metric %s, which is a cost per"
+                " metric or metric per cost. A percentage change budget is not"
+                " possible with zero costs.",
+                metric.name,
+            )
+            return False
+
+    return self._methodology_is_eligible_for_design_and_data(
+        design, historical_data
+    )
 
   @property
   def default_methodology_parameter_candidates(self) -> dict[str, list[Any]]:
@@ -380,9 +449,10 @@ def assign_geos(
     The geo assignment for the experiment, or None if the design is not valid
     for the methodology.
   """
-  if not design_is_valid(experiment_design):
+  if not design_is_eligible_for_data(experiment_design, historical_data):
     logger.warning(
-        "Design is not valid for methodology %s, skipping geo assignment.",
+        "Design or data are not valid for methodology %s, skipping geo"
+        " assignment.",
         experiment_design.methodology,
     )
     return None
@@ -429,9 +499,9 @@ def analyze_experiment(
     A dataframe with the analysis results, or None if the design is not valid
     for the methodology.
   """
-  if not design_is_valid(experiment_design):
+  if not design_is_eligible_for_data(experiment_design, runtime_data):
     logger.warning(
-        "Design is not valid for methodology %s, skipping analysis.",
+        "Design or data are not valid for methodology %s, skipping analysis.",
         experiment_design.methodology,
     )
     return None
@@ -442,18 +512,21 @@ def analyze_experiment(
   )
 
 
-def design_is_valid(experiment_design: ExperimentDesign) -> bool:
+def design_is_eligible_for_data(
+    experiment_design: ExperimentDesign, data: GeoPerformanceDataset
+) -> bool:
   """Checks if the experiment design valid.
 
   This will check if the specified methodology is eligible for the other
-  parameters in the design. Not all methodologies will be able to use all
-  parameters, so this will check that the values make sense together.
+  parameters in the design and the data. Not all methodologies will be able to
+  use all parameters, so this will check that the values make sense together.
 
   Args:
     experiment_design: The experiment design to check.
+    data: The data for the experiment.
 
   Returns:
     True if the design is valid, False otherwise.
   """
   methodology = get_methodology(experiment_design.methodology)
-  return methodology.is_eligible_for_design(experiment_design)
+  return methodology.is_eligible_for_design_and_data(experiment_design, data)

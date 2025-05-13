@@ -23,7 +23,7 @@ GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesignEvaluator = geoflex.evaluation.ExperimentDesignEvaluator
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 assign_geos = geoflex.methodology.assign_geos
-design_is_valid = geoflex.methodology.design_is_valid
+design_is_eligible_for_data = geoflex.methodology.design_is_eligible_for_data
 get_methodology = geoflex.methodology.get_methodology
 
 logger = logging.getLogger(__name__)
@@ -378,7 +378,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     """
     # Suggest the experiment design based on the design spec.
     design = self._suggest_experiment_design(trial)
-    if design_is_valid(design):
+    if design_is_eligible_for_data(design, self.historical_data):
       trial.set_user_attr("methodology", design.methodology)
       return 1.0
     else:
@@ -415,7 +415,8 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     all_results = counting_study.trials_dataframe()
 
     counts = (
-        all_results.groupby("user_attrs_methodology")["value"]
+        all_results.drop_duplicates()
+        .groupby("user_attrs_methodology")["value"]
         .sum()
         .astype(int)
         .to_dict()

@@ -19,7 +19,8 @@ ExperimentDesignExplorationSpec = (
 )
 list_methodologies = geoflex.methodology.list_methodologies
 register_methodology = geoflex.methodology.register_methodology
-
+ExperimentBudget = geoflex.experiment_design.ExperimentBudget
+ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -469,3 +470,65 @@ def test_list_methodologies_includes_registered_methodology(
 
 def test_list_methodologies_excludes_testing_methodology():
   assert "TestingMethodology" not in list_methodologies()
+
+
+def test_is_eligible_for_design_and_data_returns_true_for_good_design_and_data(
+    MockMethodology, historical_data, default_experiment_design
+):
+  assert MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design, historical_data
+  )
+
+
+def test_is_eligible_for_design_and_data_returns_false_if_design_name_does_not_match_methodology_name(
+    MockMethodology, historical_data, default_experiment_design
+):
+  assert not MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design.make_variation(methodology="OtherMethodology"),
+      historical_data,
+  )
+
+
+def test_is_eligible_for_design_and_data_returns_false_if_not_enough_data_days(
+    MockMethodology, historical_data, default_experiment_design
+):
+  assert not MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design.make_variation(runtime_weeks=100),
+      historical_data,
+  )
+
+
+def test_is_eligible_for_design_and_data_returns_false_if_zero_costs_and_percentage_change_budget(
+    MockMethodology, historical_data, default_experiment_design
+):
+  zero_costs_data = historical_data.data.copy()
+  zero_costs_data["cost"] = 0.0
+  zero_costs_data = GeoPerformanceDataset(data=zero_costs_data)
+
+  assert not MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design.make_variation(
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+              value=-1.0,
+          ),
+          primary_metric=geoflex.metrics.iROAS(),
+      ),
+      zero_costs_data,
+  )
+
+
+def test_is_eligible_for_design_and_data_returns_false_if_methodology_returns_false(
+    MockMethodology, historical_data, default_experiment_design
+):
+  class MockMethodologyWithIneligibility(MockMethodology):
+
+    def _methodology_is_eligible_for_design_and_data(
+        self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+    ) -> bool:
+      del design, historical_data
+      return False
+
+  assert not MockMethodologyWithIneligibility().is_eligible_for_design_and_data(
+      default_experiment_design,
+      historical_data,
+  )

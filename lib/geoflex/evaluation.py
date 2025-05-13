@@ -557,7 +557,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       maximum date in the historical data minus the runtime weeks in the
       experiment design.
     """
-    if not geoflex.methodology.design_is_valid(design):
+    if not geoflex.methodology.design_is_eligible_for_data(
+        design, self.historical_data
+    ):
       results = RawExperimentSimulationResults(
           design=design,
           simulation_results=pd.DataFrame(),
