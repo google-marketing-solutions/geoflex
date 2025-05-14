@@ -505,12 +505,20 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         catch=Exception,  # Catch all exceptions, never stop the study.
     )
 
-    best_trial_numbers = [trial.number for trial in self.study.best_trials]
-    self.pareto_front_design_ids = (
-        self.study.trials_dataframe()
-        .loc[best_trial_numbers, "user_attrs_design_id"]
-        .values.tolist()
-    )
+    trials_dataframe = self.study.trials_dataframe()
+    if "user_attrs_design_id" in trials_dataframe.columns:
+      best_trial_numbers = [trial.number for trial in self.study.best_trials]
+      self.pareto_front_design_ids = (
+          self.study.trials_dataframe()
+          .loc[best_trial_numbers, "user_attrs_design_id"]
+          .values.tolist()
+      )
+    else:
+      logger.warning(
+          "user_attrs_design_id not found in trials dataframe. This usually "
+          "happens because there are no valid trials."
+      )
+      self.pareto_front_design_ids = []
 
   def get_designs(
       self, top_n: int | None = None, pareto_front_only: bool = False
