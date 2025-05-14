@@ -37,15 +37,13 @@ def _auto_seasonal_decompose(
   """
   if seasons_per_filt is not None:
     filt = np.ones(seasons_per_filt * period) / float(seasons_per_filt * period)
-    return seasonal_decompose(
-        y, period=period, filt=filt, extrapolate_trend="freq"
-    )
+    return seasonal_decompose(y, period=period, filt=filt, extrapolate_trend=3)
   best_aic = np.inf
   best_decomp = None
   for i in range(1, max_seasons_per_filt + 1):
     filt = np.ones(i * period) / float(i * period)
     decomp = seasonal_decompose(
-        y, period=period, filt=filt, extrapolate_trend="freq"
+        y, period=period, filt=filt, extrapolate_trend=3
     )
     ar1_fit = VAR(decomp.resid).fit(1)
     if ar1_fit.aic < best_aic:
@@ -94,8 +92,6 @@ class MultivariateTimeseriesBootstrap:
       size as the original data.
   """
 
-  _MAX_LAG = 30  # When automatically inferring the seasons per block, the
-
   # max lag to consider.
   def __init__(
       self,
@@ -104,6 +100,7 @@ class MultivariateTimeseriesBootstrap:
       seasons_per_block: int | None = None,
       verbose: bool = False,
       full_blocks_only: bool = False,
+      max_lag: int = 30,
   ):
     """Initializes the MultivariateTimeseriesBootstrap.
 
@@ -117,12 +114,16 @@ class MultivariateTimeseriesBootstrap:
       full_blocks_only: If True, only full blocks are used for bootstrapping.
         This means that the last few data points (after the final complete
         block) are ignored. Runs faster, but the resulting bootstrap samples are
+        not the same size as the original data.
+      max_lag: The maximum lag to consider when fitting the AR model. This is
+        used to determine the block size.
     """
     self.seasonality = seasonality
     self.log_transform = log_transform
     self.seasons_per_block = seasons_per_block
     self.verbose = verbose
     self.full_blocks_only = full_blocks_only
+    self.max_lag = max_lag
     # Set when fit() is called.
     self.block_size = None
 
@@ -143,8 +144,10 @@ class MultivariateTimeseriesBootstrap:
   def _set_block_size(self, y_diff: np.ndarray) -> np.ndarray:
     """Sets the block size based on the autocorrelation of the data."""
     max_order = 1
+    max_lag = max([min([self.max_lag, y_diff.shape[0] // 2 - 1]), 1])
+
     for i in range(self.n_series):
-      ar_lags = ar_select_order(y_diff[:, i], maxlag=self._MAX_LAG).ar_lags
+      ar_lags = ar_select_order(y_diff[:, i], maxlag=max_lag).ar_lags
       if ar_lags is not None:
         max_order = int(np.max(np.concatenate([ar_lags, [max_order]])))
     min_seasons_per_block = int(np.ceil(max_order / self.seasonality))
@@ -183,6 +186,15 @@ class MultivariateTimeseriesBootstrap:
     else:
       self._columns = [f"Column {i}" for i in range(y.shape[1])]
       self._index = np.arange(y.shape[0])
+
+    # Check that the number of time steps is at least 4 * seasonality.
+    if self.seasonality * seasons_per_filt * 2 > y.shape[0]:
+      raise ValueError(
+          "The number of time steps is too small for the given seasonality. "
+          "Please increase the number of time steps or decrease the "
+          "seasonality."
+      )
+
     self.n_series = y.shape[1]
     self.n_time_steps = y.shape[0]
     self.y_transformed = self._transform_y(y).copy()
@@ -191,6 +203,7 @@ class MultivariateTimeseriesBootstrap:
         period=self.seasonality,
         seasons_per_filt=seasons_per_filt,
     )
+
     self.trend = decomp.trend
     self.seasonal = decomp.seasonal
     self.noise = decomp.resid

@@ -200,6 +200,14 @@ class GeoAssignmentRepresentivenessScorer:
       The score of the geo assignment and the p-value if with_pvalue is True,
       otherwise None.
     """
+    if len(assignment) <= 2:
+      logger.warning(
+          "Assignment has only %d geos, which is too few for a valid"
+          " representativeness score. Score is set to 0.0.",
+          len(assignment),
+      )
+      return 0.0, None
+
     score = self._score(assignment)
     if with_pvalue:
       permutation_scores = self._permutation_samples(
@@ -333,6 +341,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     bootstrapper_log_transform: Whether to log transform the data for the
       bootstrapper.
     bootstrapper_seasonality: The seasonality to use for the bootstrapper.
+    bootstrapper_max_lag: The maximum lag to use for the bootstrapper.
     validation_check_threhold: The threhold to use for the validation check.
       Defaults to 0.001, which is a 99.9% confidence level. Typically this does
       not need to be changed.
@@ -352,6 +361,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   bootstrapper_seasons_per_block: int = 2
   bootstrapper_log_transform: bool = True
   bootstrapper_seasonality: int = 7
+  bootstrapper_max_lag: int = 30
 
   validation_check_threhold: float = 0.001
 
@@ -371,6 +381,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         log_transform=self.bootstrapper_log_transform,
         seasonality=self.bootstrapper_seasonality,
         seasons_per_block=self.bootstrapper_seasons_per_block,
+        max_lag=self.bootstrapper_max_lag,
     )
     bootstrapper.fit(
         self.historical_data.pivoted_data,

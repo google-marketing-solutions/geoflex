@@ -175,6 +175,18 @@ def test_scorer_can_handle_assignment_with_excluded_geos(raw_data):
   assert result >= -1.0
 
 
+@pytest.mark.parametrize("geos_in_data", [["US"], ["US", "UK"]])
+def test_scorer_returns_0_if_le_2_geos_in_assignment(raw_data, geos_in_data):
+
+  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
+      historical_data=raw_data,
+      geo_column_name="geo_id",
+      geos=geos_in_data,
+  )
+  result, _ = scorer(np.array([0, 1][: len(geos_in_data)]))
+  assert result == 0.0
+
+
 def test_calculate_minimum_detectable_effect_from_stats_raises_error_for_invalid_alternative():
   with pytest.raises(ValueError):
     geoflex.evaluation.calculate_minimum_detectable_effect_from_stats(

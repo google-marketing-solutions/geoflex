@@ -73,7 +73,28 @@ class MaxTrialsCallback:
 
 
 class ExperimentDesignExplorer(pydantic.BaseModel):
-  """The class for exploring experiment designs."""
+  """The class for exploring experiment designs.
+
+  Attributes:
+    historical_data: The historical data to design the experiment for.
+    explore_spec: The experiment design exploration spec.
+    simulations_per_trial: The number of simulations to run per trial.
+    bootstrapper_seasons_per_block: The number of seasons per block to use for
+      the bootstrapper.
+    bootstrapper_log_transform: Whether to log transform the data for the
+      bootstrapper.
+    bootstrapper_seasonality: The seasonality to use for the bootstrapper.
+    bootstrapper_max_lag: The maximum lag to use for the bootstrapper.
+    validation_check_threhold: The threhold to use for the validation check.
+      Defaults to 0.001, which is a 99.9% confidence level. Typically this does
+      not need to be changed.
+    explored_designs: The explored designs. This is a dictionary of design_id to
+      ExperimentDesign. Every time a new design is explored, the design will be
+      added to this dictionary.
+    study: The Optuna study used to explore the experiment designs.
+    pareto_front_design_ids: The design ids that are on the Pareto front (most
+      optimal).
+  """
 
   historical_data: GeoPerformanceDataset
   explore_spec: ExperimentDesignExplorationSpec
@@ -82,6 +103,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
   bootstrapper_seasons_per_block: int = 2
   bootstrapper_log_transform: bool = True
   bootstrapper_seasonality: int = 7
+  bootstrapper_max_lag: int = 30
 
   validation_check_threhold: float = 0.001
 
@@ -124,6 +146,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         bootstrapper_seasons_per_block=self.bootstrapper_seasons_per_block,
         bootstrapper_log_transform=self.bootstrapper_log_transform,
         bootstrapper_seasonality=self.bootstrapper_seasonality,
+        bootstrapper_max_lag=self.bootstrapper_max_lag,
         validation_check_threhold=self.validation_check_threhold,
     )
 

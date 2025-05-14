@@ -26,6 +26,44 @@ ELIGIBLE_PARAMS = [
 ]
 
 
+@pytest.mark.parametrize(
+    "n_time_steps, seasonality, seasons_per_filt",
+    [
+        (27, 7, 2),
+        (5, 1, 3),
+        (3, 2, 1),
+    ],
+)
+def test_bootstrap_fit_raises_error_if_too_few_time_steps(
+    raw_data, n_time_steps, seasonality, seasons_per_filt
+):
+  bootstrap = geoflex.bootstrap.MultivariateTimeseriesBootstrap(
+      seasonality=seasonality
+  )
+  with pytest.raises(ValueError):
+    bootstrap.fit(raw_data[:n_time_steps, :], seasons_per_filt=seasons_per_filt)
+
+
+@pytest.mark.parametrize(
+    "n_time_steps, seasonality, seasons_per_filt",
+    [
+        (29, 7, 2),
+        (7, 1, 3),
+        (5, 2, 1),
+    ],
+)
+def test_bootstrap_works_just_above_minimum_time_steps(
+    raw_data, n_time_steps, seasonality, seasons_per_filt
+):
+  bootstrap = geoflex.bootstrap.MultivariateTimeseriesBootstrap(
+      seasonality=seasonality
+  )
+  bootstrap.fit(raw_data[:n_time_steps, :], seasons_per_filt=seasons_per_filt)
+  bootstrap_samples = bootstrap.sample(n_bootstraps=10)
+
+  assert bootstrap_samples.shape == (10, n_time_steps, 2)
+
+
 @pytest.mark.parametrize("params", ELIGIBLE_PARAMS)
 def test_bootstrap_sample_returns_correct_shape_and_finite_values(
     raw_data, params
