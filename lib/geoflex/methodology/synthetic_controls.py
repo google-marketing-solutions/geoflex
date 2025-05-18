@@ -1,5 +1,6 @@
 """The Synthetic Controls methodology for GeoFleX."""
 
+from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
@@ -53,7 +54,85 @@ class SyntheticControls(_base.Methodology):
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
-    pass
+
+    params = {}
+    if experiment_design.methodology_parameters:
+      params = experiment_design.methodology_parameters
+
+    exclude_geos_input = list(self._get_param(params, "exclude_geos"))
+
+    results_df, _ = run_experiment_simulations(
+        df=historical_data.parsed_data,
+        geo_var=historical_data.geo_id_column,
+        time_var=historical_data.date_column,
+        dependent=experiment_design.primary_metric.column,
+        num_iterations=int(self._get_param(params, "num_iterations")),
+        min_treatment_geos=int(self._get_param(params, "min_treatment_geos")),
+        max_treatment_geos=int(self._get_param(params, "max_treatment_geos")),
+        force_test_geos=list(self._get_param(params, "force_test_geos")),
+        force_control_geos=list(self._get_param(params, "force_control_geos")),
+        exclude_geos=exclude_geos_input,
+        effect_size=float(self._get_param(params, "effect_size")),
+        test_duration=int(self._get_param(params, "test_duration")),
+        alpha=float(self._get_param(params, "alpha")),
+        target_power=float(self._get_param(params, "target_power"))
+    )
+
+    best_assignment_series = results_df.iloc[0]
+
+    final_treatment_geos_list = best_assignment_series.get("treatment_geos", [])
+    final_control_geos_list = best_assignment_series.get("control_geos", [])
+
+    if final_treatment_geos_list:
+      treatment_as_set = final_treatment_geos_list
+    else:
+      treatment_as_set = []
+    treatment_as_set = set(treatment_as_set)
+
+    if final_control_geos_list:
+      control_as_set = final_control_geos_list
+    else:
+      control_as_set = []
+    control_as_set = set(control_as_set)
+
+    exclude_as_set = set(exclude_geos_input if exclude_geos_input else [])
+
+    all_assigned_geos_set = treatment_as_set | control_as_set | exclude_as_set
+
+    return GeoAssignment(
+        treatment=[treatment_as_set],
+        control=control_as_set,
+        exclude=exclude_as_set,
+        all_geos=all_assigned_geos_set
+    )
+
+  def _get_param(
+      self,
+      methodology_parameters: dict[str, Any],
+      param_name: str,
+      required: bool = False
+  ) -> Any:
+    """Assigns geos to control and test based on the synthetic controls method.
+
+    Args:
+      methodology_parameters: a dictionary with the methodology parameters.
+      param_name: the name of the param to get.
+      required: boolean - is it required or not.
+
+    Returns:
+      The value of the parameter that was required.
+    """
+
+    val = methodology_parameters.get(
+        param_name, self.default_params.get(param_name)
+    )
+    if val is None and required:
+      if param_name in self.default_params:
+        return self.default_params[param_name]
+      raise ValueError(
+          f"""Required parameter '{param_name}'
+          not found in methodology_parameters or defaults.""")
+    return val
 
   def analyze_experiment(
       self,
@@ -87,3 +166,45 @@ class SyntheticControls(_base.Methodology):
       A dataframe with the analysis results.
     """
     pass
+
+
+# pylint: disable=unused-argument]
+def run_experiment_simulations(
+    df: pd.DataFrame,
+    geo_var: str,
+    time_var: str,
+    dependent: str,
+    num_iterations: int,
+    min_treatment_geos: int,
+    max_treatment_geos: int,
+    force_test_geos: list[str],
+    force_control_geos: list[str],
+    exclude_geos: list[str],
+    effect_size: float,
+    test_duration: int,
+    alpha: float,
+    target_power: float,
+) -> pd.DataFrame:
+  """Wraps the provided script for running synthetic control simulations.
+
+  Args:
+    df: DataFrame containing the historical data.
+    geo_var: Name of the column identifying the geo units.
+    time_var: Name of the column identifying the time periods.
+    dependent: Name of the dependent variable column.
+    num_iterations: Number of simulation iterations.
+    min_treatment_geos: Minimum number of geos in the treatment group.
+    max_treatment_geos: Maximum number of geos in the treatment group.
+    force_test_geos: List of geos to always include in the treatment group.
+    force_control_geos: List of geos to always include in the control group.
+    exclude_geos: List of geos to exclude from any group.
+    effect_size: Assumed effect size for power calculations.
+    test_duration: Duration of the hypothetical test (e.g., in days) for
+      power calculations.
+    alpha: Significance level for power calculations.
+    target_power: Target power for MDE calculations.
+
+  Returns:
+    A DataFrame containing the results of the simulations, sorted by power.
+  """
+  pass
