@@ -174,3 +174,124 @@ def infer_p_value(
     p_value = stats.norm.cdf(z_statistic)
 
   return p_value
+
+
+def assign_geos_randomly(
+    geo_ids: list[str],
+    n_groups: int,
+    rng: np.random.Generator,
+    metric_values: list[float] | None = None,
+    max_metric_per_group: list[float] | None = None,
+    pre_assigned_geos: dict[str, int] | None = None,
+) -> tuple[list[list[str]], list[float]]:
+  """Randomly assigns geo units into up to N separate groups.
+
+  This will first assign the pre-assigned geos to their target groups, and then
+  randomly assign the remaining geos to the groups by sorting them randomly
+  and assigning them one by one until the groups are full.
+
+  Args:
+      geo_ids: A list of unique string identifiers for each geo unit.
+      n_groups: The number of groups to assign geos into.
+      rng: A numpy random number generator.
+      metric_values: An optional list of float values, where metric[i] is the
+        metric for geo_ids[i].
+      max_metric_per_group: A list of float values, where
+        max_metric_per_group[j] is the maximum total metric allowed for group j.
+        The length of this list must be equal to n_groups.
+      pre_assigned_geos: An optional dictionary where keys are geo_ids (str) and
+        values are group_indices (int) for geos that must be placed in a
+        specific group. Defaults to None.
+
+  Returns:
+      A tuple:
+        First element is a list of lists, where each inner list contains the
+          geo_ids assigned to that group. The outer list will have a length of
+          n_groups.
+        Second element is a list of the total metric values for each group.
+
+  Raises:
+      ValueError: If input constraints are violated (e.g., mismatched lengths,
+        invalid group index, pre-assignment exceeds capacity, or empty group
+        after random assignment).
+  """
+  if metric_values is None:
+    metric_values = [1.0] * len(geo_ids)  # Ensure float for consistency
+
+  if n_groups <= 0:
+    error_message = "n_groups must be greater than 0."
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  if not geo_ids:
+    # If no geos are provided, return empty groups.
+    return [[]] * n_groups, [0.0] * n_groups
+
+  if max_metric_per_group is None:
+    max_metric_per_group = [np.inf] * n_groups
+
+  if len(geo_ids) != len(metric_values):
+    error_message = (
+        "geo_ids and metric must have the same length. Got"
+        f" {len(geo_ids)} geo_ids and {len(metric_values)} metric values."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  if n_groups != len(max_metric_per_group):
+    error_message = (
+        "n_groups must be equal to the length of max_metric_per_group."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  assigned_geos_in_groups: list[list[str]] = [[] for _ in range(n_groups)]
+  current_group_metrics = np.zeros(n_groups, dtype=float)
+
+  geo_to_metric_map = {gid: met for gid, met in zip(geo_ids, metric_values)}
+  geo_ids_for_assignment = geo_ids.copy()
+
+  if pre_assigned_geos:
+    for geo_to_preassign, target_group_idx in pre_assigned_geos.items():
+      if geo_to_preassign not in geo_to_metric_map:
+        raise ValueError(
+            f"Pre-assigned geo_id '{geo_to_preassign}' not found in main"
+            " geo_ids list."
+        )
+
+      if not (0 <= target_group_idx < n_groups):
+        raise ValueError(
+            f"Invalid target_group_idx {target_group_idx} for pre-assigned geo"
+            f" '{geo_to_preassign}'. Must be between 0 and {n_groups-1}."
+        )
+
+      geo_metric_val = geo_to_metric_map[geo_to_preassign]
+      assigned_geos_in_groups[target_group_idx].append(geo_to_preassign)
+      current_group_metrics[target_group_idx] += geo_metric_val
+      if geo_to_preassign in geo_ids_for_assignment:
+        geo_ids_for_assignment.remove(geo_to_preassign)
+
+  rng.shuffle(geo_ids_for_assignment)
+
+  for geo_id in geo_ids_for_assignment:
+    geo_metric = geo_to_metric_map[geo_id]
+    eligible_groups_indices = []
+    for i in range(n_groups):
+      if (
+          current_group_metrics[i] + geo_metric
+          <= max_metric_per_group[i] + 1e-9  # Tolerance check
+      ):
+        eligible_groups_indices.append(i)
+
+    if not eligible_groups_indices:
+      continue
+
+    chosen_group_idx = rng.choice(eligible_groups_indices)
+    assigned_geos_in_groups[chosen_group_idx].append(geo_id)
+    current_group_metrics[chosen_group_idx] += geo_metric
+
+  for i, group in enumerate(assigned_geos_in_groups):
+    if not group:
+      raise ValueError(f"Group {i} is empty after assigning all geos.")
+
+  return assigned_geos_in_groups, current_group_metrics.tolist()

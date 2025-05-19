@@ -1,5 +1,6 @@
 """Tests for the utils module."""
 
+import re
 from feedx import statistics
 from geoflex import utils
 import numpy as np
@@ -9,6 +10,7 @@ import pytest
 
 
 ParquetDataFrame = utils.ParquetDataFrame
+assign_geos_randomly = utils.assign_geos_randomly
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -190,3 +192,272 @@ def test_infer_p_value_returns_correct_p_value(alternative_hypothesis, alpha):
   assert np.isclose(
       inferred_p_value, statistical_test_results.p_value, atol=1e-6
   )
+
+
+@pytest.fixture(name="rng_fixed_seed")
+def rng_fixed_seed_fixture():
+  """Provides a numpy random number generator with a fixed seed."""
+  return np.random.default_rng(seed=42)
+
+
+def test_basic_assignment_no_constraints(rng_fixed_seed):
+  """Test basic assignment with no metrics or pre-assignments."""
+  geo_ids = ["G1", "G2", "G3", "G4"]
+  n_groups = 2
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids, n_groups, rng_fixed_seed
+  )
+
+  assert len(assigned_geos) == n_groups
+  assert len(group_metrics) == n_groups
+
+  all_assigned = sorted([geo for group in assigned_geos for geo in group])  # pylint: disable=g-complex-comprehension
+  assert all_assigned == sorted(geo_ids)  # All geos assigned
+
+  # Check that default metric (1.0 per geo) is applied
+  for i in range(n_groups):
+    assert group_metrics[i] == float(len(assigned_geos[i]))
+    assert assigned_geos[i]  # No empty groups due to final check
+
+
+def test_assignment_with_metrics_and_constraints(rng_fixed_seed):
+  """Test assignment with specific metrics and max_metric_per_group."""
+  geo_ids = ["G1", "G2", "G3", "G4", "G5"]
+  metric_values = [10.0, 20.0, 5.0, 15.0, 25.0]
+  n_groups = 2
+  max_metric_per_group = [30.0, 40.0]
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids, n_groups, rng_fixed_seed, metric_values, max_metric_per_group
+  )
+
+  assert len(assigned_geos) == n_groups
+  assert len(group_metrics) == n_groups
+
+  geo_to_metric_map = {gid: met for gid, met in zip(geo_ids, metric_values)}
+
+  total_assigned_metric = 0
+  all_assigned_geos_flat = []
+  for i, current_assigned_geos in enumerate(assigned_geos):
+    current_metric_sum = sum(geo_to_metric_map[g] for g in assigned_geos[i])
+    assert abs(group_metrics[i] - current_metric_sum) < 1e-9
+    assert group_metrics[i] <= max_metric_per_group[i] + 1e-9
+    assert current_assigned_geos  # No empty groups
+    all_assigned_geos_flat.extend(current_assigned_geos)
+    total_assigned_metric += current_metric_sum
+
+
+def test_pre_assigned_geos_respected(rng_fixed_seed):
+  """Test that pre-assigned geos are placed in their designated groups."""
+  geo_ids = ["G1", "G2", "G3", "G4"]
+  n_groups = 2
+  pre_assigned_geos = {"G1": 0, "G4": 1}
+  metric_values = [1.0, 2.0, 3.0, 4.0]
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids,
+      n_groups,
+      rng_fixed_seed,
+      metric_values=metric_values,
+      pre_assigned_geos=pre_assigned_geos,
+  )
+
+  assert "G1" in assigned_geos[0]
+  assert "G4" in assigned_geos[1]
+  assert group_metrics[0] >= 1.0  # G1's metric
+  assert group_metrics[1] >= 4.0  # G4's metric
+
+  # Ensure all geos are assigned and groups are not empty (due to final check)
+  all_assigned_count = sum(len(g) for g in assigned_geos)
+  assert all_assigned_count == len(geo_ids)
+  assert assigned_geos[0]
+  assert assigned_geos[1]
+
+
+def test_all_geos_pre_assigned(rng_fixed_seed):
+  """Test behavior when all geos are pre-assigned."""
+  geo_ids = ["G1", "G2"]
+  n_groups = 2
+  metric_values = [10.0, 20.0]
+  pre_assigned_geos = {"G1": 0, "G2": 1}
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids,
+      n_groups,
+      rng_fixed_seed,
+      metric_values,
+      pre_assigned_geos=pre_assigned_geos,
+  )
+
+  assert assigned_geos == [["G1"], ["G2"]]
+  assert group_metrics == [10.0, 20.0]
+
+
+def test_no_geos_to_assign_empty_groups_allowed(rng_fixed_seed):
+  """Test with no geos; groups should be empty, and no 'empty group' error."""
+  geo_ids = []
+  n_groups = 2
+  metric_values = []
+  max_metric_per_group = [10.0, 10.0]
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids, n_groups, rng_fixed_seed, metric_values, max_metric_per_group
+  )
+
+  assert assigned_geos == [[], []]
+  assert group_metrics == [0.0, 0.0]
+
+
+@pytest.mark.parametrize("n_groups", [-1, 0])
+def test_n_groups_less_than_1_error(rng_fixed_seed, n_groups):
+  """Test ValueError for negative n_groups."""
+  with pytest.raises(
+      ValueError, match=re.escape("n_groups must be greater than 0.")
+  ):
+    assign_geos_randomly(
+        geo_ids=["G1", "G2", "G3"], n_groups=n_groups, rng=rng_fixed_seed
+    )
+
+
+def test_mismatched_geo_ids_metric_values_error(rng_fixed_seed):
+  """Test ValueError for mismatched lengths of geo_ids and metric_values."""
+  with pytest.raises(
+      ValueError,
+      match=re.escape("geo_ids and metric must have the same length."),
+  ):
+    assign_geos_randomly(
+        geo_ids=["G1", "G2"],
+        n_groups=1,
+        rng=rng_fixed_seed,
+        metric_values=[1.0],
+    )
+
+
+def test_mismatched_n_groups_max_metric_error(rng_fixed_seed):
+  """Test ValueError for n_groups not matching length of max_metric_per_group."""
+  with pytest.raises(
+      ValueError,
+      match=re.escape(
+          "n_groups must be equal to the length of max_metric_per_group."
+      ),
+  ):
+    assign_geos_randomly(
+        geo_ids=["G1"],
+        n_groups=2,
+        rng=rng_fixed_seed,
+        max_metric_per_group=[10.0],
+    )
+
+
+def test_pre_assigned_geo_not_in_geo_ids_error(rng_fixed_seed):
+  """Test ValueError if a pre-assigned geo is not in the main geo_ids list."""
+  with pytest.raises(
+      ValueError,
+      match=re.escape(
+          "Pre-assigned geo_id 'G2' not found in main geo_ids list."
+      ),
+  ):
+    assign_geos_randomly(
+        geo_ids=["G1"],
+        n_groups=1,
+        rng=rng_fixed_seed,
+        pre_assigned_geos={"G2": 0},
+    )
+
+
+@pytest.mark.parametrize("pre_assignment", [-1, 2])
+def test_pre_assigned_invalid_group_index_error(rng_fixed_seed, pre_assignment):
+  """Test ValueError for invalid target_group_idx in pre-assignments."""
+  with pytest.raises(
+      ValueError,
+      match=re.escape(
+          f"Invalid target_group_idx {pre_assignment} for pre-assigned geo"
+          " 'G1'. Must be between 0 and 1."
+      ),
+  ):
+    assign_geos_randomly(
+        geo_ids=["G1"],
+        n_groups=2,
+        rng=rng_fixed_seed,
+        pre_assigned_geos={"G1": pre_assignment},
+    )
+
+
+def test_some_geos_unassigned_due_to_capacity(rng_fixed_seed):
+  """Test that geos are not assigned if they exceed group capacity."""
+  geo_ids = ["G1", "G2", "G3"]
+  metric_values = [10.0, 10.0, 10.0]
+  n_groups = 1
+  max_metric_per_group = [15.0]  # Only one geo can fit
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids, n_groups, rng_fixed_seed, metric_values, max_metric_per_group
+  )
+
+  assert len(assigned_geos[0]) == 1  # Only one geo should be assigned
+  assert group_metrics[0] == 10.0
+
+
+def test_empty_group_error_if_random_assignment_leaves_group_empty(
+    rng_fixed_seed,
+):
+  """Test ValueError if random assignment results in an empty group."""
+  geo_ids = ["G1"]  # Only one geo
+  metric_values = [1.0]
+  n_groups = 2  # Two groups, but only one geo
+  max_metric_per_group = [10.0, 10.0]
+
+  # G1 will be assigned to one group. The other will be empty.
+  # This will trigger the "empty group" error because random assignment phase
+  # was entered.
+  with pytest.raises(
+      ValueError, match=re.escape("is empty after assigning all geos")
+  ):
+    assign_geos_randomly(
+        geo_ids, n_groups, rng_fixed_seed, metric_values, max_metric_per_group
+    )
+
+
+def test_pre_assignment_exceeds_capacity_no_error_at_pre_assignment(
+    rng_fixed_seed,
+):
+  geo_ids = ["G1", "G2"]
+  metric_values = [100.0, 1.0]
+  n_groups = 2
+  max_metric_per_group = [10.0, 10.0]  # Group 0 capacity is 10
+  pre_assigned_geos = {"G1": 0}  # Pre-assign G1 (metric 100) to group 0
+
+  assigned_geos, group_metrics = assign_geos_randomly(
+      geo_ids,
+      n_groups,
+      rng_fixed_seed,
+      metric_values,
+      max_metric_per_group,
+      pre_assigned_geos,
+  )
+
+  assert "G1" in assigned_geos[0]
+  assert group_metrics[0] == 100.0  # Exceeds max_metric_per_group[0]
+  assert "G2" in assigned_geos[1]
+  assert group_metrics[1] == 1.0
+  # No error raised, demonstrating current behavior.
+
+
+def test_reproducibility_with_seed():
+  """Test that the same seed yields the same results."""
+  geo_ids = [f"g{i}" for i in range(20)]
+  n_groups = 2
+
+  rng1 = np.random.default_rng(seed=123)
+  assigned1, metrics1 = assign_geos_randomly(geo_ids, n_groups, rng1)
+
+  rng2 = np.random.default_rng(seed=123)
+  assigned2, metrics2 = assign_geos_randomly(geo_ids, n_groups, rng2)
+
+  assert assigned1 == assigned2
+  assert metrics1 == metrics2
+
+  rng3 = np.random.default_rng(seed=456)
+  assigned3, _ = assign_geos_randomly(geo_ids, n_groups, rng3)
+  assert assigned1 != assigned3
