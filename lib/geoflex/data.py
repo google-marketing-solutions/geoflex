@@ -382,12 +382,13 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         design.experiment_budget.budget_type
         == ExperimentBudgetType.TOTAL_BUDGET
     )
+    has_cost_metrics = bool(cost_columns)
     has_existing_cost = data[list(cost_columns)].abs().sum().sum() > 0
 
-    if is_percent_change and not has_existing_cost:
+    if has_cost_metrics and is_percent_change and not has_existing_cost:
       error_message = (
-          "Cost metric found in a hold back experiment. This is not"
-          " supported."
+          "Cost metrics exist and are zero, cannot use a percentage change"
+          " budget."
       )
       logger.error(error_message)
       raise ValueError(error_message)
