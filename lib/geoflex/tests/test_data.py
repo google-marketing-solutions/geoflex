@@ -577,6 +577,44 @@ def test_simulate_experiment_returns_correct_data_for_heavy_up_daily_budget(
     )
 
 
+@pytest.mark.parametrize(
+    "budget_value,budget_type",
+    [
+        (0.0, ExperimentBudgetType.PERCENTAGE_CHANGE),
+        (-0.1, ExperimentBudgetType.PERCENTAGE_CHANGE),
+        (100, ExperimentBudgetType.TOTAL_BUDGET),
+        (100, ExperimentBudgetType.DAILY_BUDGET),
+    ],
+)
+def test_simulate_experiment_returns_unchanged_data_if_no_cost_metrics(
+    big_raw_data,
+    default_design,
+    experiment_start_date,
+    budget_value,
+    budget_type,
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.make_variation(
+      experiment_budget=ExperimentBudget(
+          budget_type=budget_type,
+          value=budget_value,
+      ),
+      primary_metric="conversions",
+      secondary_metrics=[],
+  )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_size=0.0,
+  )
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, geo_dataset.parsed_data, check_like=True
+  )
+
+
 def test_simulate_experiment_returns_correct_data_for_go_dark(
     big_raw_data, default_design, experiment_start_date
 ):
