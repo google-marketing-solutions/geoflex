@@ -179,6 +179,45 @@ def test_non_cost_cell_volume_constraint_does_not_require_cost_metrics(
   )
 
 
+@pytest.mark.parametrize(
+    "primary_metric,secondary_metrics,expected_column",
+    [
+        (geoflex.metrics.iROAS(cost_column="cost_1"), ["revenue"], "cost_1"),
+        (geoflex.metrics.CPiA(cost_column="cost_2"), ["revenue"], "cost_2"),
+        (
+            geoflex.metrics.iROAS(cost_column="cost_3"),
+            [geoflex.metrics.CPiA(cost_column="cost_4")],
+            "cost_3",
+        ),
+        ("revenue", [geoflex.metrics.iROAS(cost_column="cost_5")], "cost_5"),
+        (
+            "revenue",
+            [
+                geoflex.metrics.CPiA(cost_column="cost_6"),
+                geoflex.metrics.iROAS(cost_column="cost_7"),
+            ],
+            "cost_6",
+        ),
+        ("revenue", [], None),
+        ("revenue", ["conversions"], None),
+    ],
+)
+def test_main_cost_column_returns_expected_column(
+    primary_metric, secondary_metrics, expected_column
+):
+  design = ExperimentDesign(
+      primary_metric=primary_metric,
+      secondary_metrics=secondary_metrics,
+      methodology="test_methodology",
+      runtime_weeks=4,
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+  )
+  assert design.main_cost_column == expected_column
+
+
 def test_geoeligibilty_inflexible_2cell():
   eligibility = GeoEligibility(
       control={"g1", "g2"},

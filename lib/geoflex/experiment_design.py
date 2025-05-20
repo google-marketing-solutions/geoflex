@@ -1,6 +1,7 @@
 """The module containing all the classes to define an experiment design."""
 
 import enum
+import functools
 import itertools
 import logging
 from typing import Annotated, Any
@@ -924,12 +925,12 @@ class ExperimentDesign(pydantic.BaseModel):
       main decision making metric.
     experiment_budget: The experiment budget for the experiment. This can be a
       percentage change, daily budget, or total budget. For a go-dark
-      experiment, the budget value should be negative. For a
-      heavy-up or hold-back experiment, the budget value should be positive and
-      is usually defined as a daily budget or a total budget. For a heavy-up
-      experiment, this is the incremental budget, meaning the increase on top of
-      the BAU spend, not the total budget. If your metrics do not include cost,
-      or you are running an A/B test, then you do not need to specify a budget.
+      experiment, the budget value should be negative. For a heavy-up or
+      hold-back experiment, the budget value should be positive and is usually
+      defined as a daily budget or a total budget. For a heavy-up experiment,
+      this is the incremental budget, meaning the increase on top of the BAU
+      spend, not the total budget. If your metrics do not include cost, or you
+      are running an A/B test, then you do not need to specify a budget.
     secondary_metrics: The secondary response metrics for the experiment. These
       are the metrics that the experiment will also measure, but are not as
       important as the primary metric.
@@ -956,6 +957,10 @@ class ExperimentDesign(pydantic.BaseModel):
       the EffectScope enum for more details.
     evaluation_results: The evaluation results for the experiment design. This
       is set after the design is created, when the design is evaluated.
+    main_cost_column: The name of the main cost column from the metrics. This
+      will be the cost column for the primary metric if it has one, otherwise it
+      will be the first cost column found in the secondary metrics. If none of
+      the metrics have a cost column, then this will be None.
   """
 
   primary_metric: ValidatedMetric
@@ -989,6 +994,21 @@ class ExperimentDesign(pydantic.BaseModel):
   evaluation_results: ExperimentDesignEvaluationResults | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @functools.cached_property
+  def main_cost_column(self) -> str | None:
+    """Returns the name of the main cost column from the metrics."""
+    if (
+        self.primary_metric.cost_per_metric
+        or self.primary_metric.metric_per_cost
+    ):
+      return self.primary_metric.cost_column
+
+    for metric in self.secondary_metrics:
+      if metric.cost_per_metric or metric.metric_per_cost:
+        return metric.cost_column
+
+    return None
 
   def get_rng(self) -> np.random.Generator:
     """Returns a random number generator using the design's random seed."""
