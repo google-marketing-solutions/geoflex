@@ -1,5 +1,6 @@
 """Tests for the base methodology module."""
 
+import datetime as dt
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
@@ -79,7 +80,8 @@ def mock_test_methodology_fixture():
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       # Not used in this test
       return pd.DataFrame()
@@ -247,9 +249,15 @@ def test_methodology_analyze_experiment_raises_error_if_missing_required_columns
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
-      del runtime_data, experiment_design, experiment_start_date
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
 
       return pd.DataFrame({
           "metric": ["revenue"],
@@ -280,9 +288,15 @@ def test_methodology_analyze_experiment_drops_extra_columns(
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
-      del runtime_data, experiment_design, experiment_start_date
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
 
       return pd.DataFrame({
           "metric": ["revenue"],
@@ -314,9 +328,15 @@ def test_methodology_analyze_experiment_raises_error_if_missing_metrics(
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
-      del runtime_data, experiment_design, experiment_start_date
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
 
       return pd.DataFrame({
           "metric": ["revenue"],
@@ -351,9 +371,15 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
-      del runtime_data, experiment_design, experiment_start_date
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
 
       return pd.DataFrame({
           "metric": ["revenue", "CPiA", "iROAS"],
@@ -406,9 +432,15 @@ def test_methodology_analyze_experiment_infers_p_value_if_not_set(
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
-      del runtime_data, experiment_design, experiment_start_date
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
 
       return pd.DataFrame({
           "metric": ["revenue"],
@@ -438,9 +470,15 @@ def test_methodology_analyze_experiment_sets_is_significant_correctly(
         self,
         runtime_data: GeoPerformanceDataset,
         experiment_design: ExperimentDesign,
-        experiment_start_date: str,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
-      del runtime_data, experiment_design, experiment_start_date
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
 
       return pd.DataFrame({
           "metric": ["revenue", "revenue"],
@@ -531,4 +569,70 @@ def test_is_eligible_for_design_and_data_returns_false_if_methodology_returns_fa
   assert not MockMethodologyWithIneligibility().is_eligible_for_design_and_data(
       default_experiment_design,
       historical_data,
+  )
+
+
+@pytest.mark.parametrize(
+    "runtime_weeks,user_experiment_end_date,expected_experiment_end_date",
+    [
+        (1, "2024-01-01", "2024-01-01"),
+        (1, None, "2024-01-08"),
+        (2, None, "2024-01-15"),
+        (1000, None, "2024-04-10"),  # Last day in the data + 1
+        (
+            1000,
+            "2024-04-11",
+            "2024-04-10",
+        ),  # User date is after the last day in the data, use the last day in
+        # the data instead.
+    ],
+)
+def test_experiment_end_date_is_set_correctly(
+    MockMethodology,
+    historical_data,
+    default_experiment_design,
+    runtime_weeks,
+    user_experiment_end_date,
+    expected_experiment_end_date,
+):
+
+  class MockMethodologyWithExperimentEndDate(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
+    ) -> pd.DataFrame:
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+      )
+
+      # Perform the assertion here to avoid having to mock the return value.
+      assert experiment_end_date == dt.datetime.strptime(
+          expected_experiment_end_date, "%Y-%m-%d"
+      )
+
+      return pd.DataFrame({
+          "metric": ["revenue", "revenue"],
+          "is_primary_metric": [True, True],
+          "cell": [1, 2],
+          "point_estimate": [1.0, 1.0],
+          "lower_bound": [0.5, 0.5],
+          "upper_bound": [1.5, 1.5],
+          "point_estimate_relative": [0.1, 0.1],
+          "lower_bound_relative": [0.05, 0.05],
+          "upper_bound_relative": [0.15, 0.15],
+          "p_value": [0.01, 0.1],
+      })
+
+  MockMethodologyWithExperimentEndDate().analyze_experiment(
+      historical_data,
+      default_experiment_design.make_variation(runtime_weeks=runtime_weeks),
+      "2024-01-01",
+      user_experiment_end_date,
   )

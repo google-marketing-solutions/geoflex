@@ -1,6 +1,7 @@
 """The base class for all methodologies, to ensure a unified interface."""
 
 import abc
+import datetime as dt
 import logging
 from typing import Any
 import geoflex.data
@@ -225,7 +226,8 @@ class Methodology(abc.ABC):
       self,
       runtime_data: GeoPerformanceDataset,
       experiment_design: ExperimentDesign,
-      experiment_start_date: str,
+      experiment_start_date: pd.Timestamp,
+      experiment_end_date: pd.Timestamp,
   ) -> pd.DataFrame:
     """How the methodology analyzes the experiment.
 
@@ -258,6 +260,8 @@ class Methodology(abc.ABC):
       runtime_data: The runtime data for the experiment.
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
+      experiment_end_date: The end date of the experiment, or the date to end
+        the analysis (not inclusive).
 
     Returns:
       A dataframe with the analysis results.
@@ -269,6 +273,7 @@ class Methodology(abc.ABC):
       runtime_data: GeoPerformanceDataset,
       experiment_design: ExperimentDesign,
       experiment_start_date: str,
+      experiment_end_date: str | None = None,
   ) -> pd.DataFrame:
     """Analyzes an experiment using this methodology.
 
@@ -291,10 +296,58 @@ class Methodology(abc.ABC):
       runtime_data: The runtime data for the experiment.
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
+      experiment_end_date: The end date of the experiment, or the date to end
+        the analysis (not inclusive). If not provided, the analysis will infer
+        this based on the start date and the runtime weeks, or the last date in
+        the data, whichever is earlier.
 
     Returns:
       A dataframe with the analysis results.
     """
+    experiment_start_date = pd.to_datetime(experiment_start_date)
+    data_end_date = runtime_data.parsed_data[
+        runtime_data.date_column
+    ].max() + dt.timedelta(days=1)
+
+    # Infer the experiment end date if not provided.
+    if experiment_end_date is None:
+      runtime_end_date = experiment_start_date + dt.timedelta(
+          weeks=experiment_design.runtime_weeks
+      )
+      experiment_end_date = min(runtime_end_date, data_end_date)
+    else:
+      experiment_end_date = pd.to_datetime(experiment_end_date)
+
+    if experiment_end_date > data_end_date:
+      logger.warning(
+          "The experiment end date is after the last date in the data. The"
+          " analysis will actually be for the last date in the data."
+      )
+      experiment_end_date = data_end_date
+
+    days_in_runtime = (experiment_end_date - experiment_start_date).days
+    days_in_design_runtime = experiment_design.runtime_weeks * 7
+    if days_in_runtime > days_in_design_runtime:
+      logger.warning(
+          "The analysis is using %s days of data, but the experiment was"
+          " designed for %s days of data (%s weeks). This is not a problem if"
+          " you are doing this intentionally, for example to include a cooldown"
+          " period.",
+          days_in_runtime,
+          days_in_design_runtime,
+          experiment_design.runtime_weeks,
+      )
+    elif days_in_runtime < days_in_design_runtime:
+      logger.warning(
+          "The analysis is using %s days of data, but the experiment was"
+          " designed for %s days of data (%s weeks). This analysis is"
+          " incomplete and you should wait for the full runtime before making"
+          " any decisions.",
+          days_in_runtime,
+          days_in_design_runtime,
+          experiment_design.runtime_weeks,
+      )
+
     validated_experiment_design = experiment_design.model_copy()
 
     # If a parameter is missing, assign the first value in the list of
@@ -309,7 +362,10 @@ class Methodology(abc.ABC):
         )
 
     raw_results = self._methodology_analyze_experiment(
-        runtime_data, validated_experiment_design, experiment_start_date
+        runtime_data,
+        validated_experiment_design,
+        experiment_start_date,
+        experiment_end_date,
     )
 
     # Check that the required columns are present.
