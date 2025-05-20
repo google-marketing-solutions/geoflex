@@ -1,6 +1,7 @@
 """The module containing all the classes to define an experiment design."""
 
 import enum
+import functools
 import itertools
 import logging
 from typing import Annotated, Any
@@ -295,8 +296,8 @@ class EffectScope(enum.StrEnum):
 class CellVolumeConstraintType(enum.StrEnum):
   """The type of cell volume constraint to use in an experiment."""
 
-  NUMBER_OF_GEOS = "number_of_geos"
-  MAX_PERCENTAGE_OF_TOTAL_SPEND = "max_percentage_of_total_spend"
+  MAX_GEOS = "max_geos"
+  MAX_PERCENTAGE_OF_TOTAL_COST = "max_percentage_of_total_cost"
   MAX_PERCENTAGE_OF_TOTAL_RESPONSE = "max_percentage_of_total_response"
 
 
@@ -307,18 +308,15 @@ class CellVolumeConstraint(pydantic.BaseModel):
   of total spend per cell, or the maximum percentage of total response per cell.
 
   Attributes:
-    values: The values of the cell volume constraint. This should be a list
-      of values, one for each cell. If the value is None, then there is no
+    values: The values of the cell volume constraint. This should be a list of
+      values, one for each cell. If the value is None, then there is no
       constraint on the cell volume for that cell.
-    constraint_type: The type of the cell volume constraint, one of
-      "number_of_geos", "max_percentage_of_total_spend", or
-      "max_percentage_of_total_response".
+    constraint_type: The type of the cell volume constraint, one of "max_geos",
+      "max_percentage_of_total_cost", or "max_percentage_of_total_response".
   """
 
   values: list[float | int | None]
-  constraint_type: CellVolumeConstraintType = (
-      CellVolumeConstraintType.NUMBER_OF_GEOS
-  )
+  constraint_type: CellVolumeConstraintType = CellVolumeConstraintType.MAX_GEOS
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -327,28 +325,15 @@ class CellVolumeConstraint(pydantic.BaseModel):
     """Returns True if the cell volume constraint is flexible."""
     return all(value is None for value in self.values)
 
-  @pydantic.model_validator(mode="after")
-  def check_constraint_type_is_implemented(
-      self,
-  ) -> "CellVolumeConstraint":
-    if self.constraint_type != CellVolumeConstraintType.NUMBER_OF_GEOS:
-      error_message = (
-          "Only cell volume constraint of type 'number_of_geos' is currently"
-          " implemented."
-      )
-      logger.error(error_message)
-      raise NotImplementedError(error_message)
-    return self
-
   def __str__(self) -> str:
     """Returns the cell volume constraint as a string for printing."""
-    if self.constraint_type == CellVolumeConstraintType.NUMBER_OF_GEOS:
+    if self.constraint_type == CellVolumeConstraintType.MAX_GEOS:
       suffix = " geos"
     elif (
         self.constraint_type
-        == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_SPEND
+        == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST
     ):
-      suffix = "% of spend"
+      suffix = "% of cost"
     elif (
         self.constraint_type
         == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_RESPONSE
@@ -711,7 +696,7 @@ def cast_none_cell_volume_constraint_to_unconstrained(
   if cell_volume_constraint is None:
     return CellVolumeConstraint(
         values=[None] * n_cells,
-        constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
+        constraint_type=CellVolumeConstraintType.MAX_GEOS,
     )
   return cell_volume_constraint
 
@@ -825,6 +810,35 @@ def check_budget_is_consistent_with_metrics(
 
 
 @pydantic.AfterValidator
+def check_cell_volume_constraint_is_consistent_with_metrics(
+    cell_volume_constraint: CellVolumeConstraint,
+    info: pydantic.ValidationInfo,
+) -> "CellVolumeConstraint":
+  """There must be a cost metric for max cost cell volume constraint."""
+  all_metrics = [info.data["primary_metric"]] + info.data.get(
+      "secondary_metrics", []
+  )
+  has_cost_metric = any(
+      metric.cost_per_metric or metric.metric_per_cost for metric in all_metrics
+  )
+
+  cell_volume_constraint_is_max_cost = (
+      cell_volume_constraint.constraint_type
+      == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST
+  )
+
+  if cell_volume_constraint_is_max_cost and not has_cost_metric:
+    error_message = (
+        "Cell volume constraint is based on cost, but there are no metrics with"
+        " cost columns specified."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  return cell_volume_constraint
+
+
+@pydantic.AfterValidator
 def check_secondary_metric_names_do_not_overlap(
     secondary_metrics: list[Metric], info: pydantic.ValidationInfo
 ) -> list[Metric]:
@@ -890,6 +904,7 @@ ValidatedCellVolumeConstraint = Annotated[
     CellVolumeConstraint,
     cast_none_cell_volume_constraint_to_unconstrained,
     check_cell_volume_constraint_matches_n_cells,
+    check_cell_volume_constraint_is_consistent_with_metrics,
 ]
 ValidatedGeoEligibility = Annotated[
     GeoEligibility,
@@ -910,12 +925,12 @@ class ExperimentDesign(pydantic.BaseModel):
       main decision making metric.
     experiment_budget: The experiment budget for the experiment. This can be a
       percentage change, daily budget, or total budget. For a go-dark
-      experiment, the budget value should be negative. For a
-      heavy-up or hold-back experiment, the budget value should be positive and
-      is usually defined as a daily budget or a total budget. For a heavy-up
-      experiment, this is the incremental budget, meaning the increase on top of
-      the BAU spend, not the total budget. If your metrics do not include cost,
-      or you are running an A/B test, then you do not need to specify a budget.
+      experiment, the budget value should be negative. For a heavy-up or
+      hold-back experiment, the budget value should be positive and is usually
+      defined as a daily budget or a total budget. For a heavy-up experiment,
+      this is the incremental budget, meaning the increase on top of the BAU
+      spend, not the total budget. If your metrics do not include cost, or you
+      are running an A/B test, then you do not need to specify a budget.
     secondary_metrics: The secondary response metrics for the experiment. These
       are the metrics that the experiment will also measure, but are not as
       important as the primary metric.
@@ -942,6 +957,10 @@ class ExperimentDesign(pydantic.BaseModel):
       the EffectScope enum for more details.
     evaluation_results: The evaluation results for the experiment design. This
       is set after the design is created, when the design is evaluated.
+    main_cost_column: The name of the main cost column from the metrics. This
+      will be the cost column for the primary metric if it has one, otherwise it
+      will be the first cost column found in the secondary metrics. If none of
+      the metrics have a cost column, then this will be None.
   """
 
   primary_metric: ValidatedMetric
@@ -975,6 +994,21 @@ class ExperimentDesign(pydantic.BaseModel):
   evaluation_results: ExperimentDesignEvaluationResults | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @functools.cached_property
+  def main_cost_column(self) -> str | None:
+    """Returns the name of the main cost column from the metrics."""
+    if (
+        self.primary_metric.cost_per_metric
+        or self.primary_metric.metric_per_cost
+    ):
+      return self.primary_metric.cost_column
+
+    for metric in self.secondary_metrics:
+      if metric.cost_per_metric or metric.metric_per_cost:
+        return metric.cost_column
+
+    return None
 
   def get_rng(self) -> np.random.Generator:
     """Returns a random number generator using the design's random seed."""

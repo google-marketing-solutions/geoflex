@@ -201,7 +201,7 @@ def test_testing_methodology_assign_geos(
   else:
     cell_volume_constraint = CellVolumeConstraint(
         values=n_geos_per_group,
-        constraint_type=CellVolumeConstraintType.NUMBER_OF_GEOS,
+        constraint_type=CellVolumeConstraintType.MAX_GEOS,
     )
   experiment_design = ExperimentDesign(
       primary_metric="revenue",
