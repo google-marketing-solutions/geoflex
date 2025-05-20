@@ -309,3 +309,33 @@ def test_testing_methodology_analyze_experiment(performance_data):
   pd.testing.assert_frame_equal(
       analysis_results, expected_results, check_like=True, atol=1e-6
   )
+
+
+@pytest.mark.parametrize(
+    "alternative_hypothesis",
+    ["two-sided", "greater", "less"],
+)
+def test_testing_methodology_analyze_experiment_works_for_any_alternative_hypothesis(
+    performance_data, alternative_hypothesis
+):
+  experiment_design = ExperimentDesign(
+      primary_metric=geoflex.metrics.iROAS(),
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      secondary_metrics=[geoflex.metrics.CPiA(), "revenue", "conversions"],
+      methodology="TestingMethodology",
+      runtime_weeks=4,
+      alpha=0.1,
+      geo_eligibility=None,
+      alternative_hypothesis=alternative_hypothesis,
+  )
+  experiment_design.geo_assignment = GeoAssignment(
+      treatment=[["US", "UK"]], control=["CA", "AU"]
+  )
+
+  analysis_results = TestingMethodology().analyze_experiment(
+      performance_data, experiment_design, "2024-01-01"
+  )
+  assert isinstance(analysis_results, pd.DataFrame)

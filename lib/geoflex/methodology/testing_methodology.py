@@ -4,6 +4,7 @@ import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
 from geoflex.methodology import _base
+import numpy as np
 import pandas as pd
 from scipy import stats
 
@@ -175,11 +176,28 @@ class TestingMethodology(_base.Methodology):
     for cell in range(1, experiment_design.n_cells):
       for metric in all_metrics:
         point_estimate = rng.normal()
-        lower_bound, upper_bound = stats.norm.interval(
-            confidence=1.0 - experiment_design.alpha,
-            loc=point_estimate,
-            scale=1.0,
-        )
+
+        if experiment_design.alternative_hypothesis == "two-sided":
+          lower_bound, upper_bound = stats.norm.interval(
+              confidence=1.0 - experiment_design.alpha,
+              loc=point_estimate,
+              scale=1.0,
+          )
+        elif experiment_design.alternative_hypothesis == "greater":
+          lower_bound = stats.norm.ppf(
+              q=experiment_design.alpha, loc=point_estimate, scale=1.0
+          )
+          upper_bound = np.inf
+        elif experiment_design.alternative_hypothesis == "less":
+          upper_bound = stats.norm.ppf(
+              q=1.0 - experiment_design.alpha, loc=point_estimate, scale=1.0
+          )
+          lower_bound = -np.inf
+        else:
+          raise ValueError(
+              "Unsupported alternative hypothesis:"
+              f" {experiment_design.alternative_hypothesis}"
+          )
 
         if metric.cost_per_metric or metric.metric_per_cost:
           point_estimate_relative = pd.NA
