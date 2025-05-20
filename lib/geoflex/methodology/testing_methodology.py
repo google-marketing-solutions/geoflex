@@ -139,7 +139,8 @@ class TestingMethodology(_base.Methodology):
       self,
       runtime_data: GeoPerformanceDataset,
       experiment_design: ExperimentDesign,
-      experiment_start_date: str,
+      experiment_start_date: pd.Timestamp,
+      experiment_end_date: pd.Timestamp,
   ) -> pd.DataFrame:
     """Analyzes a RCT experiment.
 
@@ -161,6 +162,8 @@ class TestingMethodology(_base.Methodology):
       runtime_data: The runtime data for the experiment.
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
+      experiment_end_date: The end date of the experiment, or the date to end
+        the analysis (not inclusive).
 
     Returns:
       A dataframe with the analysis results.
