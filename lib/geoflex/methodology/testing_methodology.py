@@ -86,7 +86,7 @@ class TestingMethodology(_base.Methodology):
 
     if (
         experiment_design.cell_volume_constraint.constraint_type
-        != CellVolumeConstraintType.NUMBER_OF_GEOS
+        != CellVolumeConstraintType.MAX_GEOS
     ):
       raise ValueError(
           "Unsupported cell volume constraint type:"

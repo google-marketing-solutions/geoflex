@@ -13,6 +13,7 @@ GeoEligibility = geoflex.experiment_design.GeoEligibility
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
+CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -105,6 +106,77 @@ def test_budget_must_be_consistent_with_n_cells():
         n_cells=3,
         geo_eligibility=None,
     )
+
+
+def test_cost_cell_volume_constraint_requires_cost_metrics():
+  with pytest.raises(ValueError):
+    ExperimentDesign(
+        primary_metric="revenue",
+        experiment_budget=ExperimentBudget(
+            value=-0.1,
+            budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+        ),
+        secondary_metrics=["conversions"],
+        methodology="test_methodology",
+        runtime_weeks=4,
+        alpha=0.1,
+        n_cells=3,
+        geo_eligibility=None,
+        cell_volume_constraint=CellVolumeConstraint(
+            values=[0.1, 0.2, 0.3],
+            constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST,
+        ),
+    )
+
+
+def test_cost_cell_volume_constraint_works_with_cost_metrics():
+  # Should not raise an error
+  ExperimentDesign(
+      primary_metric="revenue",
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      secondary_metrics=["conversions", geoflex.metrics.iROAS()],
+      methodology="test_methodology",
+      runtime_weeks=4,
+      alpha=0.1,
+      n_cells=3,
+      geo_eligibility=None,
+      cell_volume_constraint=CellVolumeConstraint(
+          values=[0.1, 0.2, 0.3],
+          constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST,
+      ),
+  )
+
+
+@pytest.mark.parametrize(
+    "constraint_type",
+    [
+        CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_RESPONSE,
+        CellVolumeConstraintType.MAX_GEOS,
+    ],
+)
+def test_non_cost_cell_volume_constraint_does_not_require_cost_metrics(
+    constraint_type,
+):
+  # Should not raise an error
+  ExperimentDesign(
+      primary_metric="revenue",
+      experiment_budget=ExperimentBudget(
+          value=-0.1,
+          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+      ),
+      secondary_metrics=["conversions"],
+      methodology="test_methodology",
+      runtime_weeks=4,
+      alpha=0.1,
+      n_cells=3,
+      geo_eligibility=None,
+      cell_volume_constraint=CellVolumeConstraint(
+          values=[0.1, 0.2, 0.3], constraint_type=constraint_type
+      ),
+  )
 
 
 def test_geoeligibilty_inflexible_2cell():
