@@ -30,6 +30,23 @@ class Methodology(abc.ABC):
   using different methodologies.
   """
 
+  def _fill_missing_methodology_parameters(
+      self, experiment_design: ExperimentDesign
+  ) -> ExperimentDesign:
+    """Fills in missing methodology parameters with default values."""
+    validated_experiment_design = experiment_design.model_copy(deep=True)
+    # If a parameter is missing, assign the first value in the list of
+    # candidates as the default value.
+    for (
+        param_name,
+        param_values,
+    ) in self.default_methodology_parameter_candidates.items():
+      if param_name not in validated_experiment_design.methodology_parameters:
+        validated_experiment_design.methodology_parameters[param_name] = (
+            param_values[0]
+        )
+    return validated_experiment_design
+
   def _methodology_is_eligible_for_design_and_data(
       self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
   ) -> bool:
@@ -107,6 +124,9 @@ class Methodology(abc.ABC):
             )
             return False
 
+    # Add default parameters to the design.
+    design = self._fill_missing_methodology_parameters(design)
+
     return self._methodology_is_eligible_for_design_and_data(
         design, historical_data
     )
@@ -177,8 +197,14 @@ class Methodology(abc.ABC):
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
+
+    # Add default parameters to the design.
+    experiment_design = self._fill_missing_methodology_parameters(
+        experiment_design
+    )
+
     geo_assignment = self._methodology_assign_geos(
-        experiment_design.model_copy(deep=True), historical_data
+        experiment_design, historical_data
     )
 
     # Put missing geos into the exclude list.
@@ -348,18 +374,10 @@ class Methodology(abc.ABC):
           experiment_design.runtime_weeks,
       )
 
-    validated_experiment_design = experiment_design.model_copy()
-
-    # If a parameter is missing, assign the first value in the list of
-    # candidates as the default value.
-    for (
-        param_name,
-        param_values,
-    ) in self.default_methodology_parameter_candidates.items():
-      if param_name not in validated_experiment_design.methodology_parameters:
-        validated_experiment_design.methodology_parameters[param_name] = (
-            param_values[0]
-        )
+    # Add default parameters to the design.
+    validated_experiment_design = self._fill_missing_methodology_parameters(
+        experiment_design
+    )
 
     raw_results = self._methodology_analyze_experiment(
         runtime_data,
