@@ -88,9 +88,13 @@ def test_metric_per_cost_and_cost_per_metric_are_mutually_exclusive():
             geoflex.metrics.Metric,
             {"cost_per_metric": True, "name": "test_metric"},
         ),
+        (
+            geoflex.metrics.Metric,
+            {"name": "test_metric", "cost_column": "cost"},
+        ),
     ],
 )
-def test_cost_column_must_be_set_if_metric_needs_cost(metric_cls, args):
+def test_cost_column_must_be_set_only_if_metric_needs_cost(metric_cls, args):
   """Tests that cost column is set if metric is metric per cost or cost per metric."""
   with pytest.raises(ValueError):
     metric_cls(**args)

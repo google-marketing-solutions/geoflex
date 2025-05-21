@@ -50,17 +50,21 @@ class Metric(pydantic.BaseModel):
     return self
 
   @pydantic.model_validator(mode="after")
-  def check_cost_column_is_set_if_metric_per_cost_or_cost_per_metric(
+  def check_cost_column_is_set_only_if_metric_per_cost_or_cost_per_metric(
       self,
   ) -> "Metric":
-    if self.metric_per_cost or self.cost_per_metric:
-      if not self.cost_column:
-        error_message = (
-            "Cost column must be set if metric is a metric per cost or a cost"
-            " per metric."
-        )
-        logger.error(error_message)
-        raise ValueError(error_message)
+    should_have_cost_column = self.metric_per_cost or self.cost_per_metric
+    has_cost_column = bool(self.cost_column)
+    if should_have_cost_column != has_cost_column:
+      error_message = (
+          f" Metric {self.name} is invalid. Cost column must only be set if"
+          " metric is a metric per cost or a cost per metric. Got cost_column"
+          f" = '{self.cost_column}', metric_per_cost ="
+          f" {self.metric_per_cost} and cost_per_metric ="
+          f" {self.cost_per_metric}."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
     return self
 
   def invert(self) -> "Metric":
