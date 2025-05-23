@@ -4,10 +4,19 @@ import base64
 import io
 import logging
 from typing import Annotated
+from feedx import statistics
 import numpy as np
 import pandas as pd
 import pydantic
 from scipy import stats
+
+relative_difference_confidence_interval = (
+    statistics.relative_difference_confidence_interval
+)
+absolute_difference_confidence_interval = (
+    statistics.absolute_difference_confidence_interval
+)
+ttest_from_stats = statistics.ttest_from_stats
 
 
 logger = logging.getLogger(__name__)
@@ -295,3 +304,133 @@ def assign_geos_randomly(
       raise ValueError(f"Group {i} is empty after assigning all geos.")
 
   return assigned_geos_in_groups, current_group_metrics.tolist()
+
+
+def get_summary_statistics_from_standard_errors(
+    impact_estimate: float,
+    impact_standard_error: float,
+    degrees_of_freedom: int,
+    alternative_hypothesis: str,
+    alpha: float,
+    baseline_estimate: float | None = None,
+    baseline_standard_error: float | None = None,
+    impact_baseline_corr: float | None = None,
+    invert_result: bool = False,
+) -> dict[str, float]:
+  """Calculates the summary statistics from the standard errors.
+
+  This calculates the summary statistics from the standard errors. It calculates
+  the point estimate, confidence intervals, and p-value. It also calculates the
+  relative difference confidence interval if the impact is not cost per metric
+  or metric per cost, and if the baseline and treatment groups are both
+  positive.
+
+  Args:
+    impact_estimate: The estimated impact of the treatment on the metric.
+    impact_standard_error: The standard error of the estimated impact.
+    degrees_of_freedom: The degrees of freedom of the estimate.
+    alternative_hypothesis: The alternative hypothesis of the test.
+    alpha: The alpha level of the confidence interval.
+    baseline_estimate: The estimated baseline metric, used to calculate the
+      relative difference. If None, the relative difference is not calculated.
+    baseline_standard_error: The standard error of the baseline metric.
+    impact_baseline_corr: The correlation coefficient between the impact and the
+      baseline.
+    invert_result: Whether to invert the result. If True, the resulting summary
+      statistics are for 1/y rather than y. This is used for cost per metric
+      style metrics, like CPiA.
+
+  Returns:
+    A dictionary containing the summary statistics, including the point
+    estimate, confidence intervals, p-value, and relative difference point
+    estimate and confidence interval if applicable.
+  """
+
+  p_value = ttest_from_stats(
+      point_estimate=impact_estimate,
+      standard_error=impact_standard_error,
+      degrees_of_freedom=degrees_of_freedom,
+      alternative=alternative_hypothesis,
+  )[1]
+
+  if invert_result:
+    # If we want to invert the result, we do this by using the relative
+    # difference confidence interval. This gives us the esimtate of 1/impact.
+    impact_sign = np.sign(impact_estimate)
+    abs_impact_estimate = np.abs(impact_estimate)
+
+    point_estimate = 1.0 / abs_impact_estimate
+    lower_bound, upper_bound = relative_difference_confidence_interval(
+        mean_1=1.0,
+        mean_2=abs_impact_estimate,
+        standard_error_1=0.0,
+        standard_error_2=impact_standard_error,
+        corr=0.0,
+        degrees_of_freedom=degrees_of_freedom,
+        alternative=alternative_hypothesis,
+        alpha=alpha,
+    )
+
+    # relative_difference_confidence_interval calculates the CI on (y2-y1)/y1
+    # but we want y2/y1 (in out case y2=1), so we add 1 to the results.
+    lower_bound += 1
+    upper_bound += 1
+
+    if impact_sign == -1:
+      # If it was originally a negative impact we need to make it negative again
+      lower_bound *= -1
+      upper_bound *= -1
+      point_estimate *= -1
+
+  else:
+    # If it's not cost per metric we can use the absolute difference confidence
+    # interval
+    point_estimate = impact_estimate
+    lower_bound, upper_bound = absolute_difference_confidence_interval(
+        mean_1=impact_estimate,
+        mean_2=0.0,
+        standard_error_1=impact_standard_error,
+        standard_error_2=0.0,
+        corr=0.0,
+        degrees_of_freedom=degrees_of_freedom,
+        alternative=alternative_hypothesis,
+        alpha=alpha,
+    )
+
+  if (
+      invert_result
+      or (baseline_estimate is None)
+      or ((baseline_estimate + impact_estimate) <= 0.0)
+      or (baseline_estimate <= 0.0)
+  ):
+    # Do not calculate the relative effect if inverting the result, if the
+    # baseline is not provided, or if either the baseline or treatment group is
+    # not positive
+    point_estimate_relative = pd.NA
+    lower_bound_relative = pd.NA
+    upper_bound_relative = pd.NA
+  else:
+    point_estimate_relative = impact_estimate / baseline_estimate
+
+    lower_bound_relative, upper_bound_relative = (
+        relative_difference_confidence_interval(
+            mean_1=baseline_estimate + impact_estimate,
+            mean_2=baseline_estimate,
+            standard_error_1=impact_standard_error,
+            standard_error_2=baseline_standard_error,
+            corr=impact_baseline_corr,
+            degrees_of_freedom=degrees_of_freedom,
+            alternative=alternative_hypothesis,
+            alpha=alpha,
+        )
+    )
+
+  return {
+      "point_estimate": point_estimate,
+      "lower_bound": lower_bound,
+      "upper_bound": upper_bound,
+      "point_estimate_relative": point_estimate_relative,
+      "lower_bound_relative": lower_bound_relative,
+      "upper_bound_relative": upper_bound_relative,
+      "p_value": p_value,
+  }

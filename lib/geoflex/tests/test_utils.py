@@ -461,3 +461,209 @@ def test_reproducibility_with_seed():
   rng3 = np.random.default_rng(seed=456)
   assigned3, _ = assign_geos_randomly(geo_ids, n_groups, rng3)
   assert assigned1 != assigned3
+
+
+@pytest.mark.parametrize(
+    "test_case",
+    [
+        # Case 1: Basic two-sided test
+        dict(
+            impact_estimate=10.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="two-sided",
+            alpha=0.05,
+            baseline_estimate=100.0,
+            baseline_standard_error=5.0,
+            impact_baseline_corr=0.1,
+            invert_result=False,
+            expected_point_estimate=10.0,
+            expected_lower_bound=6.032056963100733,
+            expected_upper_bound=13.967943036899267,
+            expected_p_value_approx=1.58e-06,
+            expected_point_estimate_relative=0.1,
+            expected_lower_bound_relative=-0.0028308347773883247,
+            expected_upper_bound_relative=0.22389971794504993,
+        ),
+        # Case 2: invert_result = True
+        dict(
+            impact_estimate=10.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="two-sided",
+            alpha=0.05,
+            baseline_estimate=100.0,
+            baseline_standard_error=5.0,
+            impact_baseline_corr=0.1,
+            invert_result=True,
+            expected_point_estimate=0.1,
+            expected_lower_bound=0.0715925027298786,
+            expected_upper_bound=0.16578092781901677,
+            expected_p_value_approx=1.58e-06,
+            expected_point_estimate_relative=pd.NA,
+            expected_lower_bound_relative=pd.NA,
+            expected_upper_bound_relative=pd.NA,
+        ),
+        # Case 3: alternative_hypothesis = "greater"
+        dict(
+            impact_estimate=10.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="greater",
+            alpha=0.05,
+            baseline_estimate=100.0,
+            baseline_standard_error=5.0,
+            impact_baseline_corr=0.1,
+            invert_result=False,
+            expected_point_estimate=10.0,
+            expected_lower_bound=6.6795313478685,
+            expected_upper_bound=np.inf,
+            expected_p_value_approx=1.225086706751899e-06,
+            expected_point_estimate_relative=0.1,
+            expected_lower_bound_relative=0.01275282756255125,
+            expected_upper_bound_relative=np.inf,
+        ),
+        # Case 4: alternative_hypothesis = "less"
+        dict(
+            impact_estimate=-5.0,
+            impact_standard_error=1.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="less",
+            alpha=0.05,
+            baseline_estimate=50.0,
+            baseline_standard_error=2.0,
+            impact_baseline_corr=0.2,
+            invert_result=False,
+            expected_point_estimate=-5.0,
+            expected_lower_bound=-np.inf,
+            expected_upper_bound=-3.33976567393425,
+            expected_p_value_approx=7.9e-07,
+            expected_point_estimate_relative=-0.1,
+            expected_lower_bound_relative=-1.0,
+            expected_upper_bound_relative=-0.033920373939951176,
+        ),
+        # Case 5: baseline_estimate is None
+        dict(
+            impact_estimate=10.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="two-sided",
+            alpha=0.05,
+            baseline_estimate=None,
+            baseline_standard_error=None,
+            impact_baseline_corr=None,
+            invert_result=False,
+            expected_point_estimate=10.0,
+            expected_lower_bound=6.032056963100733,
+            expected_upper_bound=13.967943036899267,
+            expected_p_value_approx=1.58e-06,
+            expected_point_estimate_relative=pd.NA,
+            expected_lower_bound_relative=pd.NA,
+            expected_upper_bound_relative=pd.NA,
+        ),
+        # Case 6: baseline_estimate is not positive
+        dict(
+            impact_estimate=10.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="two-sided",
+            alpha=0.05,
+            baseline_estimate=-100.0,
+            baseline_standard_error=5.0,
+            impact_baseline_corr=0.1,
+            invert_result=False,
+            expected_point_estimate=10.0,
+            expected_lower_bound=6.032056963100733,
+            expected_upper_bound=13.967943036899267,
+            expected_p_value_approx=1.58e-06,
+            expected_point_estimate_relative=pd.NA,
+            expected_lower_bound_relative=pd.NA,
+            expected_upper_bound_relative=pd.NA,
+        ),
+        # Case 7: baseline_estimate + impact_estimate is not positive
+        dict(
+            impact_estimate=-110.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="two-sided",
+            alpha=0.05,
+            baseline_estimate=100.0,
+            baseline_standard_error=5.0,
+            impact_baseline_corr=0.1,
+            invert_result=False,
+            expected_point_estimate=-110.0,
+            expected_lower_bound=-113.96794303689927,
+            expected_upper_bound=-106.03205696310073,
+            expected_p_value_approx=0.0,
+            expected_point_estimate_relative=pd.NA,
+            expected_lower_bound_relative=pd.NA,
+            expected_upper_bound_relative=pd.NA,
+        ),
+        # Case 8: invert_result = True, negative impact
+        dict(
+            impact_estimate=-10.0,
+            impact_standard_error=2.0,
+            degrees_of_freedom=100,
+            alternative_hypothesis="two-sided",
+            alpha=0.05,
+            baseline_estimate=100.0,
+            baseline_standard_error=5.0,
+            impact_baseline_corr=0.1,
+            invert_result=True,
+            expected_point_estimate=-0.1,
+            expected_lower_bound=-0.07159250272,
+            expected_upper_bound=-0.16578092,
+            expected_p_value_approx=1.58e-06,
+            expected_point_estimate_relative=pd.NA,
+            expected_lower_bound_relative=pd.NA,
+            expected_upper_bound_relative=pd.NA,
+        ),
+    ],
+)
+def test_get_summary_statistics_from_standard_errors(test_case):
+  """Tests get_summary_statistics_from_standard_errors."""
+  results = utils.get_summary_statistics_from_standard_errors(
+      impact_estimate=test_case["impact_estimate"],
+      impact_standard_error=test_case["impact_standard_error"],
+      degrees_of_freedom=test_case["degrees_of_freedom"],
+      alternative_hypothesis=test_case["alternative_hypothesis"],
+      alpha=test_case["alpha"],
+      baseline_estimate=test_case["baseline_estimate"],
+      baseline_standard_error=test_case["baseline_standard_error"],
+      impact_baseline_corr=test_case["impact_baseline_corr"],
+      invert_result=test_case["invert_result"],
+  )
+
+  assert results["point_estimate"] == pytest.approx(
+      test_case["expected_point_estimate"]
+  )
+  assert results["lower_bound"] == pytest.approx(
+      test_case["expected_lower_bound"], nan_ok=True
+  )
+  assert results["upper_bound"] == pytest.approx(
+      test_case["expected_upper_bound"], nan_ok=True
+  )
+  assert results["p_value"] == pytest.approx(
+      test_case["expected_p_value_approx"], abs=1e-5
+  )
+
+  if pd.isna(test_case["expected_point_estimate_relative"]):
+    assert pd.isna(results["point_estimate_relative"])
+  else:
+    assert results["point_estimate_relative"] == pytest.approx(
+        test_case["expected_point_estimate_relative"]
+    )
+
+  if pd.isna(test_case["expected_lower_bound_relative"]):
+    assert pd.isna(results["lower_bound_relative"])
+  else:
+    assert results["lower_bound_relative"] == pytest.approx(
+        test_case["expected_lower_bound_relative"], nan_ok=True
+    )
+
+  if pd.isna(test_case["expected_upper_bound_relative"]):
+    assert pd.isna(results["upper_bound_relative"])
+  else:
+    assert results["upper_bound_relative"] == pytest.approx(
+        test_case["expected_upper_bound_relative"], nan_ok=True
+    )

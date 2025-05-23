@@ -2,7 +2,6 @@
 
 import datetime as dt
 import logging
-from feedx import statistics
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
@@ -12,13 +11,6 @@ import pandas as pd
 import statsmodels.api as sm
 
 
-relative_difference_confidence_interval = (
-    statistics.relative_difference_confidence_interval
-)
-absolute_difference_confidence_interval = (
-    statistics.absolute_difference_confidence_interval
-)
-ttest_from_stats = statistics.ttest_from_stats
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 GeoAssignment = geoflex.experiment_design.GeoAssignment
@@ -443,103 +435,42 @@ class GBR(_base.Methodology):
       alternative_hypothesis: str,
       alpha: float,
   ) -> dict[str, float]:
-    p_value = ttest_from_stats(
-        point_estimate=params["cost_differential"],
-        standard_error=np.sqrt(
-            covariance.loc["cost_differential", "cost_differential"]
-        ),
-        degrees_of_freedom=degrees_of_freedom,
-        alternative=alternative_hypothesis,
-    )[1]
+    """Calculates the summary statistics from the result of the linear model."""
 
-    if metric.cost_per_metric:
-      # If it's cost per metric we need to invert the absolute impact
-      # We do this by using the relative difference confidence interval
-      impact_sign = np.sign(params["cost_differential"])
-      abs_cost_differential = np.abs(params["cost_differential"])
-
-      point_estimate = 1.0 / abs_cost_differential
-      lower_bound, upper_bound = relative_difference_confidence_interval(
-          mean_1=1.0,
-          mean_2=abs_cost_differential,
-          standard_error_1=0.0,
-          standard_error_2=np.sqrt(
-              covariance.loc["cost_differential", "cost_differential"]
-          ),
-          corr=0.0,
-          degrees_of_freedom=degrees_of_freedom,
-          alternative=alternative_hypothesis,
-          alpha=alpha,
-      )
-
-      # relative_difference_confidence_interval calculates the CI on (y2-y1)/y1
-      # but we want y2/y1 (in out case y2=1), so we add 1 to the results.
-      lower_bound += 1
-      upper_bound += 1
-
-      if impact_sign == -1:
-        lower_bound = -lower_bound
-        upper_bound = -upper_bound
-        point_estimate = -point_estimate
+    if metric.cost_per_metric or metric.metric_per_cost:
+      # Don't calculate the relative effect for cost per metric or metric per
+      # cost. The relative effect is not meaningful for these metrics.
+      baseline_estimate = None
+      baseline_standard_error = None
+      impact_baseline_corr = None
     else:
-      point_estimate = params["cost_differential"]
-      lower_bound, upper_bound = absolute_difference_confidence_interval(
-          mean_1=params["cost_differential"],
-          mean_2=0.0,
-          standard_error_1=np.sqrt(
-              covariance.loc["cost_differential", "cost_differential"]
-          ),
-          standard_error_2=0.0,
-          corr=0.0,
-          degrees_of_freedom=degrees_of_freedom,
-          alternative=alternative_hypothesis,
-          alpha=alpha,
+      baseline_estimate = params["const"]
+      baseline_standard_error = np.sqrt(covariance.loc["const", "const"])
+      impact_baseline_corr = covariance.loc[
+          "cost_differential", "const"
+      ] / np.sqrt(
+          covariance.loc["const", "const"]
+          * covariance.loc["cost_differential", "cost_differential"]
       )
 
-    if (
-        metric.cost_per_metric
-        or metric.metric_per_cost
-        or (params["const"] <= 0.0)
-        or ((params["const"] + params["cost_differential"]) <= 0.0)
-    ):
-      # Do not calculate the relative effect for metric per cost
-      # or cost per metric, or if one of the parameters is not positive
-      point_estimate_relative = pd.NA
-      lower_bound_relative = pd.NA
-      upper_bound_relative = pd.NA
-    else:
-      se_control = np.sqrt(covariance.loc["const", "const"])
-      se_treatment = np.sqrt(
-          covariance.loc["cost_differential", "cost_differential"]
-      )
-      corr = covariance.loc["cost_differential", "const"] / (
-          se_control * se_treatment
-      )
-      point_estimate_relative = params["cost_differential"] / params["const"]
+    summary_statistics = (
+        geoflex.utils.get_summary_statistics_from_standard_errors(
+            impact_estimate=params["cost_differential"],
+            impact_standard_error=np.sqrt(
+                covariance.loc["cost_differential", "cost_differential"]
+            ),
+            degrees_of_freedom=degrees_of_freedom,
+            alternative_hypothesis=alternative_hypothesis,
+            alpha=alpha,
+            invert_result=metric.cost_per_metric,
+            baseline_estimate=baseline_estimate,
+            baseline_standard_error=baseline_standard_error,
+            impact_baseline_corr=impact_baseline_corr,
+        )
+    )
 
-      lower_bound_relative, upper_bound_relative = (
-          relative_difference_confidence_interval(
-              mean_1=params["cost_differential"] + params["const"],
-              mean_2=params["const"],
-              standard_error_1=se_treatment,
-              standard_error_2=se_control,
-              corr=corr,
-              degrees_of_freedom=degrees_of_freedom,
-              alternative=alternative_hypothesis,
-              alpha=alpha,
-          )
-      )
-
-    return {
-        "metric": metric.name,
-        "point_estimate": point_estimate,
-        "lower_bound": lower_bound,
-        "upper_bound": upper_bound,
-        "point_estimate_relative": point_estimate_relative,
-        "lower_bound_relative": lower_bound_relative,
-        "upper_bound_relative": upper_bound_relative,
-        "p_value": p_value,
-    }
+    summary_statistics["metric"] = metric.name
+    return summary_statistics
 
   def _methodology_analyze_experiment(
       self,
