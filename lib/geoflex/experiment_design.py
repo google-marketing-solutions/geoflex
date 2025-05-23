@@ -1032,6 +1032,7 @@ class ExperimentDesign(pydantic.BaseModel):
         "primary_metric": self.primary_metric.name,
         "secondary_metrics": [m.name for m in self.secondary_metrics],
         "methodology": self.methodology,
+        "methodology_parameters": self.methodology_parameters,
         "runtime_weeks": self.runtime_weeks,
         "n_cells": self.n_cells,
         "cell_volume_constraint": str(self.cell_volume_constraint),

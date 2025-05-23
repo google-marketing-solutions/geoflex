@@ -654,6 +654,7 @@ def test_experiment_design_get_summary_dict_returns_correct_dict_without_evaluat
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
       "methodology": "TestingMethodology",
+      "methodology_parameters": {},
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
@@ -676,6 +677,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
       "methodology": "TestingMethodology",
+      "methodology_parameters": {},
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
@@ -711,6 +713,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_geo_assi
       "primary_metric": "revenue",
       "secondary_metrics": ["iROAS", "CPiA"],
       "methodology": "TestingMethodology",
+      "methodology_parameters": {},
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
