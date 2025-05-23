@@ -290,7 +290,7 @@
                       <strong>Single value parameters</strong> act as constraints.
                       <strong>Multiple value parameters</strong> become exploration axes, generating
                       designs for all combinations. The tool will find the most powerful
-                      experimental design based on your data and parameters.
+                      experimental designs based on your data and parameters.
                     </div>
                   </q-banner>
                 </div>
@@ -362,28 +362,9 @@
                       </div>
                     </div>
 
-                    <!-- Optimization Target -->
-                    <div>
-                      <div class="row items-center">
-                        <div class="col">
-                          <div class="text-body2 q-mb-xs">Optimization Target</div>
-                        </div>
-                        <div class="col-auto">
-                          <q-badge color="blue" label="Constraint" />
-                        </div>
-                      </div>
-                      <q-option-group
-                        v-model="parameters.optimizationTarget"
-                        :options="[
-                          { label: 'Power (find lowest MDE at specified power)', value: 'power' },
-                          { label: 'MDE (find highest power at specified MDE)', value: 'mde' },
-                        ]"
-                        type="radio"
-                        dense
-                      />
-
-                      <!-- Show power input when optimizing for power -->
-                      <div v-if="parameters.optimizationTarget === 'power'" class="q-mt-sm">
+                    <!-- Target power -->
+                    <div class="row items-center q-mt-sm">
+                      <div class="col-6">
                         <q-input
                           v-model.number="parameters.power"
                           type="number"
@@ -405,26 +386,6 @@
                           </template>
                         </q-input>
                       </div>
-
-                      <!-- Show MDE input when optimizing for MDE -->
-                      <div v-if="parameters.optimizationTarget === 'mde'" class="q-mt-sm">
-                        <q-input
-                          v-model.number="parameters.mde"
-                          type="number"
-                          outlined
-                          dense
-                          min="0.1"
-                          step="0.1"
-                          label="Target MDE (%)"
-                        >
-                          <template v-slot:append>
-                            <q-icon name="percent" />
-                          </template>
-                          <template v-slot:hint>
-                            <span>Minimum relative change to detect with specified power</span>
-                          </template>
-                        </q-input>
-                      </div>
                     </div>
 
                     <!-- Significance Level -->
@@ -437,21 +398,114 @@
                           <q-badge color="blue" label="Constraint" />
                         </div>
                       </div>
-                      <q-input
-                        v-model.number="parameters.alpha"
-                        type="number"
-                        outlined
-                        dense
-                        min="0.01"
-                        max="0.2"
-                        step="0.01"
-                      >
-                        <template v-slot:hint>
-                          <span
-                            >Threshold for statistical significance (typically 0.05 or 0.1)</span
+                      <div class="row items-center">
+                        <div class="col-6">
+                          <q-input
+                            v-model.number="parameters.alpha"
+                            type="number"
+                            outlined
+                            dense
+                            min="0.01"
+                            max="0.2"
+                            step="0.01"
                           >
-                        </template>
-                      </q-input>
+                            <template v-slot:hint>
+                              <span
+                                >Threshold for statistical significance (typically 0.05 or
+                                0.1)</span
+                              >
+                            </template>
+                          </q-input>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Budget -->
+                    <div>
+                      <div class="row items-center">
+                        <div class="col">
+                          <div class="text-body2 q-mb-xs">
+                            Budget
+                            <q-icon
+                              name="info_outline"
+                              size="xs"
+                              class="q-ml-xs"
+                              v-if="isBudgetSectionDisabled"
+                            >
+                              <q-tooltip
+                                >Budget controls are disabled because the selected data source does
+                                not have a cost column defined.</q-tooltip
+                              >
+                            </q-icon>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="row q-col-gutter-sm items-start">
+                        <div class="col-8">
+                          <q-select
+                            v-model="parameters.budget"
+                            label="Budget Value(s) per Test Group"
+                            outlined
+                            dense
+                            multiple
+                            use-chips
+                            use-input
+                            new-value-mode="add-unique"
+                            hide-dropdown-icon
+                            input-debounce="0"
+                            :rules="[budgetValidationRule]"
+                            :disable="isBudgetSectionDisabled"
+                            hint="Enter numeric values. Press Enter or Tab to add. Leave empty for A/B test (0 budget)."
+                          />
+                        </div>
+                        <div class="col-4">
+                          <q-select
+                            v-model="parameters.budgetType"
+                            :options="filteredBudgetTypeOptions"
+                            label="Type"
+                            outlined
+                            dense
+                            emit-value
+                            map-options
+                            option-value="value"
+                            option-label="label"
+                            :disable="isBudgetSectionDisabled"
+                          >
+                            <template v-slot:selected-item="scope">
+                              <q-item-label :title="scope.opt.desc">
+                                {{ scope.opt.label }}</q-item-label
+                              >
+                            </template>
+                            <template v-slot:option="scope">
+                              <q-item v-bind="scope.itemProps" :title="scope.opt.desc">
+                                <q-item-section>
+                                  <q-item-label>{{ scope.opt.label }}</q-item-label>
+                                  <q-item-label caption>{{ scope.opt.desc }}</q-item-label>
+                                </q-item-section>
+                              </q-item>
+                            </template>
+                            <template v-slot:no-option>
+                              <q-item>
+                                <q-item-section class="text-grey">
+                                  Percentage budget type not available if cost data is missing or
+                                  all zeros.
+                                </q-item-section>
+                              </q-item>
+                            </template>
+                          </q-select>
+                        </div>
+                      </div>
+                      <div
+                        class="text-caption q-pl-sm q-pt-xs"
+                        v-if="parameters.structure === 'multi-cell'"
+                      >
+                        Number of budget values must match the number of test groups ({{
+                          parameters.testGroups
+                        }}) or be empty.
+                      </div>
+                      <div class="text-caption q-pl-sm q-pt-xs" v-else>
+                        Budget should be a single value or empty for a single-cell test.
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -477,33 +531,6 @@
                         type="radio"
                         dense
                       />
-                    </div>
-
-                    <!-- Treatment Configuration -->
-                    <div>
-                      <div class="row items-center">
-                        <div class="col">
-                          <div class="text-body2 q-mb-xs">
-                            Experiment Type (a.k.a Test Treatment Configuration)
-                          </div>
-                        </div>
-                        <div class="col-auto">
-                          <q-badge color="blue" label="Constraint" />
-                        </div>
-                      </div>
-                      <div>
-                        <q-select
-                          v-model="parameters.experimentType"
-                          :options="treatmentOptionsDetailed"
-                          outlined
-                          dense
-                          option-label="label"
-                          option-value="value"
-                          emit-value
-                          map-options
-                          hint="Intervention approach applied to test groups"
-                        />
-                      </div>
                     </div>
 
                     <!-- Test Duration Range -->
@@ -554,25 +581,75 @@
                       </div>
                     </div>
 
-                    <!-- Pre-test Period -->
+                    <!-- Effect Scope -->
                     <div>
                       <div class="row items-center">
                         <div class="col">
-                          <div class="text-body2 q-mb-xs">Pre-test Period (weeks)</div>
+                          <div class="text-body2 q-mb-xs">Effect Scope</div>
                         </div>
                         <div class="col-auto">
                           <q-badge color="blue" label="Constraint" />
                         </div>
                       </div>
-                      <q-input
-                        v-model.number="parameters.pretestPeriod"
-                        type="number"
-                        outlined
+                      <q-option-group
+                        v-model="parameters.effectScope"
+                        :options="effectScopeOptions"
+                        type="radio"
                         dense
-                        min="0"
-                        step="1"
-                        hint="Historical window used for baseline metrics and matching"
                       />
+                    </div>
+
+                    <!-- Simulation Per Trial  -->
+                    <div>
+                      <q-card>
+                        <q-card-section class="q-py-sm1">
+                          <div class="text-subtitle2">Exploration advanced parameters</div>
+                        </q-card-section>
+                        <q-card-section class="">
+                          <div class="row">
+                            <div class="col-6">
+                              <q-input
+                                v-model.number="parameters.simulationsPerTrial"
+                                label="Simulation per trial"
+                                type="number"
+                                outlined
+                                dense
+                                min="1"
+                                step="1"
+                                hint="The number of simulations to run (leave empty for default)"
+                              />
+                            </div>
+                          </div>
+                          <div class="row q-my-sm">
+                            <div class="col-6">
+                              <q-input
+                                v-model.number="parameters.maxTrials"
+                                label="Max Trials"
+                                type="number"
+                                outlined
+                                dense
+                                min="1"
+                                step="1"
+                                hint="The maximum number of valid trials to run (leave empty for default)"
+                              />
+                            </div>
+                          </div>
+                          <div class="row q-my-sm">
+                            <div class="col-6">
+                              <q-input
+                                v-model.number="parameters.nDesigns"
+                                label="# of designs"
+                                type="number"
+                                outlined
+                                dense
+                                min="1"
+                                step="1"
+                                hint="The number of designs to explore (by default 5)"
+                              />
+                            </div>
+                          </div>
+                        </q-card-section>
+                      </q-card>
                     </div>
 
                     <!-- Budget Allocation
@@ -604,19 +681,34 @@
               <q-separator class="q-my-md" />
 
               <div class="row items-center">
-                <!-- <div class="col">
-                  <div class="text-body2">
-                    <q-icon name="analytics" color="primary" /> Exploration will generate
-                    <strong class="text-primary">{{ estimatedDesignCount }}</strong>
-                    test designs based on parameter combinations.
-                  </div>
-                </div> -->
+                <div class="col">
+                  <q-banner
+                    v-if="explorationValidationIssues.length > 0"
+                    inline-actions
+                    dense
+                    class="text-white bg-red q-mb-md"
+                  >
+                    <template v-slot:avatar>
+                      <q-icon name="warning" color="white" />
+                    </template>
+                    <b>Please address the following issues:</b>
+                    <ul>
+                      <li v-for="issue in explorationValidationIssues" :key="issue">{{ issue }}</li>
+                    </ul>
+                  </q-banner>
+                </div>
+              </div>
+              <div class="row items-center justify-end">
                 <div class="col-auto">
                   <q-btn label="Reset" color="grey" flat class="q-mr-sm" @click="resetParameters" />
                   <q-btn
                     label="Run Exploration"
                     color="primary"
-                    :disable="!selectedDataSource || !dataSourceLoaded"
+                    :disable="
+                      !selectedDataSource ||
+                      !dataSourceLoaded ||
+                      explorationValidationIssues.length > 0
+                    "
                     @click="runExploration"
                   />
                 </div>
@@ -651,16 +743,13 @@
                     <div class="row items-center">
                       <div class="col">
                         <div class="text-h6">Design #{{ index + 1 }}</div>
-                        <div class="text-caption">
-                          Power: {{ design.power }}% | MDE: {{ design.mde }}% | Duration:
-                          {{ design.duration }} weeks
-                        </div>
+                        <div class="text-caption">Methodology: {{ design.methodology }}</div>
+                        <div class="text-caption">Duration: {{ design.runtime_weeks }} weeks</div>
                       </div>
                       <div class="col-auto">
                         <q-btn-group flat>
                           <q-btn color="primary" icon="visibility" @click="viewDesign(design)" />
                           <q-btn color="positive" icon="download" @click="downloadDesign(design)" />
-                          <!-- <q-btn color="secondary" icon="send" @click="exportDesign(design)" /> -->
                         </q-btn-group>
                       </div>
                     </div>
@@ -671,7 +760,7 @@
                   <q-card-section>
                     <div class="row q-col-gutter-md">
                       <!-- Parameters Summary -->
-                      <div class="col-12 col-md-6">
+                      <!-- <div class="col-12 col-md-6">
                         <div class="text-subtitle2">Parameters</div>
                         <q-list dense>
                           <q-item v-for="(value, key) in design.parameters" :key="key">
@@ -681,7 +770,7 @@
                             </q-item-section>
                           </q-item>
                         </q-list>
-                      </div>
+                      </div> -->
 
                       <!-- Statistical Properties -->
                       <div class="col-12 col-md-6">
@@ -690,22 +779,14 @@
                           <div class="col-6">
                             <q-item dense>
                               <q-item-section>
-                                <q-item-label caption>Power</q-item-label>
-                                <q-item-label class="text-primary text-weight-bold"
-                                  >{{ design.power.toFixed(1) }}%</q-item-label
-                                >
-                              </q-item-section>
-                            </q-item>
-                          </div>
-                          <div class="col-6">
-                            <q-item dense>
-                              <q-item-section>
                                 <q-item-label caption
-                                  >MDE ({{ design.parameters.primary_metric }})</q-item-label
+                                  >MDE ({{
+                                    design.parameters.primary_metric?.name || 'Primary Metric'
+                                  }})</q-item-label
                                 >
-                                <q-item-label class="text-primary text-weight-bold"
-                                  >{{ (design.mde * 100).toFixed(1) }}%</q-item-label
-                                >
+                                <q-item-label class="text-primary text-weight-bold">{{
+                                  design.mde ? design.mde.toFixed(2) + '%' : 'N/A'
+                                }}</q-item-label>
                               </q-item-section>
                             </q-item>
                           </div>
@@ -720,12 +801,24 @@
                         <div
                           v-for="(geos, groupName) in design.groups"
                           :key="groupName as string"
-                          class="col-12 col-md-6"
+                          class="col-12 col-md-4"
                         >
                           <q-card flat bordered>
-                            <q-card-section class="q-py-sm bg-primary text-white">
-                              <div class="text-subtitle2">
+                            <q-card-section class="q-py-sm bg-primary text-white row items-center">
+                              <div class="text-subtitle2 col">
                                 {{ groupName }} ({{ geos.length }} geos)
+                              </div>
+                              <div class="col-auto">
+                                <q-btn
+                                  flat
+                                  dense
+                                  round
+                                  icon="file_download"
+                                  color="white"
+                                  @click="exportDesignGroupToCsv(design, groupName as string)"
+                                >
+                                  <q-tooltip>Export {{ groupName }} geos as CSV</q-tooltip>
+                                </q-btn>
                               </div>
                             </q-card-section>
                             <q-card-section class="q-pa-sm">
@@ -820,21 +913,15 @@
                 <div class="text-subtitle1">Statistical Properties</div>
                 <div class="row q-col-gutter-md">
                   <div class="col-6 col-md-3">
-                    <div class="text-caption">Power</div>
-                    <div class="text-h5">{{ selectedDesign.power }}%</div>
-                  </div>
-                  <div class="col-6 col-md-3">
                     <div class="text-caption">MDE</div>
-                    <div class="text-h5">{{ selectedDesign.mde }}%</div>
+                    <div class="text-h5">
+                      {{ selectedDesign.mde ? selectedDesign.mde.toFixed(1) + '%' : 'N/A' }}
+                    </div>
                   </div>
-                  <div class="col-6 col-md-3">
+                  <div class="col-6 col-md-4">
                     <div class="text-caption">Duration</div>
-                    <div class="text-h5">{{ selectedDesign.duration }} wks</div>
+                    <div class="text-h5">{{ selectedDesign.runtime_weeks }} wks</div>
                   </div>
-                  <!-- <div class="col-6 col-md-3">
-                    <div class="text-caption">Pre-test Period</div>
-                    <div class="text-h5">{{ selectedDesign.parameters.pretestPeriod }} wks</div>
-                  </div> -->
                 </div>
               </q-card>
 
@@ -883,18 +970,6 @@
                               <q-item-label>{{ group.length }}</q-item-label>
                             </q-item-section>
                           </q-item>
-                          <!-- <q-item>
-                            <q-item-section>
-                              <q-item-label caption>Total Conversions</q-item-label>
-                              <q-item-label>{{ formatNumber(group.conversionTotal) }}</q-item-label>
-                            </q-item-section>
-                          </q-item>
-                          <q-item>
-                            <q-item-section>
-                              <q-item-label caption>Average Per Geo</q-item-label>
-                              <q-item-label>{{ formatNumber(group.conversionAvg) }}</q-item-label>
-                            </q-item-section>
-                          </q-item> -->
                         </q-list>
                       </q-card>
                     </div>
@@ -927,11 +1002,6 @@
 
         <q-card-actions align="right">
           <q-btn color="primary" label="Download" @click="downloadDesign(selectedDesign)" />
-          <!-- <q-btn
-            color="secondary"
-            label="Export to Google Ads"
-            @click="exportDesign(selectedDesign)"
-          /> -->
           <q-btn color="grey" label="Close" v-close-popup />
         </q-card-actions>
       </q-card>
@@ -943,10 +1013,12 @@
 import { ref, computed, reactive, watch } from 'vue';
 import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
 import type { QTableColumn } from 'quasar';
+import { useQuasar, exportFile } from 'quasar';
 import { postApiUi } from 'src/boot/axios';
 import type { ExperimentDesign, ExperimentExploreResponse } from 'src/components/models';
 
 const dataSourcesStore = useDataSourcesStore();
+const $q = useQuasar();
 
 // Tab state
 const activeTab = ref('datasource');
@@ -1182,21 +1254,16 @@ const hypothesisOptionsDetailed = [
   },
 ];
 
-const treatmentOptionsDetailed = [
+const effectScopeOptions = [
   {
-    label: 'Holdback (new campaign)',
-    value: 'hold_back',
-    desc: 'Withhold advertising from control to measure true incremental impact',
+    label: 'All Geos',
+    value: 'all_geos',
+    desc: 'The goal of the experiment is to estimate the average effect of the treatment (ads) over all geos',
   },
   {
-    label: 'Go Dark (existing campaign)',
-    value: 'go_dark',
-    desc: 'Stop or reduce advertising in selected areas to determine baseline performance',
-  },
-  {
-    label: 'Heavy Up (existing campaign)',
-    value: 'heavy_up',
-    desc: 'Increase advertising in test units to measure response to intensified media pressure',
+    label: 'Treatment Geos',
+    value: 'treatment_geos',
+    desc: 'The goal of the experiment is to estimate the average effect of the treatment (ads) over the geos in the treatment group',
   },
 ];
 
@@ -1226,23 +1293,23 @@ const DEFAULT_PARAMETERS = {
   structure: 'single-cell',
   testGroups: 1, // Only used when structure is 'multi-cell'
 
-  // Optimization target
-  optimizationTarget: 'power', // 'power' or 'mde'
-
-  // Power settings
-  power: 80, // Target power when optimizationTarget is 'power'
-  // MDE settings
-  mde: 5, // Target MDE when optimizationTarget is 'mde'
+  power: 80, // Target power
 
   // Duration settings
   durationMin: 4,
   durationMax: 8,
 
-  experimentType: 'hold_back',
   alpha: 0.05,
   hypothesisType: 'one-sided',
-  pretestPeriod: 4,
-  //budgetAllocation: 'equal',
+  effectScope: 'all_geos',
+
+  // Budget parameters
+  budget: [] as string[], // Array of budget values (as strings from input)
+  budgetType: 'percentage_change', // 'percentage_change', 'daily_budget', 'total_budget'
+
+  simulationsPerTrial: undefined,
+  maxTrials: undefined,
+  nDesigns: undefined,
 };
 
 // Initialize parameters with default values
@@ -1301,62 +1368,156 @@ const resetParameters = () => {
 };
 
 const sortOptions = [
-  { label: 'Highest Power', value: 'power' },
   { label: 'Lowest MDE', value: 'mde' },
   { label: 'Shortest Duration', value: 'duration' },
 ];
 
-// Test designs
-const isExplored = ref(false);
-const testDesigns = ref([] as ExperimentDesign[]);
-const sortBy = ref(sortOptions[0]);
-const sortedDesigns = computed<ExperimentDesign[]>(() => {
-  const designs = [...testDesigns.value];
-  const field = sortBy.value.value;
+// --- Computed properties for UI logic and validation (Order Matters) ---
 
-  if (field === 'power') {
-    return designs.sort((a, b) => b.power - a.power);
-  } else if (field === 'duration') {
-    return designs.sort((a, b) => a.duration - b.duration);
-  }
-
-  return designs;
+const fullWeekCount = computed(() => {
+  if (!selectedDataSource.value?.data?.uniqueDates?.length) return 0;
+  return Math.floor(selectedDataSource.value.data.uniqueDates.length / 7);
 });
 
-// Design detail dialog
-const designDetailDialog = ref(false);
-const selectedDesign = ref<ExperimentDesign>(null);
-const groupTab = ref('Control');
-const geoDetailColumns: QTableColumn[] = [
-  { name: 'geo', label: 'Geo Unit', field: (row) => row, align: 'left' },
+const maxAllowedDurationMax = computed(() => {
+  // Ensures that there's enough data for pre-test (equal to max duration)
+  return Math.max(1, Math.floor(fullWeekCount.value / 2));
+});
+
+// These computed properties and constants need to be defined before isExplorationParamsValid
+
+const isBudgetSectionDisabled = computed(() => {
+  return !selectedDataSource.value?.columns?.costColumn;
+});
+
+const isPercentageBudgetDisabled = computed(() => {
+  if (isBudgetSectionDisabled.value) return true;
+  return selectedDataSource.value?.data?.costSum === 0;
+});
+
+const budgetTypeOptions = [
+  {
+    value: 'percentage_change',
+    label: '% Change',
+    desc: 'Percentage change relative to Business-As-Usual (BAU) spend.',
+  },
+  {
+    value: 'daily_budget',
+    label: '$ Daily',
+    desc: 'Incremental daily budget amount (on top of BAU).',
+  },
+  {
+    value: 'total_budget',
+    label: '$ Total',
+    desc: 'Total incremental budget amount for the experiment duration (on top of BAU).',
+  },
 ];
 
-// Format helpers
-const formatNumber = (num) => {
-  return new Intl.NumberFormat().format(num);
-};
+const filteredBudgetTypeOptions = computed(() => {
+  if (isPercentageBudgetDisabled.value) {
+    return budgetTypeOptions.filter((opt) => opt.value !== 'percentage_change');
+  }
+  return budgetTypeOptions;
+});
 
-const formatKey = (key) => {
-  return key
-    .replace(/([A-Z])/g, ' $1') // Insert space before capital letters
-    .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
-};
+watch(maxAllowedDurationMax, (newMax) => {
+  if (parameters.durationMax > newMax) {
+    parameters.durationMax = newMax;
+  }
+  // Ensure min is still less than (now potentially adjusted) max
+  if (parameters.durationMin >= parameters.durationMax) {
+    parameters.durationMin = Math.max(1, parameters.durationMax - 1);
+  }
+});
 
-let lastRequest;
+// --- Validation Function and Issues Display ---
+// This function MUST be defined AFTER fullWeekCount and maxAllowedDurationMax
+function isExplorationParamsValid(): string[] {
+  const issues: string[] = [];
+  if (!selectedDataSource.value || !selectedDataSource.value.data) {
+    issues.push('Data source not fully loaded. Please re-select or wait.');
+    return issues;
+  }
+
+  // Runtime Durations
+  if (parameters.durationMax > maxAllowedDurationMax.value) {
+    issues.push(
+      `Maximum test duration (${parameters.durationMax} weeks) exceeds the allowable limit of ${maxAllowedDurationMax.value} weeks for the selected data source (which has ${fullWeekCount.value} full weeks). Reduce duration or choose a data source with more historical data.`, // .value is correct here
+    );
+  }
+  if (parameters.durationMin > parameters.durationMax) {
+    issues.push('Minimum test duration must be less than the maximum test duration.');
+  }
+
+  // Budget Validations
+  if (
+    isBudgetSectionDisabled.value &&
+    parameters.budget.length > 0 &&
+    parameters.budget.some((b) => b !== '0' && b !== '')
+  ) {
+    issues.push('Budget cannot be specified as the selected data source has no cost column.');
+  }
+
+  return issues;
+}
+
+const explorationValidationIssues = computed(() => {
+  // This uses isExplorationParamsValid
+  return isExplorationParamsValid();
+});
+
+// --- Watchers for dynamic parameter adjustments ---
+
+// This watch needs to be present and after maxAllowedDurationMax
+watch(maxAllowedDurationMax, (newMax) => {
+  if (parameters.durationMax > newMax) {
+    parameters.durationMax = newMax;
+  }
+  // Ensure min is still less than (now potentially adjusted) max
+  if (parameters.durationMin >= parameters.durationMax) {
+    parameters.durationMin = Math.max(1, parameters.durationMax - 1);
+  }
+});
+
+// Validation rule for budget input
+const budgetValidationRule = (val: string[]) => {
+  if (!val || val.length === 0) {
+    return true; // Empty is always allowed (A/B test)
+  }
+
+  // Check if all values are numeric
+  for (const item of val) {
+    if (isNaN(Number(item))) {
+      return 'All budget values must be numeric.';
+    }
+  }
+
+  if (parameters.structure === 'single-cell') {
+    return (
+      val.length <= 1 || 'For a single-cell test, provide at most one budget value or leave empty.'
+    );
+  } else {
+    // multi-cell
+    return (
+      val.length === parameters.testGroups ||
+      `For ${parameters.testGroups} test groups, provide ${parameters.testGroups} budget values or leave empty.`
+    );
+  }
+};
 
 async function runExploration() {
-  // TODO:
   const request = {
     // Datasource ID from the selected datasource
     datasource_id: selectedDataSource.value?.id,
 
     // Core parameters
-    experiment_type: parameters.experimentType,
     primary_metric: selectedMetric.value,
-    //secondary_metrics: [],
+    // TODO: secondary_metrics: [],
+
+    budgets: parseBudget(parameters),
 
     // Test parameters
-    n_cells: parameters.structure === 'multi-cell' ? parameters.testGroups : 2,
+    n_cells: parameters.structure === 'multi-cell' ? parameters.testGroups + 1 : 2,
     alpha: parameters.alpha,
     alternative_hypothesis: parameters.hypothesisType,
 
@@ -1367,15 +1528,21 @@ async function runExploration() {
     // Methodology options (empty means explore all)
     methodologies: parameters.methodology.length > 0 ? parameters.methodology : [],
 
-    // Optimization target
-    optimization_target: parameters.optimizationTarget,
-    target_power: parameters.optimizationTarget === 'power' ? parameters.power : null,
-    target_mde: parameters.optimizationTarget === 'mde' ? parameters.mde : null,
+    target_power: parameters.power,
 
     // Geo assignments from user selections
     fixed_geos: getGeoAssignments(geoUnits.value),
 
-    pretest_weeks: parameters.pretestPeriod,
+    effect_scope: parameters.effectScope,
+    simulations_per_trial: Number.isFinite(Number(parameters.simulationsPerTrial))
+      ? Number(parameters.simulationsPerTrial)
+      : undefined,
+    max_trials: Number.isFinite(Number(parameters.maxTrials))
+      ? Number(parameters.maxTrials)
+      : undefined,
+    n_designs: Number.isFinite(Number(parameters.nDesigns))
+      ? Number(parameters.nDesigns)
+      : undefined,
     // TODO:
     //trimming_quantile_candidates: List[float] = [0.0]
   };
@@ -1388,7 +1555,45 @@ async function runExploration() {
   );
   if (!response) return;
   // Process the response
-  testDesigns.value = response.data.designs;
+  const designs: ExperimentDesign[] = [];
+  for (const designResp of response.data.designs) {
+    const design: ExperimentDesign = {
+      design_id: designResp.design_id,
+      mde: designResp.mde,
+      runtime_weeks: designResp.runtime_weeks,
+      methodology: designResp.methodology,
+      methodology_parameters: designResp.methodology_parameters,
+      isValid: designResp.evaluation_results?.is_valid_design,
+      groups: {
+        Control: designResp.geo_assignment?.control || [],
+      },
+      parameters: {
+        n_cells: designResp.n_cells,
+        primary_metric: designResp.primary_metric,
+        secondary_metrics: designResp.secondary_metrics,
+        alpha: designResp.alpha,
+        alternative_hypothesis: designResp.alternative_hypothesis,
+        cell_volume_constraint: designResp.cell_volume_constraint,
+        effect_scope: designResp.effect_scope,
+        random_seed: designResp.random_seed,
+      },
+    };
+    if (designResp.geo_assignment?.treatment && designResp.geo_assignment.treatment.length > 0) {
+      if (designResp.geo_assignment.treatment.length === 1) {
+        // This means one treatment group
+        design.groups.Treatment = designResp.geo_assignment.treatment[0] || [];
+      } else {
+        // Multiple treatment groups
+        for (let i = 0; i < designResp.geo_assignment.treatment.length; i++) {
+          design.groups[`Treatment ${String.fromCharCode(65 + i)}`] =
+            designResp.geo_assignment.treatment[i] || [];
+        }
+      }
+    }
+
+    designs.push(design);
+  }
+  testDesigns.value = designs;
   isExplored.value = true;
 
   // Navigate to designs tab
@@ -1431,6 +1636,64 @@ function getGeoAssignments(geoUnits) {
   return assignments;
 }
 
+function parseBudget(parameters: typeof DEFAULT_PARAMETERS) {
+  const budgetValues = parameters.budget;
+  // Handle A/B test case (empty budget array) -> return single budget item with value 0
+  if (!budgetValues || budgetValues.length === 0) {
+    return [{ value: 0, budget_type: parameters.budgetType }];
+  }
+
+  const numbers = budgetValues.map((s) => Number(s.trim())).filter((n) => !isNaN(n));
+
+  if (numbers.length !== budgetValues.length) {
+    // This case should ideally be caught by input validation, but as a safeguard:
+    throw new Error(`Invalid budget values detected during parsing: ${budgetValues.join(',')}`);
+  }
+  // Map valid numbers to the required API structure
+  return numbers.map((i) => {
+    return { value: i, budget_type: parameters.budgetType };
+  });
+}
+
+// Test designs
+const isExplored = ref(false);
+const testDesigns = ref([] as ExperimentDesign[]);
+const sortBy = ref(sortOptions[0]); // Default to Lowest MDE
+const sortedDesigns = computed<ExperimentDesign[]>(() => {
+  const designs = [...testDesigns.value];
+  const field = sortBy.value.value;
+
+  if (field === 'mde') {
+    // Sort by MDE, lowest first. Handle undefined mde by pushing them to the end.
+    return designs.sort((a, b) => (a.mde ?? Infinity) - (b.mde ?? Infinity));
+  } else if (field === 'duration') {
+    return designs.sort((a, b) => a.runtime_weeks - b.runtime_weeks);
+  }
+  // Default return if no specific sort matches, or add more conditions
+  return designs;
+});
+
+// Design detail dialog
+const designDetailDialog = ref(false);
+const selectedDesign = ref<ExperimentDesign>(null);
+const groupTab = ref('Control');
+const geoDetailColumns: QTableColumn[] = [
+  { name: 'geo', label: 'Geo Unit', field: (row) => row, align: 'left' },
+];
+
+// Format helpers
+const formatNumber = (num) => {
+  return new Intl.NumberFormat().format(num);
+};
+
+const formatKey = (key) => {
+  return key
+    .replace(/([A-Z])/g, ' $1') // Insert space before capital letters
+    .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
+};
+
+let lastRequest;
+
 function downloadDesign(design) {
   // TODO:
   // Create a design export object
@@ -1440,21 +1703,21 @@ function downloadDesign(design) {
     metric: selectedMetric.value,
     parameters: design.parameters,
     statistics: {
-      power: design.power,
       mde: design.mde,
-      duration: design.duration,
+      duration: design.runtime_weeks,
     },
     groups: {},
   };
 
   // Add geo assignments for each group
   Object.keys(design.groups).forEach((groupName) => {
-    exportData.groups[groupName] = design.groups[groupName].geos.map((geo) => ({
-      geo: geo.geo,
+    // design.groups[groupName] is already an array of geo strings
+    exportData.groups[groupName] = (design.groups[groupName] as string[]).map((geo: string) => ({
+      geo: geo,
     }));
   });
-  // const filename = `geo-test-design-${Date.now()}.json`;
-  // TODO: send to the server
+  const filename = `geo-test-design-${Date.now()}.json`;
+  exportFile(filename, JSON.stringify(exportData, null, 2));
 }
 
 function viewDesign(design) {
@@ -1465,19 +1728,26 @@ function viewDesign(design) {
 
 // Helper function to check if a geo was fixed in the assignment
 function isFixedGeo(geo: string, groupName: string): boolean {
-  if (!lastRequest.fixed_geos) return false;
+  if (!lastRequest || !lastRequest.fixed_geos) return false;
 
   if (groupName === 'Control' && lastRequest.fixed_geos.control?.includes(geo)) {
     return true;
   }
 
-  if (groupName.startsWith('Test')) {
-    // For multi-cell tests, need to check the right treatment group
-    const groupIndex =
-      groupName === 'Test' ? 0 : Number(groupName.replace('Test ', '').charCodeAt(0) - 65); // 'Test A' -> 0, 'Test B' -> 1
+  if (groupName.startsWith('Treatment')) {
+    let groupIndex = -1;
+    if (groupName === 'Treatment') {
+      groupIndex = 0; // Single treatment group
+    } else if (groupName.startsWith('Treatment ')) {
+      // "Treatment A", "Treatment B"
+      const letter = groupName.split(' ')[1];
+      if (letter && letter.length === 1) {
+        groupIndex = letter.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1
+      }
+    }
 
     if (
-      groupIndex >= 0 &&
+      groupIndex !== -1 && // Valid groupIndex found
       lastRequest.fixed_geos.treatment &&
       lastRequest.fixed_geos.treatment[groupIndex]?.includes(geo)
     ) {
@@ -1486,5 +1756,53 @@ function isFixedGeo(geo: string, groupName: string): boolean {
   }
 
   return false;
+}
+
+function exportDesignGroupToCsv(design: ExperimentDesign, groupName: string) {
+  if (!design || !design.groups || !design.groups[groupName]) {
+    $q.notify({
+      color: 'negative',
+      message: 'Could not find group data to export.',
+      icon: 'warning',
+    });
+    return;
+  }
+
+  const geos: string[] = design.groups[groupName];
+  if (!geos || geos.length === 0) {
+    $q.notify({
+      color: 'info',
+      message: `Group '${groupName}' has no geo units to export.`,
+      icon: 'info',
+    });
+    return;
+  }
+
+  // CSV content: header + data rows
+  let csvContent = 'geo_id\n'; // Header
+  csvContent += geos.join('\n');
+
+  const designId = design.design_id || 'unknown_design';
+  // Sanitize groupName for filename: replace non-alphanumeric (except underscore) with underscore, and convert to lowercase
+  const safeGroupName = String(groupName)
+    .replace(/[^a-z0-9_]/gi, '_')
+    .toLowerCase();
+  const filename = `${designId}_${safeGroupName}.csv`;
+
+  const status = exportFile(filename, csvContent, 'text/csv;charset=utf-8;');
+
+  if (status !== true) {
+    $q.notify({
+      color: 'negative',
+      message: 'CSV export failed. Please try again.',
+      icon: 'warning',
+    });
+  } else {
+    $q.notify({
+      color: 'positive',
+      message: `Successfully exported ${filename}`,
+      icon: 'check_circle',
+    });
+  }
 }
 </script>

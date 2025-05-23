@@ -48,6 +48,7 @@ export interface DataSourceData {
     min: number;
     max: number;
   }>;
+  costSum?: number; // Sum of the cost column, if available
 }
 
 export type GetDataSourcesResponse = DataSource[];
@@ -68,8 +69,7 @@ function transformToApi(source: DataSource) {
     source_link: source.sourceLink,
     created_at: source.createdAt,
     updated_at: source.updatedAt,
-    // Only include data for new internal data sources
-    data: !source.id ? source.data?.rawRows : undefined,
+    data: source.data?.rawRows,
   };
 }
 
@@ -184,8 +184,8 @@ export const useDataSourcesStore = defineStore('datasources', () => {
   /**
    * Load all data sources from the server.
    */
-  async function loadDataSources(interactive = true) {
-    if (isLoaded.value) {
+  async function loadDataSources(interactive = true, reload = false) {
+    if (isLoaded.value && !reload) {
       return datasources.value;
     }
 
@@ -278,10 +278,11 @@ export const useDataSourcesStore = defineStore('datasources', () => {
         uniqueDates: [],
         metricNames: [],
         metrics: [],
+        costSum: 0,
       };
     }
 
-    const { geoColumn, dateColumn, metricColumns } = columns;
+    const { geoColumn, dateColumn, metricColumns, costColumn } = columns;
 
     // Extract unique geo units and dates
     const geoUnits = [...new Set(rawData.map((row) => row[geoColumn]))];
@@ -302,12 +303,21 @@ export const useDataSourcesStore = defineStore('datasources', () => {
       };
     });
 
+    let costSum = 0;
+    if (costColumn) {
+      costSum = rawData.reduce((sum: number, row) => {
+        const costVal = Number(row[costColumn]);
+        return sum + (isNaN(costVal) ? 0 : costVal);
+      }, 0) as number;
+    }
+
     return {
       rawRows: rawData,
       geoUnits,
       uniqueDates,
       metricNames: metricColumns,
       metrics,
+      costSum,
     };
   }
 
