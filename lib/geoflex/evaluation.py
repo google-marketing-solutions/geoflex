@@ -593,6 +593,20 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           sample_design,
           exp_start_date,
       )
+      if sample_design.geo_assignment is None:
+        logger.warning(
+            "The original data was eligible for the design, but one of the"
+            " bootstrap samples is not. This might be an error with the"
+            " bootstrap sampler.",
+        )
+        results = RawExperimentSimulationResults(
+            design=design,
+            simulation_results=pd.DataFrame(),
+            representiveness_scores=None,
+            design_is_valid=False,
+        )
+        self.raw_simulation_results[design.design_id] = results
+        return results
 
       sample_results = self._analyze_simulated_experiment(
           sample, sample_design, exp_start_date
