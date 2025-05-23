@@ -214,7 +214,6 @@ class TestingMethodology(_base.Methodology):
         results.append({
             "cell": cell,
             "metric": metric.name,
-            "is_primary_metric": metric == experiment_design.primary_metric,
             "point_estimate": point_estimate,
             "lower_bound": lower_bound,
             "upper_bound": upper_bound,

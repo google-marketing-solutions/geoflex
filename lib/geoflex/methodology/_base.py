@@ -261,7 +261,6 @@ class Methodology(abc.ABC):
     metric provided in the experiment data. The columns are the following:
 
     - metric: The metric name.
-    - is_primary_metric: Whether the metric is a primary metric.
     - cell: The cell number.
     - point_estimate: The point estimate of the treatment effect.
     - lower_bound: The lower bound of the confidence interval.
@@ -389,7 +388,6 @@ class Methodology(abc.ABC):
     # Check that the required columns are present.
     required_columns = {
         "metric",
-        "is_primary_metric",
         "cell",
         "point_estimate",
         "lower_bound",
@@ -473,6 +471,20 @@ class Methodology(abc.ABC):
     raw_results["is_significant"] = (
         raw_results["p_value"] < validated_experiment_design.alpha
     )
+
+    # Flag the primary metric.
+    raw_results["is_primary_metric"] = (
+        raw_results["metric"] == validated_experiment_design.primary_metric.name
+    )
+    every_cell_has_primary = (
+        raw_results.groupby("cell")["is_primary_metric"].any().all()
+    )
+    if not every_cell_has_primary:
+      error_message = (
+          "Some of the cells are missing the results for the primary metric."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     return raw_results
 

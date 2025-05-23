@@ -229,7 +229,6 @@ def test_methodology_assign_geos_raises_error_if_too_many_treatment_groups(
     "missing_column",
     [
         "metric",
-        "is_primary_metric",
         "cell",
         "point_estimate",
         "lower_bound",
@@ -261,7 +260,6 @@ def test_methodology_analyze_experiment_raises_error_if_missing_required_columns
 
       return pd.DataFrame({
           "metric": ["revenue"],
-          "is_primary_metric": [True],
           "cell": [1],
           "point_estimate": [1.0],
           "lower_bound": [0.5],
@@ -300,7 +298,6 @@ def test_methodology_analyze_experiment_drops_extra_columns(
 
       return pd.DataFrame({
           "metric": ["revenue"],
-          "is_primary_metric": [True],
           "cell": [1],
           "point_estimate": [1.0],
           "lower_bound": [0.5],
@@ -340,7 +337,6 @@ def test_methodology_analyze_experiment_raises_error_if_missing_metrics(
 
       return pd.DataFrame({
           "metric": ["revenue"],
-          "is_primary_metric": [True],
           "cell": [1],
           "point_estimate": [1.0],
           "lower_bound": [0.5],
@@ -356,6 +352,51 @@ def test_methodology_analyze_experiment_raises_error_if_missing_metrics(
   )
 
   with pytest.raises(ValueError):
+    AnalyzeExperimentMockMethodology().analyze_experiment(
+        historical_data, experiment_design, "2024-01-01"
+    )
+
+
+def test_methodology_analyze_experiment_raises_error_if_missing_primary_metric(
+    historical_data, default_experiment_design, MockMethodology
+):
+  class AnalyzeExperimentMockMethodology(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
+    ) -> pd.DataFrame:
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
+
+      return pd.DataFrame({
+          "metric": ["conversions", "conversions", "revenue"],
+          "cell": [1, 2, 1],
+          "point_estimate": [1.0] * 3,
+          "lower_bound": [0.5] * 3,
+          "upper_bound": [1.5] * 3,
+          "point_estimate_relative": [0.1] * 3,
+          "lower_bound_relative": [0.05] * 3,
+          "upper_bound_relative": [0.15] * 3,
+          "p_value": [0.01] * 3,
+      })
+
+  experiment_design = default_experiment_design.make_variation(
+      secondary_metrics=["conversions"]
+  )
+
+  with pytest.raises(
+      ValueError,
+      match="Some of the cells are missing the results for the primary metric",
+  ):
     AnalyzeExperimentMockMethodology().analyze_experiment(
         historical_data, experiment_design, "2024-01-01"
     )
@@ -383,7 +424,6 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
 
       return pd.DataFrame({
           "metric": ["revenue", "CPiA", "iROAS"],
-          "is_primary_metric": [True, False, False],
           "cell": [1, 1, 1],
           "point_estimate": [1.0, 1.0, 1.0],
           "lower_bound": [0.5, 0.5, 0.5],
@@ -444,7 +484,6 @@ def test_methodology_analyze_experiment_infers_p_value_if_not_set(
 
       return pd.DataFrame({
           "metric": ["revenue"],
-          "is_primary_metric": [True],
           "cell": [1],
           "point_estimate": [1.0],
           "lower_bound": [0.5],
@@ -482,7 +521,6 @@ def test_methodology_analyze_experiment_sets_is_significant_correctly(
 
       return pd.DataFrame({
           "metric": ["revenue", "revenue"],
-          "is_primary_metric": [True, True],
           "cell": [1, 2],
           "point_estimate": [1.0, 1.0],
           "lower_bound": [0.5, 0.5],
@@ -619,7 +657,6 @@ def test_experiment_end_date_is_set_correctly(
 
       return pd.DataFrame({
           "metric": ["revenue", "revenue"],
-          "is_primary_metric": [True, True],
           "cell": [1, 2],
           "point_estimate": [1.0, 1.0],
           "lower_bound": [0.5, 0.5],
