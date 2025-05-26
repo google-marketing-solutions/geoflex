@@ -1,0 +1,68 @@
+<template>
+  <div :style="{ width: size + 'px', height: size + 'px' }">
+    <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+      <!-- Main circular background -->
+      <circle cx="16" cy="16" r="15" fill="white" stroke="#E8EAED" stroke-width="1" />
+
+      <g transform="translate(16, 16)">
+        <path
+          d="M0,-12 C-6,-12 -10,-8 -10,-2 C-10,2 0,12 0,12 C0,12 10,2 10,-2 C10,-8 6,-12 0,-12 Z"
+          fill="#4285F4"
+        />
+
+        <!--
+          Zigzag line:
+          - Starts near bottom-left: M-9,9
+          - First segment goes up-right, above the yellow dot (0,-2), to P1(0,-4).
+          - Second segment goes down-right from P1(0,-4) to P2(3,-0.3).
+          - Third segment goes up-right from P2(3,-0.3) to End(9,-9) near top-right.
+          This path ensures the line detours above the yellow dot at (0,-2).
+          The first segment is longer than the third, and their angles are approximately symmetrical.
+        -->
+        <path
+          d="M-9,9 L0,-4 L3,-0.3 L9,-9"
+          fill="none"
+          stroke="#34A853"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+
+        <!--
+          Arrow at the tip of the zigzag (9,-9), pointing diagonally up-right.
+          The prongs are calculated based on the direction of the last line segment (from (3,-0.3) to (9,-9)).
+          Tip at (9,-9). Prong ends are approximately (8.7,-6.8) and (7.0,-7.9).
+        -->
+        <path
+          d="M9,-9 L8.7,-6.8 M9,-9 L7.0,-7.9"
+          fill="none"
+          stroke="#34A853"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+
+        <circle cx="0" cy="-2" r="4" fill="#FBBC05" />
+      </g>
+    </svg>
+  </div>
+</template>
+
+<script lang="ts">
+export default {
+  name: 'AppLogo',
+  props: {
+    size: {
+      type: [Number, String],
+      default: 40,
+    },
+  },
+};
+</script>
+<style scoped>
+/* Scoped styles for the component if needed, though for this basic SVG wrapper, it might not be necessary. */
+/* For example, you could add display: inline-block if you prefer that behavior by default. */
+div {
+  display: inline-block; /* Or block, depending on desired layout flow */
+  line-height: 0; /* Prevents extra space below the SVG if it's an inline element */
+}
+</style>

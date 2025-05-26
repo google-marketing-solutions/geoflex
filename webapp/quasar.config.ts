@@ -4,6 +4,7 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js
 
 import { defineConfig } from '#q-app/wrappers';
+import { execSync } from 'child_process';
 
 export default defineConfig((/* ctx */) => {
   return {
@@ -48,7 +49,11 @@ export default defineConfig((/* ctx */) => {
 
       // publicPath: '/',
       // analyze: true,
-      // env: {},
+      env: {
+        BUILD_TIMESTAMP: new Date().toISOString(),
+        GIT_HASH: execSync('git rev-parse --short HEAD').toString().trim(),
+      },
+
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,
@@ -88,6 +93,7 @@ export default defineConfig((/* ctx */) => {
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js#framework
     framework: {
       config: {
+        dark: 'auto',
         notify: {
           /* look at QuasarConfOptions from the API card */
         },
@@ -204,14 +210,6 @@ export default defineConfig((/* ctx */) => {
 
         appId: 'geoflex',
       },
-    },
-
-    // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-browser-extensions/configuring-bex
-    bex: {
-      // extendBexScriptsConf (esbuildConf) {},
-      // extendBexManifestJson (json) {},
-
-      contentScripts: ['my-content-script'],
     },
   };
 });
