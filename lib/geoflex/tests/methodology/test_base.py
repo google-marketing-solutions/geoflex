@@ -625,6 +625,34 @@ def test_is_eligible_for_design_and_data_returns_false_if_cell_volume_metric_col
   )
 
 
+def test_is_eligible_for_design_and_data_returns_false_if_cost_column_not_in_data(
+    MockMethodology, historical_data, default_experiment_design
+):
+  assert not MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design.make_variation(
+          secondary_metrics=[
+              geoflex.metrics.iROAS(cost_column="non_existent_cost")
+          ],
+          experiment_budget=ExperimentBudget(
+              budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+              value=-1.0,
+          ),
+      ),
+      historical_data,
+  )
+
+
+def test_is_eligible_for_design_and_data_returns_false_if_response_column_not_in_data(
+    MockMethodology, historical_data, default_experiment_design
+):
+  assert not MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design.make_variation(
+          secondary_metrics=["non_existent_response"],
+      ),
+      historical_data,
+  )
+
+
 def test_is_eligible_for_design_and_data_returns_false_if_methodology_returns_false(
     MockMethodology, historical_data, default_experiment_design
 ):

@@ -123,6 +123,24 @@ class Methodology(abc.ABC):
         )
         return False
 
+    # Check that all of the metric columns are in the data.
+    for metric in [design.primary_metric] + design.secondary_metrics:
+      if (
+          metric.cost_column
+          and metric.cost_column not in historical_data.parsed_data.columns
+      ):
+        logger.error(
+            "The cost column %s is not in the data.", metric.cost_column
+        )
+        return False
+
+      if metric.column not in historical_data.parsed_data.columns:
+        logger.error(
+            "The response column %s is not in the data.", metric.column
+        )
+        return False
+
+    # Check that the costs are non-zero for a percentage change budget.
     if (
         design.experiment_budget.budget_type
         == ExperimentBudgetType.PERCENTAGE_CHANGE
