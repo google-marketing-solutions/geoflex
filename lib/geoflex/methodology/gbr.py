@@ -223,9 +223,9 @@ class GBR(_base.Methodology):
       experiment_start_date: pd.Timestamp,
       experiment_end_date: pd.Timestamp,
       runtime_weeks: int,
+      pretest_period_end_date: pd.Timestamp,
   ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    experiment_start_date = pd.to_datetime(experiment_start_date)
-    pretest_start_date = experiment_start_date - dt.timedelta(
+    pretest_start_date = pretest_period_end_date - dt.timedelta(
         weeks=runtime_weeks
     )
 
@@ -233,7 +233,7 @@ class GBR(_base.Methodology):
         runtime_data.parsed_data[runtime_data.date_column] >= pretest_start_date
     ) & (
         runtime_data.parsed_data[runtime_data.date_column]
-        < experiment_start_date
+        < pretest_period_end_date
     )
     is_runtime = (
         runtime_data.parsed_data[runtime_data.date_column]
@@ -478,6 +478,7 @@ class GBR(_base.Methodology):
       experiment_design: ExperimentDesign,
       experiment_start_date: pd.Timestamp,
       experiment_end_date: pd.Timestamp,
+      pretest_period_end_date: pd.Timestamp,
   ) -> pd.DataFrame:
     """Analyzes the experiment with GBR.
 
@@ -500,6 +501,7 @@ class GBR(_base.Methodology):
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
       experiment_end_date: The end date of the experiment.
+      pretest_period_end_date: The end date of the pretest period.
 
     Returns:
       A dataframe with the analysis results.
@@ -510,6 +512,7 @@ class GBR(_base.Methodology):
             experiment_start_date=experiment_start_date,
             experiment_end_date=experiment_end_date,
             runtime_weeks=experiment_design.runtime_weeks,
+            pretest_period_end_date=pretest_period_end_date,
         )
     )
 

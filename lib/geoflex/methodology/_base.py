@@ -254,6 +254,7 @@ class Methodology(abc.ABC):
       experiment_design: ExperimentDesign,
       experiment_start_date: pd.Timestamp,
       experiment_end_date: pd.Timestamp,
+      pretest_period_end_date: pd.Timestamp,
   ) -> pd.DataFrame:
     """How the methodology analyzes the experiment.
 
@@ -287,6 +288,9 @@ class Methodology(abc.ABC):
       experiment_start_date: The start date of the experiment.
       experiment_end_date: The end date of the experiment, or the date to end
         the analysis (not inclusive).
+      pretest_period_end_date: The end date of the pretest period (not
+        inclusive). This will always be less than or equal to the
+        experiment_start_date.
 
     Returns:
       A dataframe with the analysis results.
@@ -299,6 +303,7 @@ class Methodology(abc.ABC):
       experiment_design: ExperimentDesign,
       experiment_start_date: str,
       experiment_end_date: str | None = None,
+      pretest_period_end_date: str | None = None,
   ) -> pd.DataFrame:
     """Analyzes an experiment using this methodology.
 
@@ -325,6 +330,10 @@ class Methodology(abc.ABC):
         the analysis (not inclusive). If not provided, the analysis will infer
         this based on the start date and the runtime weeks, or the last date in
         the data, whichever is earlier.
+      pretest_period_end_date: The end date of the pretest period (not
+        inclusive). If not provided, it will be assumed to be the same as the
+        experiment_start_date. This is useful to allow for a washout period
+        before the experiment starts.
 
     Returns:
       A dataframe with the analysis results.
@@ -349,6 +358,18 @@ class Methodology(abc.ABC):
           " analysis will actually be for the last date in the data."
       )
       experiment_end_date = data_end_date
+
+    if pretest_period_end_date is None:
+      pretest_period_end_date = experiment_start_date
+    else:
+      pretest_period_end_date = pd.to_datetime(pretest_period_end_date)
+
+    if pretest_period_end_date > experiment_start_date:
+      error_message = (
+          "The pretest period end date is after the experiment start date."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
 
     days_in_runtime = (experiment_end_date - experiment_start_date).days
     days_in_design_runtime = experiment_design.runtime_weeks * 7
@@ -383,6 +404,7 @@ class Methodology(abc.ABC):
         validated_experiment_design,
         experiment_start_date,
         experiment_end_date,
+        pretest_period_end_date,
     )
 
     # Check that the required columns are present.
@@ -556,6 +578,8 @@ def analyze_experiment(
     experiment_design: ExperimentDesign,
     runtime_data: GeoPerformanceDataset,
     experiment_start_date: str,
+    experiment_end_date: str | None = None,
+    pretest_period_end_date: str | None = None,
 ) -> pd.DataFrame | None:
   """Analyzes an experiment using the methodology set in the design.
 
@@ -580,6 +604,14 @@ def analyze_experiment(
     runtime_data: The runtime data for the experiment.
     experiment_start_date: The start date of the experiment, as a string in the
       format YYYY-MM-DD.
+    experiment_end_date: The end date of the experiment, as a string in the
+      format YYYY-MM-DD. If not provided, the analysis will infer this based on
+      the start date and the runtime weeks, or the last date in the data,
+      whichever is earlier.
+    pretest_period_end_date: The end date of the pretest period (not inclusive),
+      as a string in the format YYYY-MM-DD. If not provided, it will be assumed
+      to be the same as the experiment_start_date. This is useful to allow for a
+      washout period before the experiment starts.
 
   Returns:
     A dataframe with the analysis results, or None if the design is not valid
@@ -594,7 +626,11 @@ def analyze_experiment(
 
   methodology = get_methodology(experiment_design.methodology)
   return methodology.analyze_experiment(
-      runtime_data, experiment_design, experiment_start_date
+      runtime_data,
+      experiment_design,
+      experiment_start_date,
+      experiment_end_date,
+      pretest_period_end_date,
   )
 
 

@@ -82,6 +82,7 @@ def mock_test_methodology_fixture():
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       # Not used in this test
       return pd.DataFrame()
@@ -250,12 +251,14 @@ def test_methodology_analyze_experiment_raises_error_if_missing_required_columns
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -288,12 +291,14 @@ def test_methodology_analyze_experiment_drops_extra_columns(
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -327,12 +332,14 @@ def test_methodology_analyze_experiment_raises_error_if_missing_metrics(
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -369,12 +376,14 @@ def test_methodology_analyze_experiment_raises_error_if_missing_primary_metric(
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -414,12 +423,14 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -474,12 +485,14 @@ def test_methodology_analyze_experiment_infers_p_value_if_not_set(
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -511,12 +524,14 @@ def test_methodology_analyze_experiment_sets_is_significant_correctly(
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
           experiment_end_date,
+          pretest_period_end_date,
       )
 
       return pd.DataFrame({
@@ -643,11 +658,13 @@ def test_experiment_end_date_is_set_correctly(
         experiment_design: ExperimentDesign,
         experiment_start_date: pd.Timestamp,
         experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       del (
           runtime_data,
           experiment_design,
           experiment_start_date,
+          pretest_period_end_date,
       )
 
       # Perform the assertion here to avoid having to mock the return value.
@@ -673,3 +690,74 @@ def test_experiment_end_date_is_set_correctly(
       "2024-01-01",
       user_experiment_end_date,
   )
+
+
+@pytest.mark.parametrize(
+    "pretest_period_end_date,expected_pretest_period_end_date",
+    [
+        ("2024-01-01", "2024-01-01"),
+        (None, "2024-02-01"),
+    ],
+)
+def test_pretest_period_end_date_is_set_correctly(
+    MockMethodology,
+    historical_data,
+    default_experiment_design,
+    pretest_period_end_date,
+    expected_pretest_period_end_date,
+):
+  class MockMethodologyWithPretestPeriodEndDate(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
+    ) -> pd.DataFrame:
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+      )
+
+      # Perform the assertion here to avoid having to mock the return value.
+      assert pretest_period_end_date == dt.datetime.strptime(
+          expected_pretest_period_end_date, "%Y-%m-%d"
+      )
+
+      return pd.DataFrame({
+          "metric": ["revenue", "revenue"],
+          "cell": [1, 2],
+          "point_estimate": [1.0, 1.0],
+          "lower_bound": [0.5, 0.5],
+          "upper_bound": [1.5, 1.5],
+          "point_estimate_relative": [0.1, 0.1],
+          "lower_bound_relative": [0.05, 0.05],
+          "upper_bound_relative": [0.15, 0.15],
+          "p_value": [0.01, 0.1],
+      })
+
+  MockMethodologyWithPretestPeriodEndDate().analyze_experiment(
+      historical_data,
+      default_experiment_design,
+      "2024-02-01",
+      pretest_period_end_date=pretest_period_end_date,
+  )
+
+
+def test_analyze_experiment_raises_exception_if_pretest_period_end_date_after_experiment_start_date(
+    MockMethodology,
+    historical_data,
+    default_experiment_design,
+):
+  with pytest.raises(ValueError):
+    MockMethodology().analyze_experiment(
+        historical_data,
+        default_experiment_design,
+        "2024-02-01",
+        pretest_period_end_date="2024-02-02",
+    )
