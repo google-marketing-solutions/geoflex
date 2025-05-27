@@ -15,8 +15,9 @@
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 from typing import Any
-from datetime import datetime
+from datetime import datetime, date
 import uuid
+import re
 import google.auth
 from google.auth import credentials
 from googleapiclient.discovery import build
@@ -41,6 +42,8 @@ idx_created = DATASOURCE_COLUMNS.index('created_at')  # D
 idx_updated = DATASOURCE_COLUMNS.index('updated_at')  # E
 idx_source_link = DATASOURCE_COLUMNS.index('source_link')  # F
 idx_columns = DATASOURCE_COLUMNS.index('columns')  # G
+
+iso_pattern = re.compile(r'^(\d{4})-(\d{1,2})-(\d{1,2})$')
 
 
 class DataSourceService:
@@ -302,9 +305,23 @@ class DataSourceService:
       values = [all_keys]  # First row is headers
 
       # Add data rows
-      for d in data_rows:
-        row = [d.get(key, None) for key in all_keys]
-        values.append(row)
+      for row in data_rows:
+
+        if val := row[datasource.columns.date_column]:
+          if isinstance(val, datetime):
+            row[datasource.columns.date_column] = val.date().isoformat()
+          elif isinstance(val, str):
+            if match := re.match(iso_pattern, val):
+              # format is correct, normalize it just in case
+              year, month, day = match.groups()
+              row[datasource.columns.date_column] = (
+                  f'{int(year):04d}-{int(month):02d}-{int(day):02d}')
+            else:
+              raise ValueError(
+                  f'Value {val} for date column ({datasource.columns.date_column}) is not in valid format (yyyy-mm-dd)'
+              )
+        row_values = [row.get(key, None) for key in all_keys]
+        values.append(row_values)
 
       # Write to Google Sheets
       self.sheets_service.spreadsheets().values().update(
@@ -406,7 +423,9 @@ class DataSourceService:
     try:
       result = self.sheets_service.spreadsheets().values().get(
           spreadsheetId=self.config.spreadsheet_id,
-          range=f'{sheet_name}!A:Z').execute()
+          range=f'{sheet_name}!A:Z',
+          valueRenderOption='FORMATTED_VALUE',
+          dateTimeRenderOption='SERIAL_NUMBER').execute()
 
       values = result.get('values', [])
       logger.debug('Loaded data source, %s rows', len(values))
@@ -429,11 +448,13 @@ class DataSourceService:
           val = row[j]
           if header in datasource.columns.metric_columns or header == datasource.columns.cost_column:
             try:
-              val = float(row[j])
+              val = float(val)
               if val.is_integer():
                 val = int(val)
             except (ValueError, TypeError):
               val = row[j]
+          if header == datasource.columns.date_column:
+            val = date.fromisoformat(val)
           row_dict[header] = val
         else:
           row_dict[header] = None
