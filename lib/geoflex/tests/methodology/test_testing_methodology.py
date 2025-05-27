@@ -216,7 +216,7 @@ def test_testing_methodology_assign_geos(
       geo_eligibility=GeoEligibility(exclude=set(exclude_geos)),
       cell_volume_constraint=cell_volume_constraint,
   )
-  geo_assignment = TestingMethodology().assign_geos(
+  geo_assignment, _ = TestingMethodology().assign_geos(
       experiment_design, performance_data
   )
   geo_counts = [len(geo_assignment.control)] + list(
@@ -253,7 +253,7 @@ def test_testing_methodology_analyze_experiment(performance_data):
       treatment=[["US", "UK"]], control=["CA", "AU"]
   )
 
-  analysis_results = TestingMethodology().analyze_experiment(
+  analysis_results, _ = TestingMethodology().analyze_experiment(
       performance_data, experiment_design, "2024-01-01"
   )
 
@@ -335,7 +335,7 @@ def test_testing_methodology_analyze_experiment_works_for_any_alternative_hypoth
       treatment=[["US", "UK"]], control=["CA", "AU"]
   )
 
-  analysis_results = TestingMethodology().analyze_experiment(
+  analysis_results, _ = TestingMethodology().analyze_experiment(
       performance_data, experiment_design, "2024-01-01"
   )
   assert isinstance(analysis_results, pd.DataFrame)

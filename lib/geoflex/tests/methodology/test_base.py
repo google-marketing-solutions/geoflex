@@ -1,6 +1,7 @@
 """Tests for the base methodology module."""
 
 import datetime as dt
+from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
@@ -72,7 +73,7 @@ def mock_test_methodology_fixture():
         experiment_design: ExperimentDesign,
         historical_data: GeoPerformanceDataset,
     ) -> GeoAssignment:
-      return GeoAssignment()
+      return GeoAssignment(), {"intermediate_data": "from_assign_geos"}
 
     def is_eligible_for_design(self, design: ExperimentDesign) -> bool:
       # Not used in this test
@@ -87,7 +88,7 @@ def mock_test_methodology_fixture():
         pretest_period_end_date: pd.Timestamp,
     ) -> pd.DataFrame:
       # Not used in this test
-      return pd.DataFrame()
+      return pd.DataFrame(), {"intermediate_data": "from_analyze_experiment"}
 
   return MockMethodology
 
@@ -104,13 +105,16 @@ def test_methodology_assign_geos_puts_missing_geos_into_exclude_list(
     ) -> GeoAssignment:
       del experiment_design, historical_data
 
-      return GeoAssignment(
-          treatment=[{"geo_2", "geo_3"}, {"geo_4", "geo_5"}],
-          control={"geo_6", "geo_7"},
-          exclude={"geo_0", "geo_1"},
+      return (
+          GeoAssignment(
+              treatment=[{"geo_2", "geo_3"}, {"geo_4", "geo_5"}],
+              control={"geo_6", "geo_7"},
+              exclude={"geo_0", "geo_1"},
+          ),
+          {},
       )
 
-  geo_assignment = AssignGeosMockMethodology().assign_geos(
+  geo_assignment, _ = AssignGeosMockMethodology().assign_geos(
       default_experiment_design, historical_data
   )
 
@@ -136,10 +140,13 @@ def test_methodology_assign_geos_raises_error_if_no_control_geos(
     ) -> GeoAssignment:
       del experiment_design, historical_data
 
-      return GeoAssignment(
-          treatment=[{"geo_2", "geo_3"}, {"geo_4", "geo_5"}],
-          control=set(),
-          exclude={"geo_0", "geo_1"},
+      return (
+          GeoAssignment(
+              treatment=[{"geo_2", "geo_3"}, {"geo_4", "geo_5"}],
+              control=set(),
+              exclude={"geo_0", "geo_1"},
+          ),
+          {},
       )
 
   with pytest.raises(ValueError):
@@ -161,10 +168,13 @@ def test_methodology_assign_geos_raises_error_if_no_treatment_geos(
     ) -> GeoAssignment:
       del experiment_design, historical_data
 
-      return GeoAssignment(
-          treatment=[set(), {"geo_4", "geo_5"}],
-          control={"geo_6", "geo_7"},
-          exclude={"geo_0", "geo_1"},
+      return (
+          GeoAssignment(
+              treatment=[set(), {"geo_4", "geo_5"}],
+              control={"geo_6", "geo_7"},
+              exclude={"geo_0", "geo_1"},
+          ),
+          {},
       )
 
   with pytest.raises(ValueError):
@@ -186,10 +196,13 @@ def test_methodology_assign_geos_raises_error_if_too_few_treatment_groups(
     ) -> GeoAssignment:
       del experiment_design, historical_data
 
-      return GeoAssignment(
-          treatment=[{"geo_2", "geo_3"}],
-          control={"geo_6", "geo_7"},
-          exclude={"geo_0", "geo_1"},
+      return (
+          GeoAssignment(
+              treatment=[{"geo_2", "geo_3"}],
+              control={"geo_6", "geo_7"},
+              exclude={"geo_0", "geo_1"},
+          ),
+          {},
       )
 
   with pytest.raises(ValueError):
@@ -211,14 +224,17 @@ def test_methodology_assign_geos_raises_error_if_too_many_treatment_groups(
     ) -> GeoAssignment:
       del experiment_design, historical_data
 
-      return GeoAssignment(
-          treatment=[
-              {"geo_2", "geo_3"},
-              {"geo_4", "geo_5"},
-              {"geo_6", "geo_7"},
-          ],
-          control={"geo_6", "geo_7"},
-          exclude={"geo_0", "geo_1"},
+      return (
+          GeoAssignment(
+              treatment=[
+                  {"geo_2", "geo_3"},
+                  {"geo_4", "geo_5"},
+                  {"geo_6", "geo_7"},
+              ],
+              control={"geo_6", "geo_7"},
+              exclude={"geo_0", "geo_1"},
+          ),
+          {},
       )
 
   with pytest.raises(ValueError):
@@ -263,17 +279,20 @@ def test_methodology_analyze_experiment_raises_error_if_missing_required_columns
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue"],
-          "cell": [1],
-          "point_estimate": [1.0],
-          "lower_bound": [0.5],
-          "upper_bound": [1.5],
-          "point_estimate_relative": [0.1],
-          "lower_bound_relative": [0.05],
-          "upper_bound_relative": [0.15],
-          "p_value": [0.01],
-      }).drop([missing_column], axis=1)
+      return (
+          pd.DataFrame({
+              "metric": ["revenue"],
+              "cell": [1],
+              "point_estimate": [1.0],
+              "lower_bound": [0.5],
+              "upper_bound": [1.5],
+              "point_estimate_relative": [0.1],
+              "lower_bound_relative": [0.05],
+              "upper_bound_relative": [0.15],
+              "p_value": [0.01],
+          }).drop([missing_column], axis=1),
+          {},
+      )
 
   with pytest.raises(ValueError):
     AnalyzeExperimentMockMethodology().analyze_experiment(
@@ -303,20 +322,23 @@ def test_methodology_analyze_experiment_drops_extra_columns(
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue"],
-          "cell": [1],
-          "point_estimate": [1.0],
-          "lower_bound": [0.5],
-          "upper_bound": [1.5],
-          "point_estimate_relative": [0.1],
-          "lower_bound_relative": [0.05],
-          "upper_bound_relative": [0.15],
-          "p_value": [0.01],
-          "extra_column": [1],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue"],
+              "cell": [1],
+              "point_estimate": [1.0],
+              "lower_bound": [0.5],
+              "upper_bound": [1.5],
+              "point_estimate_relative": [0.1],
+              "lower_bound_relative": [0.05],
+              "upper_bound_relative": [0.15],
+              "p_value": [0.01],
+              "extra_column": [1],
+          }),
+          {},
+      )
 
-  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+  results, _ = AnalyzeExperimentMockMethodology().analyze_experiment(
       historical_data, default_experiment_design, "2024-01-01"
   )
   assert "extra_column" not in results.columns
@@ -344,17 +366,20 @@ def test_methodology_analyze_experiment_raises_error_if_missing_metrics(
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue"],
-          "cell": [1],
-          "point_estimate": [1.0],
-          "lower_bound": [0.5],
-          "upper_bound": [1.5],
-          "point_estimate_relative": [0.1],
-          "lower_bound_relative": [0.05],
-          "upper_bound_relative": [0.15],
-          "p_value": [0.01],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue"],
+              "cell": [1],
+              "point_estimate": [1.0],
+              "lower_bound": [0.5],
+              "upper_bound": [1.5],
+              "point_estimate_relative": [0.1],
+              "lower_bound_relative": [0.05],
+              "upper_bound_relative": [0.15],
+              "p_value": [0.01],
+          }),
+          {},
+      )
 
   experiment_design = default_experiment_design.make_variation(
       secondary_metrics=["conversions"]
@@ -388,17 +413,20 @@ def test_methodology_analyze_experiment_raises_error_if_missing_primary_metric(
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["conversions", "conversions", "revenue"],
-          "cell": [1, 2, 1],
-          "point_estimate": [1.0] * 3,
-          "lower_bound": [0.5] * 3,
-          "upper_bound": [1.5] * 3,
-          "point_estimate_relative": [0.1] * 3,
-          "lower_bound_relative": [0.05] * 3,
-          "upper_bound_relative": [0.15] * 3,
-          "p_value": [0.01] * 3,
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["conversions", "conversions", "revenue"],
+              "cell": [1, 2, 1],
+              "point_estimate": [1.0] * 3,
+              "lower_bound": [0.5] * 3,
+              "upper_bound": [1.5] * 3,
+              "point_estimate_relative": [0.1] * 3,
+              "lower_bound_relative": [0.05] * 3,
+              "upper_bound_relative": [0.15] * 3,
+              "p_value": [0.01] * 3,
+          }),
+          {},
+      )
 
   experiment_design = default_experiment_design.make_variation(
       secondary_metrics=["conversions"]
@@ -435,17 +463,20 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue", "CPiA", "iROAS"],
-          "cell": [1, 1, 1],
-          "point_estimate": [1.0, 1.0, 1.0],
-          "lower_bound": [0.5, 0.5, 0.5],
-          "upper_bound": [1.5, 1.5, 1.5],
-          "point_estimate_relative": [0.1, 0.1, 0.1],
-          "lower_bound_relative": [0.05, 0.05, 0.05],
-          "upper_bound_relative": [0.15, 0.15, 0.15],
-          "p_value": [0.01, 0.01, 0.01],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue", "CPiA", "iROAS"],
+              "cell": [1, 1, 1],
+              "point_estimate": [1.0, 1.0, 1.0],
+              "lower_bound": [0.5, 0.5, 0.5],
+              "upper_bound": [1.5, 1.5, 1.5],
+              "point_estimate_relative": [0.1, 0.1, 0.1],
+              "lower_bound_relative": [0.05, 0.05, 0.05],
+              "upper_bound_relative": [0.15, 0.15, 0.15],
+              "p_value": [0.01, 0.01, 0.01],
+          }),
+          {},
+      )
 
   experiment_design = default_experiment_design.make_variation(
       secondary_metrics=[geoflex.metrics.CPiA(), geoflex.metrics.iROAS()],
@@ -455,7 +486,7 @@ def test_methodology_analyze_experiment_forces_relative_effect_size_to_na_for_co
       ),
   )
 
-  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+  results, _ = AnalyzeExperimentMockMethodology().analyze_experiment(
       historical_data, experiment_design, "2024-01-01"
   )
 
@@ -497,18 +528,21 @@ def test_methodology_analyze_experiment_infers_p_value_if_not_set(
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue"],
-          "cell": [1],
-          "point_estimate": [1.0],
-          "lower_bound": [0.5],
-          "upper_bound": [1.5],
-          "point_estimate_relative": [0.1],
-          "lower_bound_relative": [0.05],
-          "upper_bound_relative": [0.15],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue"],
+              "cell": [1],
+              "point_estimate": [1.0],
+              "lower_bound": [0.5],
+              "upper_bound": [1.5],
+              "point_estimate_relative": [0.1],
+              "lower_bound_relative": [0.05],
+              "upper_bound_relative": [0.15],
+          }),
+          {},
+      )
 
-  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+  results, _ = AnalyzeExperimentMockMethodology().analyze_experiment(
       historical_data, default_experiment_design, "2024-01-01"
   )
   assert "p_value" in results.columns
@@ -536,19 +570,22 @@ def test_methodology_analyze_experiment_sets_is_significant_correctly(
           pretest_period_end_date,
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue", "revenue"],
-          "cell": [1, 2],
-          "point_estimate": [1.0, 1.0],
-          "lower_bound": [0.5, 0.5],
-          "upper_bound": [1.5, 1.5],
-          "point_estimate_relative": [0.1, 0.1],
-          "lower_bound_relative": [0.05, 0.05],
-          "upper_bound_relative": [0.15, 0.15],
-          "p_value": [0.01, 0.1],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue", "revenue"],
+              "cell": [1, 2],
+              "point_estimate": [1.0, 1.0],
+              "lower_bound": [0.5, 0.5],
+              "upper_bound": [1.5, 1.5],
+              "point_estimate_relative": [0.1, 0.1],
+              "lower_bound_relative": [0.05, 0.05],
+              "upper_bound_relative": [0.15, 0.15],
+              "p_value": [0.01, 0.1],
+          }),
+          {},
+      )
 
-  results = AnalyzeExperimentMockMethodology().analyze_experiment(
+  results, _ = AnalyzeExperimentMockMethodology().analyze_experiment(
       historical_data, default_experiment_design, "2024-01-01"
   )
   assert results["is_significant"].tolist() == [True, False]
@@ -717,17 +754,20 @@ def test_experiment_end_date_is_set_correctly(
           expected_experiment_end_date, "%Y-%m-%d"
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue", "revenue"],
-          "cell": [1, 2],
-          "point_estimate": [1.0, 1.0],
-          "lower_bound": [0.5, 0.5],
-          "upper_bound": [1.5, 1.5],
-          "point_estimate_relative": [0.1, 0.1],
-          "lower_bound_relative": [0.05, 0.05],
-          "upper_bound_relative": [0.15, 0.15],
-          "p_value": [0.01, 0.1],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue", "revenue"],
+              "cell": [1, 2],
+              "point_estimate": [1.0, 1.0],
+              "lower_bound": [0.5, 0.5],
+              "upper_bound": [1.5, 1.5],
+              "point_estimate_relative": [0.1, 0.1],
+              "lower_bound_relative": [0.05, 0.05],
+              "upper_bound_relative": [0.15, 0.15],
+              "p_value": [0.01, 0.1],
+          }),
+          {},
+      )
 
   MockMethodologyWithExperimentEndDate().analyze_experiment(
       historical_data,
@@ -774,17 +814,20 @@ def test_pretest_period_end_date_is_set_correctly(
           expected_pretest_period_end_date, "%Y-%m-%d"
       )
 
-      return pd.DataFrame({
-          "metric": ["revenue", "revenue"],
-          "cell": [1, 2],
-          "point_estimate": [1.0, 1.0],
-          "lower_bound": [0.5, 0.5],
-          "upper_bound": [1.5, 1.5],
-          "point_estimate_relative": [0.1, 0.1],
-          "lower_bound_relative": [0.05, 0.05],
-          "upper_bound_relative": [0.15, 0.15],
-          "p_value": [0.01, 0.1],
-      })
+      return (
+          pd.DataFrame({
+              "metric": ["revenue", "revenue"],
+              "cell": [1, 2],
+              "point_estimate": [1.0, 1.0],
+              "lower_bound": [0.5, 0.5],
+              "upper_bound": [1.5, 1.5],
+              "point_estimate_relative": [0.1, 0.1],
+              "lower_bound_relative": [0.05, 0.05],
+              "upper_bound_relative": [0.15, 0.15],
+              "p_value": [0.01, 0.1],
+          }),
+          {},
+      )
 
   MockMethodologyWithPretestPeriodEndDate().analyze_experiment(
       historical_data,
@@ -806,3 +849,100 @@ def test_analyze_experiment_raises_exception_if_pretest_period_end_date_after_ex
         "2024-02-01",
         pretest_period_end_date="2024-02-02",
     )
+
+
+@pytest.mark.parametrize(
+    "return_intermediate_data,expected_intermediate_data",
+    [(True, {"mock_intermediate_result": "analyze_experiment"}), (False, {})],
+)
+def test_analyze_experiment_returns_intermediate_data_if_requested(
+    MockMethodology,
+    historical_data,
+    default_experiment_design,
+    return_intermediate_data,
+    expected_intermediate_data,
+):
+
+  class MockMethodologyWithIntermediateData(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_analyze_experiment(
+        self,
+        runtime_data: GeoPerformanceDataset,
+        experiment_design: ExperimentDesign,
+        experiment_start_date: pd.Timestamp,
+        experiment_end_date: pd.Timestamp,
+        pretest_period_end_date: pd.Timestamp,
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+      del (
+          runtime_data,
+          experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+          pretest_period_end_date,
+      )
+
+      return pd.DataFrame({
+          "metric": ["revenue", "CPiA", "iROAS"],
+          "cell": [1, 1, 1],
+          "point_estimate": [1.0, 1.0, 1.0],
+          "lower_bound": [0.5, 0.5, 0.5],
+          "upper_bound": [1.5, 1.5, 1.5],
+          "point_estimate_relative": [0.1, 0.1, 0.1],
+          "lower_bound_relative": [0.05, 0.05, 0.05],
+          "upper_bound_relative": [0.15, 0.15, 0.15],
+          "p_value": [0.01, 0.01, 0.01],
+      }), {"mock_intermediate_result": "analyze_experiment"}
+
+  default_experiment_design.geo_assignment = GeoAssignment(
+      treatment=[["US", "UK"]], control=["CA", "AU"]
+  )
+  (
+      results,
+      intermediate_data,
+  ) = MockMethodologyWithIntermediateData().analyze_experiment(
+      historical_data,
+      default_experiment_design,
+      "2024-02-01",
+      return_intermediate_data=return_intermediate_data,
+  )
+  assert isinstance(results, pd.DataFrame)
+  assert intermediate_data == expected_intermediate_data
+
+
+@pytest.mark.parametrize(
+    "return_intermediate_data,expected_intermediate_data",
+    [(True, {"mock_intermediate_result": "assign_geos"}), (False, {})],
+)
+def test_assign_geos_returns_intermediate_data_if_requested(
+    MockMethodology,
+    historical_data,
+    default_experiment_design,
+    return_intermediate_data,
+    expected_intermediate_data,
+):
+
+  class MockMethodologyWithIntermediateData(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_assign_geos(
+        self,
+        experiment_design: ExperimentDesign,
+        historical_data: GeoPerformanceDataset,
+    ) -> tuple[GeoAssignment, dict[str, Any]]:
+      del experiment_design, historical_data
+      return (
+          GeoAssignment(treatment=[["US"], ["UK"]], control=["CA", "AU"]),
+          {"mock_intermediate_result": "assign_geos"},
+      )
+
+  (
+      results,
+      intermediate_data,
+  ) = MockMethodologyWithIntermediateData().assign_geos(
+      default_experiment_design,
+      historical_data,
+      return_intermediate_data=return_intermediate_data,
+  )
+  assert isinstance(results, GeoAssignment)
+  assert intermediate_data == expected_intermediate_data

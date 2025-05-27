@@ -1,5 +1,6 @@
 """A testing methodology for GeoFleX. Used for testing purposes only."""
 
+from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
@@ -60,7 +61,7 @@ class TestingMethodology(_base.Methodology):
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
-  ) -> GeoAssignment:
+  ) -> tuple[GeoAssignment, dict[str, Any]]:
     """Randomly assigns all geos to the treatment and control groups.
 
     The treatment propensity and number of ignored geos is used to determine
@@ -133,7 +134,9 @@ class TestingMethodology(_base.Methodology):
       ).tolist()
       all_geos -= set(new_geo_group)
       geo_groups.append(new_geo_group)
-    return GeoAssignment(treatment=geo_groups[1:], control=geo_groups[0])
+    return GeoAssignment(treatment=geo_groups[1:], control=geo_groups[0]), {
+        "mock_intermediate_result": "assign_geos"
+    }
 
   def _methodology_analyze_experiment(
       self,
@@ -142,7 +145,7 @@ class TestingMethodology(_base.Methodology):
       experiment_start_date: pd.Timestamp,
       experiment_end_date: pd.Timestamp,
       pretest_period_end_date: pd.Timestamp,
-  ) -> pd.DataFrame:
+  ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Analyzes a RCT experiment.
 
     Returns a dataframe with the analysis results. Each row represents each
@@ -225,4 +228,6 @@ class TestingMethodology(_base.Methodology):
             "upper_bound_relative": upper_bound_relative,
         })
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), {
+        "mock_intermediate_result": "analyze_experiment"
+    }

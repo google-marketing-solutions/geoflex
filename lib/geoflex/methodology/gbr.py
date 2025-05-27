@@ -2,6 +2,7 @@
 
 import datetime as dt
 import logging
+from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
@@ -138,7 +139,7 @@ class GBR(_base.Methodology):
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
-  ) -> GeoAssignment:
+  ) -> tuple[GeoAssignment, dict[str, Any]]:
     """Assigns all geos to control or treatment.
 
     This assigns the geos randomly, while making sure to meet the constraints.
@@ -196,8 +197,11 @@ class GBR(_base.Methodology):
         rng=experiment_design.get_rng(),
     )
 
-    return GeoAssignment(
-        control=raw_assignments[0], treatment=raw_assignments[1:]
+    return (
+        GeoAssignment(
+            control=raw_assignments[0], treatment=raw_assignments[1:]
+        ),
+        {},
     )
 
   def _split_data_into_pretest_and_experiment(
@@ -462,7 +466,7 @@ class GBR(_base.Methodology):
       experiment_start_date: pd.Timestamp,
       experiment_end_date: pd.Timestamp,
       pretest_period_end_date: pd.Timestamp,
-  ) -> pd.DataFrame:
+  ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Analyzes the experiment with GBR.
 
     Returns a dataframe with the analysis results. Each row represents each
@@ -489,6 +493,8 @@ class GBR(_base.Methodology):
     Returns:
       A dataframe with the analysis results.
     """
+    intermediate_data = {}
+
     pretest_data, experiment_data = (
         self._split_data_into_pretest_and_experiment(
             runtime_data=runtime_data,
@@ -512,8 +518,12 @@ class GBR(_base.Methodology):
         experiment_design.methodology_parameters["linear_model_type"],
         experiment_design.geo_assignment,
     )
+    intermediate_data["geo_data"] = geo_data
 
     results = []
+    intermediate_data["params"] = []
+    intermediate_data["covariance"] = []
+    intermediate_data["degrees_of_freedom"] = []
     for cell in range(1, experiment_design.n_cells):
       # Create the data for the current treatment cell, containing only that
       # cell and the control group.
@@ -533,6 +543,10 @@ class GBR(_base.Methodology):
             metric,
             experiment_design.methodology_parameters["linear_model_type"],
         )
+        intermediate_data["params"].append(params)
+        intermediate_data["covariance"].append(covariance)
+        intermediate_data["degrees_of_freedom"].append(degrees_of_freedom)
+
         results_i = self._get_summary_statistics(
             metric,
             params,
@@ -548,4 +562,4 @@ class GBR(_base.Methodology):
         )
         results.append(results_i)
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), intermediate_data

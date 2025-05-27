@@ -188,7 +188,7 @@ class Methodology(abc.ABC):
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
-  ) -> GeoAssignment:
+  ) -> tuple[GeoAssignment, dict[str, Any]]:
     """How the methodology assigns geos to the control and treatment groups.
 
     This should return a Geo Assignment object containing the assignment to
@@ -214,7 +214,8 @@ class Methodology(abc.ABC):
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
-  ) -> GeoAssignment:
+      return_intermediate_data: bool = False,
+  ) -> GeoAssignment | tuple[GeoAssignment, dict[str, Any]]:
     """Assigns geos to the control and treatment groups.
 
     This will call the _methodology_assign_geos() method to do the actual
@@ -225,6 +226,10 @@ class Methodology(abc.ABC):
       experiment_design: The experiment design to assign geos for.
       historical_data: The historical data for the experiment. Can be used to
         choose geos that are similar to geos that have been used in the past.
+      return_intermediate_data: Whether to return the intermediate data. This
+        will be different for each methodology, and it can be used to debug the
+        assignment. It is a dict with custom keys and values for each
+        methodology.
 
     Returns:
       A GeoAssignment object containing the lists of geos for the control and
@@ -236,9 +241,11 @@ class Methodology(abc.ABC):
         experiment_design
     )
 
-    geo_assignment = self._methodology_assign_geos(
+    geo_assignment, intermediate_data = self._methodology_assign_geos(
         experiment_design, historical_data
     )
+    if not return_intermediate_data:
+      intermediate_data = {}
 
     # Put missing geos into the exclude list.
     missing_geos = (
@@ -278,7 +285,7 @@ class Methodology(abc.ABC):
         logger.error(error_message)
         raise ValueError(error_message)
 
-    return geo_assignment
+    return geo_assignment, intermediate_data
 
   @abc.abstractmethod
   def _methodology_analyze_experiment(
@@ -288,7 +295,7 @@ class Methodology(abc.ABC):
       experiment_start_date: pd.Timestamp,
       experiment_end_date: pd.Timestamp,
       pretest_period_end_date: pd.Timestamp,
-  ) -> pd.DataFrame:
+  ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """How the methodology analyzes the experiment.
 
     Must return a dataframe with the analysis results. Each row represents each
@@ -337,7 +344,8 @@ class Methodology(abc.ABC):
       experiment_start_date: str,
       experiment_end_date: str | None = None,
       pretest_period_end_date: str | None = None,
-  ) -> pd.DataFrame:
+      return_intermediate_data: bool = False,
+  ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Analyzes an experiment using this methodology.
 
     Returns a dataframe with the analysis results. Each row represents each
@@ -367,6 +375,9 @@ class Methodology(abc.ABC):
         inclusive). If not provided, it will be assumed to be the same as the
         experiment_start_date. This is useful to allow for a washout period
         before the experiment starts.
+      return_intermediate_data: Whether to return the intermediate data. This
+        will be different for each methodology, and it can be used to debug the
+        analysis. It is a dict with custom keys and values for each methodology.
 
     Returns:
       A dataframe with the analysis results.
@@ -432,13 +443,15 @@ class Methodology(abc.ABC):
         experiment_design
     )
 
-    raw_results = self._methodology_analyze_experiment(
+    raw_results, intermediate_data = self._methodology_analyze_experiment(
         runtime_data,
         validated_experiment_design,
         experiment_start_date,
         experiment_end_date,
         pretest_period_end_date,
     )
+    if not return_intermediate_data:
+      intermediate_data = {}
 
     # Check that the required columns are present.
     required_columns = {
@@ -541,7 +554,7 @@ class Methodology(abc.ABC):
       logger.error(error_message)
       raise ValueError(error_message)
 
-    return raw_results
+    return raw_results, intermediate_data
 
 
 def register_methodology(
@@ -576,7 +589,8 @@ def assign_geos(
     experiment_design: ExperimentDesign,
     historical_data: GeoPerformanceDataset,
     add_to_design: bool = True,
-) -> GeoAssignment | None:
+    return_intermediate_data: bool = False,
+) -> GeoAssignment | None | tuple[GeoAssignment, dict[str, Any]]:
   """Assigns geos to the control and treatment groups.
 
   Args:
@@ -585,6 +599,9 @@ def assign_geos(
       assigned based on this data to maximize power, depending on the
       methodology set in the experiment design.
     add_to_design: Whether to add the geo assignment to the experiment design.
+    return_intermediate_data: Whether to return the intermediate data. This will
+      be different for each methodology, and it can be used to debug the geo
+      assignment. It is a dict with custom keys and values for each methodology.
 
   Returns:
     The geo assignment for the experiment, or None if the design is not valid
@@ -599,12 +616,19 @@ def assign_geos(
     return None
 
   methodology = get_methodology(experiment_design.methodology)
-  geo_assignment = methodology.assign_geos(experiment_design, historical_data)
+  geo_assignment, intermediate_data = methodology.assign_geos(
+      experiment_design,
+      historical_data,
+      return_intermediate_data=return_intermediate_data,
+  )
 
   if add_to_design:
     experiment_design.geo_assignment = geo_assignment
 
-  return geo_assignment
+  if return_intermediate_data:
+    return geo_assignment, intermediate_data
+  else:
+    return geo_assignment
 
 
 def analyze_experiment(
@@ -613,7 +637,8 @@ def analyze_experiment(
     experiment_start_date: str,
     experiment_end_date: str | None = None,
     pretest_period_end_date: str | None = None,
-) -> pd.DataFrame | None:
+    return_intermediate_data: bool = False,
+) -> pd.DataFrame | None | tuple[pd.DataFrame, dict[str, Any]]:
   """Analyzes an experiment using the methodology set in the design.
 
   Returns a dataframe with the analysis results. Each row represents each
@@ -645,6 +670,9 @@ def analyze_experiment(
       as a string in the format YYYY-MM-DD. If not provided, it will be assumed
       to be the same as the experiment_start_date. This is useful to allow for a
       washout period before the experiment starts.
+    return_intermediate_data: Whether to return the intermediate data. This will
+      be different for each methodology, and it can be used to debug the
+      analysis. It is a dict with custom keys and values for each methodology.
 
   Returns:
     A dataframe with the analysis results, or None if the design is not valid
@@ -655,16 +683,22 @@ def analyze_experiment(
         "Design or data are not valid for methodology %s, skipping analysis.",
         experiment_design.methodology,
     )
-    return None
+    return None, {}
 
   methodology = get_methodology(experiment_design.methodology)
-  return methodology.analyze_experiment(
+  results, intermediate_data = methodology.analyze_experiment(
       runtime_data,
       experiment_design,
       experiment_start_date,
       experiment_end_date,
       pretest_period_end_date,
+      return_intermediate_data=return_intermediate_data,
   )
+
+  if return_intermediate_data:
+    return results, intermediate_data
+  else:
+    return results
 
 
 def design_is_eligible_for_data(
