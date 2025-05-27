@@ -22,6 +22,8 @@ list_methodologies = geoflex.methodology.list_methodologies
 register_methodology = geoflex.methodology.register_methodology
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
+CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
+CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -605,6 +607,21 @@ def test_is_eligible_for_design_and_data_returns_false_if_zero_costs_and_percent
           primary_metric=geoflex.metrics.iROAS(),
       ),
       zero_costs_data,
+  )
+
+
+def test_is_eligible_for_design_and_data_returns_false_if_cell_volume_metric_column_not_in_data(
+    MockMethodology, historical_data, default_experiment_design
+):
+  assert not MockMethodology().is_eligible_for_design_and_data(
+      default_experiment_design.make_variation(
+          cell_volume_constraint=CellVolumeConstraint(
+              constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
+              values=[None, 0.5, 0.2],
+              metric_column="non_existent_metric",
+          ),
+      ),
+      historical_data,
   )
 
 

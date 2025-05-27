@@ -164,27 +164,10 @@ class GBR(_base.Methodology):
       metric_values = None
     elif (
         experiment_design.cell_volume_constraint.constraint_type
-        == geoflex.CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_RESPONSE
+        == geoflex.CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC
     ):
       metric_values = historical_data.parsed_data.groupby("geo_id")[
-          experiment_design.primary_metric.column
-      ].sum()
-      metric_values /= metric_values.sum()
-    elif (
-        experiment_design.cell_volume_constraint.constraint_type
-        == geoflex.CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST
-    ):
-
-      if experiment_design.main_cost_column is None:
-        error_message = (
-            "Trying to use max_percentage_of_total_cost constraint without a"
-            " cost metric in the design."
-        )
-        logger.error(error_message)
-        raise RuntimeError(error_message)
-
-      metric_values = historical_data.parsed_data.groupby("geo_id")[
-          experiment_design.main_cost_column
+          experiment_design.cell_volume_constraint.metric_column
       ].sum()
       metric_values /= metric_values.sum()
     else:

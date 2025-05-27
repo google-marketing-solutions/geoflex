@@ -108,6 +108,21 @@ class Methodology(abc.ABC):
       )
       return False
 
+    # Check that the cell volume column constraint metric column is in the data.
+    if (
+        design.cell_volume_constraint.constraint_type
+        == geoflex.CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC
+    ):
+      if (
+          design.cell_volume_constraint.metric_column
+          not in historical_data.parsed_data.columns
+      ):
+        logger.error(
+            "The cell volume metric column %s is not in the data.",
+            design.cell_volume_constraint.metric_column,
+        )
+        return False
+
     if (
         design.experiment_budget.budget_type
         == ExperimentBudgetType.PERCENTAGE_CHANGE

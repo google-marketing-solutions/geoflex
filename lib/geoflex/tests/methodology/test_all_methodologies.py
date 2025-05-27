@@ -167,23 +167,7 @@ def experiment_design_fixture(request, methodology):
             values=[None, 10],
         ),
     )
-  elif request.param == "max_cost_pct_constraint_test":
-    return ExperimentDesign(
-        primary_metric=geoflex.metrics.iROAS(),
-        secondary_metrics=["conversions"],
-        experiment_budget=ExperimentBudget(
-            budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-            value=-1.0,
-        ),
-        methodology=methodology,
-        runtime_weeks=2,
-        n_cells=2,
-        cell_volume_constraint=CellVolumeConstraint(
-            constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST,
-            values=[None, 0.5],
-        ),
-    )
-  elif request.param == "max_response_pct_constraint_test":
+  elif request.param == "max_revenue_pct_constraint_test":
     return ExperimentDesign(
         primary_metric="revenue",
         secondary_metrics=["conversions"],
@@ -191,8 +175,9 @@ def experiment_design_fixture(request, methodology):
         runtime_weeks=2,
         n_cells=2,
         cell_volume_constraint=CellVolumeConstraint(
-            constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_RESPONSE,
+            constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
             values=[None, 0.5],
+            metric_column="revenue",
         ),
     )
   else:
@@ -208,8 +193,7 @@ VALID_COMBINATIONS = [
     ("GBR", "multicell_ab_test", "basic_data"),
     ("GBR", "cost_metrics_test", "basic_data"),
     ("GBR", "max_geos_constraint_test", "basic_data"),
-    ("GBR", "max_cost_pct_constraint_test", "basic_data"),
-    ("GBR", "max_response_pct_constraint_test", "basic_data"),
+    ("GBR", "max_revenue_pct_constraint_test", "basic_data"),
 ]
 INVALID_COMBINATIONS = [
     (

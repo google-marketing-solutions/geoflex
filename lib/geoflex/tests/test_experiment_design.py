@@ -108,7 +108,7 @@ def test_budget_must_be_consistent_with_n_cells():
     )
 
 
-def test_cost_cell_volume_constraint_requires_cost_metrics():
+def test_cost_cell_volume_constraint_requires_metrics():
   with pytest.raises(ValueError):
     ExperimentDesign(
         primary_metric="revenue",
@@ -124,12 +124,12 @@ def test_cost_cell_volume_constraint_requires_cost_metrics():
         geo_eligibility=None,
         cell_volume_constraint=CellVolumeConstraint(
             values=[0.1, 0.2, 0.3],
-            constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST,
+            constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
         ),
     )
 
 
-def test_cost_cell_volume_constraint_works_with_cost_metrics():
+def test_cost_cell_volume_constraint_works_with_metrics():
   # Should not raise an error
   ExperimentDesign(
       primary_metric="revenue",
@@ -145,36 +145,8 @@ def test_cost_cell_volume_constraint_works_with_cost_metrics():
       geo_eligibility=None,
       cell_volume_constraint=CellVolumeConstraint(
           values=[0.1, 0.2, 0.3],
-          constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST,
-      ),
-  )
-
-
-@pytest.mark.parametrize(
-    "constraint_type",
-    [
-        CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_RESPONSE,
-        CellVolumeConstraintType.MAX_GEOS,
-    ],
-)
-def test_non_cost_cell_volume_constraint_does_not_require_cost_metrics(
-    constraint_type,
-):
-  # Should not raise an error
-  ExperimentDesign(
-      primary_metric="revenue",
-      experiment_budget=ExperimentBudget(
-          value=-0.1,
-          budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
-      ),
-      secondary_metrics=["conversions"],
-      methodology="test_methodology",
-      runtime_weeks=4,
-      alpha=0.1,
-      n_cells=3,
-      geo_eligibility=None,
-      cell_volume_constraint=CellVolumeConstraint(
-          values=[0.1, 0.2, 0.3], constraint_type=constraint_type
+          constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
+          metric_column="revenue",
       ),
   )
 

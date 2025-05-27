@@ -26,9 +26,10 @@ class GeoEligibility(pydantic.BaseModel):
       each set corresponds to a treatment arm.
     exclude: A set of geos eligible to be excluded from the experiment.
     all_geos: A list of all possible geos for the experiment.
-    flexible: default is True. This means that geos not explicitly
-      defined will be flexible in terms of assignment.
+    flexible: default is True. This means that geos not explicitly defined will
+      be flexible in terms of assignment.
   """
+
   control: set[str] = set()
   treatment: list[set[str]] = [set()]
   exclude: set[str] = set()
@@ -92,8 +93,7 @@ class GeoEligibility(pydantic.BaseModel):
         row_data = {"geo": geo}
         row_data["control"] = base_is_control or flexible_control
         row_data["treatment"] = (
-            treatment_arm_eligibility[arm_index]
-            or flexible_treatment
+            treatment_arm_eligibility[arm_index] or flexible_treatment
         )
         row_data["exclude"] = base_is_exclude
         rows[arm_index].append(row_data)
@@ -103,7 +103,7 @@ class GeoEligibility(pydantic.BaseModel):
     for arm_index in range(num_treatment_arms):
       df = pd.DataFrame(
           rows[arm_index] or [],
-          columns=["geo", "control", "treatment", "exclude"]
+          columns=["geo", "control", "treatment", "exclude"],
       ).set_index("geo")
       dfs.append(df)
 
@@ -297,8 +297,7 @@ class CellVolumeConstraintType(enum.StrEnum):
   """The type of cell volume constraint to use in an experiment."""
 
   MAX_GEOS = "max_geos"
-  MAX_PERCENTAGE_OF_TOTAL_COST = "max_percentage_of_total_cost"
-  MAX_PERCENTAGE_OF_TOTAL_RESPONSE = "max_percentage_of_total_response"
+  MAX_PERCENTAGE_OF_METRIC = "max_percentage_of_metric"
 
 
 class CellVolumeConstraint(pydantic.BaseModel):
@@ -311,12 +310,15 @@ class CellVolumeConstraint(pydantic.BaseModel):
     values: The values of the cell volume constraint. This should be a list of
       values, one for each cell. If the value is None, then there is no
       constraint on the cell volume for that cell.
-    constraint_type: The type of the cell volume constraint, one of "max_geos",
-      "max_percentage_of_total_cost", or "max_percentage_of_total_response".
+    constraint_type: The type of the cell volume constraint, one of "max_geos"
+      or "max_percentage_of_metric".
+    metric_column: The name of the metric column to use for the constraint. This
+      is only used if the constraint type is "max_percentage_of_metric".
   """
 
   values: list[float | int | None]
   constraint_type: CellVolumeConstraintType = CellVolumeConstraintType.MAX_GEOS
+  metric_column: str | None = None
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -329,19 +331,8 @@ class CellVolumeConstraint(pydantic.BaseModel):
     """Returns the cell volume constraint as a string for printing."""
     if self.constraint_type == CellVolumeConstraintType.MAX_GEOS:
       suffix = " geos"
-    elif (
-        self.constraint_type
-        == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST
-    ):
-      suffix = "% of cost"
-    elif (
-        self.constraint_type
-        == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_RESPONSE
-    ):
-      suffix = "% of response metric"
     else:
-      # Fallback, not needed now, in case we add more constraint types.
-      suffix = f" {self.constraint_type.value}"
+      suffix = f"% of {self.metric_column}"
 
     values = []
     for i, value in enumerate(self.values):
@@ -352,6 +343,32 @@ class CellVolumeConstraint(pydantic.BaseModel):
         values.append(f"treatment_{i}: {value}{suffix_i}")
 
     return ", ".join(values)
+
+  @pydantic.model_validator(mode="after")
+  def check_metric_column_only_set_if_max_percentage_of_metric(
+      self,
+  ) -> "CellVolumeConstraint":
+    if (
+        self.constraint_type
+        == CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC
+        and self.metric_column is None
+    ):
+      error_message = (
+          "Metric column must be set if the constraint type is"
+          " max_percentage_of_metric."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+    elif (
+        self.constraint_type == CellVolumeConstraintType.MAX_GEOS
+        and self.metric_column is not None
+    ):
+      error_message = (
+          "Metric column must not be set if the constraint type is max_geos."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+    return self
 
 
 class SingleEvaluationResult(pydantic.BaseModel):
@@ -810,35 +827,6 @@ def check_budget_is_consistent_with_metrics(
 
 
 @pydantic.AfterValidator
-def check_cell_volume_constraint_is_consistent_with_metrics(
-    cell_volume_constraint: CellVolumeConstraint,
-    info: pydantic.ValidationInfo,
-) -> "CellVolumeConstraint":
-  """There must be a cost metric for max cost cell volume constraint."""
-  all_metrics = [info.data["primary_metric"]] + info.data.get(
-      "secondary_metrics", []
-  )
-  has_cost_metric = any(
-      metric.cost_per_metric or metric.metric_per_cost for metric in all_metrics
-  )
-
-  cell_volume_constraint_is_max_cost = (
-      cell_volume_constraint.constraint_type
-      == CellVolumeConstraintType.MAX_PERCENTAGE_OF_TOTAL_COST
-  )
-
-  if cell_volume_constraint_is_max_cost and not has_cost_metric:
-    error_message = (
-        "Cell volume constraint is based on cost, but there are no metrics with"
-        " cost columns specified."
-    )
-    logger.error(error_message)
-    raise ValueError(error_message)
-
-  return cell_volume_constraint
-
-
-@pydantic.AfterValidator
 def check_secondary_metric_names_do_not_overlap(
     secondary_metrics: list[Metric], info: pydantic.ValidationInfo
 ) -> list[Metric]:
@@ -904,7 +892,6 @@ ValidatedCellVolumeConstraint = Annotated[
     CellVolumeConstraint,
     cast_none_cell_volume_constraint_to_unconstrained,
     check_cell_volume_constraint_matches_n_cells,
-    check_cell_volume_constraint_is_consistent_with_metrics,
 ]
 ValidatedGeoEligibility = Annotated[
     GeoEligibility,
