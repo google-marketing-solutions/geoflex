@@ -180,7 +180,12 @@ class DataSourceService:
 
     # If data is provided, save the data
     if datasource.data:
-      await self._save_datasource_data(datasource)
+      try:
+        await self._save_datasource_data(datasource)
+      except:
+        # if data failed to save, remove the just created datasource metadata
+        self._delete_datasource(datasource)
+        raise
 
     return datasource
 
@@ -188,7 +193,7 @@ class DataSourceService:
     """Update an existing data source.
 
     Args:
-      datasource: data source to update (data will be ignored).
+      datasource: data source to update.
 
     Returns:
       Updated data source.
@@ -335,8 +340,15 @@ class DataSourceService:
     except Exception as e:
       raise ValueError(f'Error saving datasource data: {str(e)}') from e
 
-  # pylint: disable=W0622
   async def delete_datasource(self, id: str) -> bool:
+    # First get the datasource
+    datasource = await self.get_datasource_by_id(id)
+    if not datasource:
+      return False
+    return self._delete_datasource(datasource)
+
+  # pylint: disable=W0622
+  async def _delete_datasource(self, datasource: DataSource) -> bool:
     """Delete a data source.
 
     Args:
@@ -345,11 +357,7 @@ class DataSourceService:
     Returns:
       true if data source was deleted.
     """
-    # First get the datasource
-    datasource = await self.get_datasource_by_id(id)
-    if not datasource:
-      return False
-
+    id = datasource.id
     # Find row to delete
     result = self.sheets_service.spreadsheets().values().get(
         spreadsheetId=self.config.spreadsheet_id,
