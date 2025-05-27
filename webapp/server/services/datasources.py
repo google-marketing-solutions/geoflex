@@ -248,6 +248,9 @@ class DataSourceService:
         source_link=datasource.source_link,
         columns=datasource.columns)
 
+    # If data is provided, save the data
+    await self._save_datasource_data(datasource)
+
     return updated_datasource
 
   async def _save_datasource_data(self, datasource: DataSource) -> bool:
@@ -262,6 +265,7 @@ class DataSourceService:
     # Determine the sheet name for this datasource
     sheet_name = f'data_{datasource.id}'
 
+    logger.debug('Saving datasource data with %s rows', len(datasource.data))
     try:
       # Check if sheet exists already
       sheet_exists = False
@@ -323,8 +327,8 @@ class DataSourceService:
                   f'{int(year):04d}-{int(month):02d}-{int(day):02d}')
             else:
               raise ValueError(
-                  f'Value {val} for date column ({datasource.columns.date_column}) is not in valid format (yyyy-mm-dd)'
-              )
+                  f'Value {val} for date column ({datasource.columns.date_column}) '
+                  'is not in valid format (yyyy-mm-dd)')
         row_values = [row.get(key, None) for key in all_keys]
         values.append(row_values)
 
@@ -352,7 +356,7 @@ class DataSourceService:
     """Delete a data source.
 
     Args:
-      id: data source id.
+      datasource: data source.
 
     Returns:
       true if data source was deleted.

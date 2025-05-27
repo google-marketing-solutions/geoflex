@@ -37,8 +37,8 @@ async def get_datasources(service: DataSourceService = Depends(
   return await service.get_datasources()
 
 
-class DataSourceCreate(BaseModel):
-  """Request model for create_datasource method."""
+class DataSourceUpdate(BaseModel):
+  """Request model for update_datasource and create_datasource methods."""
   id: str | None = None
   name: str
   description: str | None = None
@@ -49,7 +49,7 @@ class DataSourceCreate(BaseModel):
 
 @router.post('', response_model=DataSource)
 async def create_datasource(
-    req: DataSourceCreate,
+    req: DataSourceUpdate,
     service: DataSourceService = Depends(get_datasource_service)
 ) -> DataSource:
   """Save a new data source."""
@@ -65,15 +65,6 @@ async def create_datasource(
   return await service.add_datasource(ds)
 
 
-class DataSourceUpdate(BaseModel):
-  """Request model for update_datasource method."""
-  id: str | None = None
-  name: str
-  description: str | None = None
-  source_link: str
-  columns: ColumnSchema
-
-
 @router.put('/{id}', response_model=DataSource)
 # pylint: disable=W0622
 async def update_datasource(
@@ -81,13 +72,14 @@ async def update_datasource(
     req: DataSourceUpdate,
     service: DataSourceService = Depends(get_datasource_service)
 ) -> DataSource:
-  """Update a data source with new metadata."""
+  """Update a data source."""
   ds = DataSource(
       id=id,
       name=req.name,
       description=req.description,
       columns=req.columns,
       source_link=req.source_link,
+      data=req.data,
       created_at=None,
       updated_at=None)
   updated = await service.update_datasource(ds)
