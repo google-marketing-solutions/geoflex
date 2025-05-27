@@ -203,6 +203,16 @@
                 </div>
               </div>
 
+              <div class="q-my-md">
+                <q-btn
+                  label="Validate Data"
+                  color="secondary"
+                  @click="triggerValidation"
+                  :loading="validateDataLoading"
+                  icon="rule"
+                />
+              </div>
+
               <div v-if="dataQualityIssues.length > 0" class="q-mt-md">
                 <q-banner class="bg-warning text-white">
                   <template v-slot:avatar>
@@ -211,9 +221,18 @@
                   <div class="text-subtitle1 q-mb-sm">Data Quality Issues</div>
                   <ul class="q-mt-none q-mb-none">
                     <li v-for="(issue, index) in dataQualityIssues" :key="index">
-                      {{ issue }}
+                      {{ issue.message }}
                     </li>
                   </ul>
+                  <div class="q-mt-sm">
+                    <q-btn
+                      label="Attempt to Fix Issues"
+                      color="primary"
+                      @click="openFixDialog"
+                      :loading="isFixingIssues"
+                      icon="auto_fix_high"
+                    />
+                  </div>
                 </q-banner>
               </div>
             </div>
@@ -285,16 +304,59 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Fix Selection Dialog -->
+    <q-dialog v-model="showFixSelectionDialog" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">Select Fixes to Apply</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <q-option-group
+            v-model="fixSelectionArray"
+            :options="fixSelectionOptions"
+            type="checkbox"
+            dense
+          />
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn
+            label="Apply Selected Fixes"
+            color="primary"
+            @click="applySelectedFixes"
+            :loading="isFixingIssues"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
+
+enum DataQualityIssueType {
+  MissingGeo = 'MissingGeo',
+  MissingDate = 'MissingDate',
+  MissingMetric = 'MissingMetric',
+  InvalidDateFormat = 'InvalidDateFormat',
+  NonNumericMetric = 'NonNumericMetric',
+  DateGap = 'DateGap',
+  DuplicateGeoDate = 'DuplicateGeoDate',
+}
+
+interface DataQualityIssue {
+  type: DataQualityIssueType;
+  message: string;
+  isUnfixableFormatError?: boolean;
+}
 import { parse } from 'csv-parse/browser/esm';
-import type { DataSource } from 'stores/datasources';
+import type { DataSource } from 'stores/datasources'; // Removed DataRow, DataSourceData
 import { useDataSourcesStore, DataSourceType } from 'stores/datasources';
-//import { v4 as uuidv4 } from 'uuid';
 import { getApiUi } from 'src/boot/axios';
 import { assertIsError } from 'src/helpers/utils';
 
@@ -312,7 +374,6 @@ const emit = defineEmits<{
 }>();
 
 const $q = useQuasar();
-
 const dataSourcesStore = useDataSourcesStore();
 
 // Step management
@@ -321,7 +382,6 @@ const isEditing = computed(() => !!props.dataSource);
 
 // Form data
 const currentDataSource = ref<DataSource>(dataSourcesStore.createEmptyDataSource());
-//const isNew = props.dataSource == null;
 
 // UI state
 const file = ref<File | null>(null);
@@ -335,6 +395,105 @@ const columns = ref<{ name: string; label: string; field: string }[]>([]);
 const search = ref('');
 const loadingExternalData = ref(false);
 const externalSourceUrl = ref('');
+const isFixingIssues = ref(false);
+const validateDataLoading = ref(false);
+const showFixSelectionDialog = ref(false);
+
+interface FixSelection {
+  removeMissingCritical: boolean;
+  fillMissingMetrics: boolean;
+  fillDateGaps: boolean;
+  deduplicateRows: boolean;
+}
+const fixSelection = ref<FixSelection>({
+  removeMissingCritical: true,
+  fillMissingMetrics: true,
+  fillDateGaps: true,
+  deduplicateRows: true,
+});
+
+// For q-option-group which expects an array for multiple checkboxes
+const fixSelectionArray = computed({
+  get: () => {
+    const arr = [];
+    if (fixSelection.value.removeMissingCritical) arr.push('removeMissingCritical');
+    if (fixSelection.value.fillMissingMetrics) arr.push('fillMissingMetrics');
+    if (fixSelection.value.fillDateGaps) arr.push('fillDateGaps');
+    if (fixSelection.value.deduplicateRows) arr.push('deduplicateRows'); // Added deduplicateRows
+    return arr;
+  },
+  set: (val: string[]) => {
+    fixSelection.value.removeMissingCritical = val.includes('removeMissingCritical');
+    fixSelection.value.fillMissingMetrics = val.includes('fillMissingMetrics');
+    fixSelection.value.fillDateGaps = val.includes('fillDateGaps');
+    fixSelection.value.deduplicateRows = val.includes('deduplicateRows'); // Added deduplicateRows
+  },
+});
+
+const availableFixTypes = computed(() => {
+  const types = {
+    removeMissingCritical: false,
+    fillMissingMetrics: false,
+    fillDateGaps: false,
+    deduplicateRows: false,
+  };
+
+  const currentIssues: DataQualityIssue[] = dataQualityIssues.value;
+
+  if (
+    currentIssues.some(
+      (issue) =>
+        issue.type === DataQualityIssueType.MissingGeo ||
+        issue.type === DataQualityIssueType.MissingDate,
+    )
+  ) {
+    types.removeMissingCritical = true;
+  }
+
+  if (currentIssues.some((issue) => issue.type === DataQualityIssueType.MissingMetric)) {
+    types.fillMissingMetrics = true;
+  }
+
+  if (currentIssues.some((issue) => issue.type === DataQualityIssueType.DateGap)) {
+    types.fillDateGaps = true;
+  }
+
+  if (currentIssues.some((issue) => issue.type === DataQualityIssueType.DuplicateGeoDate)) {
+    types.deduplicateRows = true;
+  }
+
+  if (currentIssues.some((issue) => issue.isUnfixableFormatError === true)) {
+    types.removeMissingCritical = false;
+    types.fillMissingMetrics = false;
+    types.fillDateGaps = false;
+    types.deduplicateRows = false;
+  }
+
+  return types;
+});
+
+const fixSelectionOptions = computed(() => [
+  {
+    label: 'Remove rows with missing Geo/Date',
+    value: 'removeMissingCritical',
+    disable: !availableFixTypes.value.removeMissingCritical,
+  },
+  {
+    label: 'Fill missing metric values with 0',
+    value: 'fillMissingMetrics',
+    disable: !availableFixTypes.value.fillMissingMetrics,
+  },
+  {
+    label: 'Fill date gaps with 0-value entries',
+    value: 'fillDateGaps',
+    disable: !availableFixTypes.value.fillDateGaps,
+  },
+  {
+    label: 'Remove duplicate Geo/Date rows',
+    value: 'deduplicateRows',
+    disable: !availableFixTypes.value.deduplicateRows,
+  },
+]);
 
 // Select options
 const sourceTypeOptions = [
@@ -342,7 +501,6 @@ const sourceTypeOptions = [
   { label: 'External (Google Sheets, etc.)', value: DataSourceType.External },
 ];
 
-// Add new refs and computed properties after the existing ones
 const columnRoles = ref<Record<string, ColumnRole>>({});
 
 enum ColumnRole {
@@ -384,37 +542,246 @@ const uniqueDateCount = computed(() => {
   return uniqueDates.size;
 });
 
-const dataQualityIssues = computed(() => {
-  const issues = [] as string[];
+const dataQualityIssues = computed((): DataQualityIssue[] => {
+  const collectedIssues: DataQualityIssue[] = [];
+  if (rawData.value.length === 0) return collectedIssues;
 
-  if (rawData.value.length === 0) return issues;
+  const { dateColumn, geoColumn, metricColumns } = currentDataSource.value.columns;
+  let hasUnfixableFormatErrorFlag = false;
+  const encounteredGenericIssueMessages = new Set<string>();
 
-  // Check for missing geo values
-  if (
-    currentDataSource.value.columns.geoColumn &&
-    rawData.value.some((row) => !row[currentDataSource.value.columns.geoColumn])
-  ) {
-    issues.push('Some rows have missing values in the geo column');
-  }
+  // --- Phase 1: Identify All Potential Issues (Missing, Malformed) ---
+  for (let i = 0; i < rawData.value.length; i++) {
+    const row = rawData.value[i];
+    const rowIndexStr = `Row ${i + 1}`;
 
-  // Check for missing date values
-  if (
-    currentDataSource.value.columns.dateColumn &&
-    rawData.value.some((row) => !row[currentDataSource.value.columns.dateColumn])
-  ) {
-    issues.push('Some rows have missing values in the date column');
-  }
-
-  // Check for missing metric values
-  if (currentDataSource.value.columns.metricColumns.length > 0) {
-    currentDataSource.value.columns.metricColumns.forEach((metric) => {
-      if (rawData.value.some((row) => row[metric] === undefined || row[metric] === null)) {
-        issues.push(`Column "${metric}" has missing values`);
+    // Date Column
+    if (dateColumn) {
+      const dateVal = row[dateColumn];
+      if (dateVal === undefined || dateVal === null || String(dateVal).trim() === '') {
+        const msg = `Missing values in Date Column '${dateColumn}'. Fixable by removing rows.`;
+        if (!encounteredGenericIssueMessages.has(msg)) {
+          collectedIssues.push({ type: DataQualityIssueType.MissingDate, message: msg });
+          encounteredGenericIssueMessages.add(msg);
+        }
+      } else {
+        try {
+          if (isNaN(new Date(dateVal as string | number | Date).getTime())) {
+            collectedIssues.push({
+              type: DataQualityIssueType.InvalidDateFormat,
+              message: `${rowIndexStr}: Invalid date format in '${dateColumn}' column: '${String(dateVal)}'.`,
+              isUnfixableFormatError: true,
+            });
+            hasUnfixableFormatErrorFlag = true;
+          }
+        } catch {
+          collectedIssues.push({
+            type: DataQualityIssueType.InvalidDateFormat,
+            message: `${rowIndexStr}: Error parsing date in '${dateColumn}' column: '${String(dateVal)}'.`,
+            isUnfixableFormatError: true,
+          });
+          hasUnfixableFormatErrorFlag = true;
+        }
       }
+    }
+
+    // Metric Columns
+    if (metricColumns.length > 0) {
+      for (const metric of metricColumns) {
+        const metricVal = row[metric];
+        if (metricVal === undefined || metricVal === null) {
+          const msg = `Missing values in Metric Column '${metric}'. Fixable by filling with 0.`;
+          if (!encounteredGenericIssueMessages.has(msg)) {
+            collectedIssues.push({ type: DataQualityIssueType.MissingMetric, message: msg });
+            encounteredGenericIssueMessages.add(msg);
+          }
+        } else if (typeof metricVal !== 'number') {
+          collectedIssues.push({
+            type: DataQualityIssueType.NonNumericMetric,
+            message: `${rowIndexStr}: Non-numeric value in Metric column '${metric}': '${metricVal}'.`,
+            isUnfixableFormatError: true,
+          });
+          hasUnfixableFormatErrorFlag = true;
+        }
+      }
+    }
+
+    // Geo Column
+    if (geoColumn) {
+      const geoVal = row[geoColumn];
+      if (geoVal === undefined || geoVal === null || String(geoVal).trim() === '') {
+        const msg = `Missing values in Geo Column '${geoColumn}'. Fixable by removing rows.`;
+        if (!encounteredGenericIssueMessages.has(msg)) {
+          collectedIssues.push({ type: DataQualityIssueType.MissingGeo, message: msg });
+          encounteredGenericIssueMessages.add(msg);
+        }
+      }
+    }
+  }
+
+  if (hasUnfixableFormatErrorFlag) {
+    const displayIssuesWhenCritical: DataQualityIssue[] = [];
+    displayIssuesWhenCritical.push({
+      type: DataQualityIssueType.InvalidDateFormat,
+      message:
+        'Critical data format errors found (e.g., unparsable dates, non-numeric metrics). These must be corrected. Other checks are paused.',
+      isUnfixableFormatError: true,
+    });
+
+    collectedIssues.forEach((issue) => {
+      if (issue.isUnfixableFormatError && issue.message !== displayIssuesWhenCritical[0].message) {
+        displayIssuesWhenCritical.push(issue);
+      }
+    });
+
+    if (
+      dateColumn &&
+      encounteredGenericIssueMessages.has(
+        `Missing values in Date Column '${dateColumn}'. Fixable by removing rows.`,
+      )
+    ) {
+      displayIssuesWhenCritical.push({
+        type: DataQualityIssueType.MissingDate,
+        message: `Missing values in Date Column '${dateColumn}'. Fixable by removing rows.`,
+      });
+    }
+    if (
+      geoColumn &&
+      encounteredGenericIssueMessages.has(
+        `Missing values in Geo Column '${geoColumn}'. Fixable by removing rows.`,
+      )
+    ) {
+      displayIssuesWhenCritical.push({
+        type: DataQualityIssueType.MissingGeo,
+        message: `Missing values in Geo Column '${geoColumn}'. Fixable by removing rows.`,
+      });
+    }
+    metricColumns.forEach((metric) => {
+      if (
+        encounteredGenericIssueMessages.has(
+          `Missing values in Metric Column '${metric}'. Fixable by filling with 0.`,
+        )
+      ) {
+        displayIssuesWhenCritical.push({
+          type: DataQualityIssueType.MissingMetric,
+          message: `Missing values in Metric Column '${metric}'. Fixable by filling with 0.`,
+        });
+      }
+    });
+
+    const finalDisplayMessages = new Set<string>();
+    return displayIssuesWhenCritical.filter((issue) => {
+      if (finalDisplayMessages.has(issue.message)) return false;
+      finalDisplayMessages.add(issue.message);
+      return true;
     });
   }
 
-  return issues;
+  // --- Phase 2: Integrity Checks (Date Gaps, Duplicates) ---
+  const phase2IntegrityIssues: DataQualityIssue[] = [];
+
+  // Date Gaps
+  if (dateColumn && rawData.value.length > 1) {
+    const validDateRows = rawData.value.filter((row) => {
+      const dateVal = row[dateColumn];
+      return (
+        dateVal !== undefined &&
+        dateVal !== null &&
+        String(dateVal).trim() !== '' &&
+        !isNaN(new Date(dateVal as string | number | Date).getTime())
+      );
+    });
+
+    if (validDateRows.length > 1) {
+      const dataSorted = [...validDateRows].sort((a, b) => {
+        if (geoColumn && a[geoColumn] !== b[geoColumn]) {
+          if (a[geoColumn] == null && b[geoColumn] != null) return 1;
+          if (a[geoColumn] != null && b[geoColumn] == null) return -1;
+          if (a[geoColumn] == null && b[geoColumn] == null) return 0;
+          return String(a[geoColumn]).localeCompare(String(b[geoColumn]));
+        }
+        return (
+          new Date(a[dateColumn] as string | number | Date).getTime() -
+          new Date(b[dateColumn] as string | number | Date).getTime()
+        );
+      });
+
+      let lastDateObj: Date | null = null;
+      let lastGeoVal: string | null = null;
+      const dateGapMessages = new Set<string>();
+      for (const currentRow of dataSorted) {
+        const currentDateObj = new Date(currentRow[dateColumn] as string | number | Date);
+        const currentGeoVal = geoColumn
+          ? String(currentRow[geoColumn] ?? '__NULL_GEO__')
+          : '__NO_GEO__';
+        if (lastDateObj && (geoColumn ? currentGeoVal === lastGeoVal : true)) {
+          const diffTime = currentDateObj.getTime() - lastDateObj.getTime();
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays > 1) {
+            dateGapMessages.add(
+              `Date gap detected${geoColumn && lastGeoVal !== '__NULL_GEO__' ? ` for Geo: '${lastGeoVal}'` : ''} between ${lastDateObj.toISOString().split('T')[0]} and ${currentDateObj.toISOString().split('T')[0]} (${diffDays - 1} missing day(s)).`,
+            );
+          }
+        }
+        lastDateObj = currentDateObj;
+        lastGeoVal = currentGeoVal;
+      }
+      dateGapMessages.forEach((msg) =>
+        phase2IntegrityIssues.push({ type: DataQualityIssueType.DateGap, message: msg }),
+      );
+    }
+  }
+
+  // Duplicate Geo/Date
+  if (dateColumn && geoColumn && rawData.value.length > 0) {
+    const seenCombinations = new Set<string>();
+    const duplicateRowMessages = new Set<string>();
+    const validRowsForDuplicateCheck = rawData.value.filter((row) => {
+      const dateVal = row[dateColumn];
+      const geoVal = row[geoColumn];
+      return (
+        dateVal !== undefined &&
+        dateVal !== null &&
+        String(dateVal).trim() !== '' &&
+        geoVal !== undefined &&
+        geoVal !== null &&
+        String(geoVal).trim() !== '' &&
+        !isNaN(new Date(dateVal as string | number | Date).getTime())
+      );
+    });
+
+    for (const row of validRowsForDuplicateCheck) {
+      const dateVal = row[dateColumn];
+      const geoVal = row[geoColumn];
+      const formattedDate = new Date(dateVal as string | number | Date).toISOString().split('T')[0];
+      const sGeoVal = String(geoVal);
+      const combination = `${sGeoVal}|${formattedDate}`;
+      if (seenCombinations.has(combination)) {
+        duplicateRowMessages.add(
+          `Duplicate entry found for Geo: '${sGeoVal}', Date: '${formattedDate}'.`,
+        );
+      } else {
+        seenCombinations.add(combination);
+      }
+    }
+    duplicateRowMessages.forEach((msg) =>
+      phase2IntegrityIssues.push({ type: DataQualityIssueType.DuplicateGeoDate, message: msg }),
+    );
+  }
+
+  const allDetectedIssues = [
+    ...collectedIssues.filter((issue) => !issue.isUnfixableFormatError),
+    ...phase2IntegrityIssues,
+  ];
+
+  const finalUniqueMessages = new Set<string>();
+  return allDetectedIssues.filter((issue) => {
+    if (finalUniqueMessages.has(issue.message)) {
+      return false;
+    }
+    finalUniqueMessages.add(issue.message);
+    return true;
+  });
 });
 
 const canContinueFromImport = computed(() => {
@@ -448,7 +815,6 @@ onMounted(async () => {
         loading.value = false;
       }
     }
-    // Create a copy to avoid direct mutation (but won't clone 'data')
     if (ds.data) {
       const data = ds.data;
       ds.data = undefined;
@@ -461,7 +827,6 @@ onMounted(async () => {
 
     // If there's data loaded, create columns for the editor
     if (currentDataSource.value.data && currentDataSource.value.data.rawRows?.length > 0) {
-      // Use the raw rows directly
       rawData.value = currentDataSource.value.data.rawRows.map((row, index) => ({
         ...row,
         __index: index,
@@ -511,29 +876,25 @@ function processData(data: Record<string, unknown>[]) {
     throw new Error('No data found');
   }
 
-  // Add index for row key
   rawData.value = data.map((row, index) => ({
     ...row,
     __index: index,
   }));
 
-  // Create columns from headers
   const firstRow = data[0];
   columns.value = Object.keys(firstRow)
-    .filter((key) => key !== '__index') // Filter out the index key
+    .filter((key) => key !== '__index')
     .map((key) => ({
       name: key,
       label: key,
       field: key,
     }));
 
-  // Initialize column roles
   columnRoles.value = {};
   columns.value.forEach((col) => {
     columnRoles.value[col.name] = ColumnRole.Ignore;
   });
 
-  // Auto-detect columns
   autoDetectColumns();
 }
 
@@ -550,8 +911,8 @@ async function handleFileUpload() {
       parse(
         text,
         {
-          columns: true, // Auto-generate columns from first row
-          skip_empty_lines: true, // Skip empty lines
+          columns: true,
+          skip_empty_lines: true,
           cast: true, // Attempt to auto-convert values to native types
           trim: true, // Trim whitespace
         },
@@ -569,7 +930,6 @@ async function handleFileUpload() {
       throw new Error('The CSV file appears to be empty or has invalid format');
     }
 
-    // Process the data
     processData(parsedData);
 
     // Set data source name from file if not already set
@@ -578,7 +938,6 @@ async function handleFileUpload() {
     }
     currentDataSource.value.sourceLink = file.value.name;
 
-    // Show success notification
     $q.notify({
       type: 'positive',
       message: 'File loaded successfully',
@@ -674,7 +1033,6 @@ function autoDetectColumns() {
     });
   }
 
-  // Update the data source columns based on roles
   handleColumnRoleChange('', ColumnRole.Ignore);
 }
 
@@ -698,7 +1056,6 @@ async function fetchExternalData() {
       return;
     }
 
-    // Process the data using the common function
     processData(res.data as Record<string, unknown>[]);
 
     // Auto-set data source name from URL if not set
@@ -707,7 +1064,6 @@ async function fetchExternalData() {
       currentDataSource.value.name = url.pathname.split('/').pop() || 'External Data Source';
     }
 
-    // Show success notification
     $q.notify({
       type: 'positive',
       message: 'Successfully loaded data from external source',
@@ -715,7 +1071,6 @@ async function fetchExternalData() {
   } catch (error) {
     assertIsError(error);
     showError('Failed to load external data: ' + error.message);
-    // Reset state on error
     rawData.value = [];
     columns.value = [];
   } finally {
@@ -732,23 +1087,22 @@ async function saveDataSource() {
   saving.value = true;
 
   try {
-    // if (rawData.value.length > 0) {
-    //   const processedData = processRawData();
-    //   currentDataSource.value.data = processedData;
-    // }
-    if (!isEditing.value && rawData.value.length > 0) {
-      // Set the data
+    // Always update from rawData if it has content, for both new and existing data sources
+    if (rawData.value.length > 0) {
       currentDataSource.value.data = dataSourcesStore.normalizeRawData(
         rawData.value,
         currentDataSource.value.columns,
       );
+    } else if (isEditing.value && !rawData.value.length) {
+      currentDataSource.value.data = dataSourcesStore.normalizeRawData(
+        [],
+        currentDataSource.value.columns,
+      );
     }
 
-    // Save to the store
     const res = await dataSourcesStore.saveDataSource(currentDataSource.value);
     if (!res) return;
 
-    // Emit saved event
     emit('saved', res || currentDataSource.value);
   } catch (error) {
     showError('Failed to save data source: ' + error);
@@ -757,106 +1111,18 @@ async function saveDataSource() {
   }
 }
 
-/*
-function processRawData() {
-  // This function transforms the raw data into the format expected by the store
-  const { geoColumn, dateColumn, metricColumns, costColumn } = currentDataSource.value.columns;
-
-  // Get unique geo units
-  const geoUnits = [...new Set(rawData.value.map((row) => row[geoColumn]))];
-
-  // Get unique dates
-  const uniqueDates = [...new Set(rawData.value.map((row) => row[dateColumn]))].sort();
-
-  // Get all metric names
-  const metricNames = [...metricColumns];
-
-  // Organize data by geo unit
-  const byGeo: Record<string, DataRow[]> = {};
-
-  geoUnits.forEach((geo: string) => {
-    const geoRows = rawData.value.filter((row) => row[geoColumn] === geo);
-
-    // Convert to DataRow format and sort by date
-    byGeo[geo] = geoRows
-      .map((row) => {
-        // Create a metrics object with all selected metrics
-        const metricsObj: Record<string, number> = {};
-        for (const metric of metricColumns) {
-          if (row[metric] !== undefined && row[metric] !== null) {
-            metricsObj[metric] = Number(row[metric]);
-          }
-        }
-
-        const dataRow: DataRow = {
-          geoUnit: row[geoColumn],
-          date: row[dateColumn],
-          metrics: metricsObj,
-        };
-
-        // Add cost if available
-        if (costColumn && row[costColumn] !== undefined) {
-          dataRow.cost = Number(row[costColumn]);
-        }
-
-        return dataRow;
-      })
-      .sort((a, b) => {
-        if (a.date < b.date) return -1;
-        if (a.date > b.date) return 1;
-        return 0;
-      });
-  });
-
-  // Calculate statistics for each metric
-  const metrics = metricNames.map((name) => {
-    const values: number[] = [];
-
-    // Collect all values for this metric
-    Object.values(byGeo).forEach((geoRows) => {
-      geoRows.forEach((row) => {
-        if (row.metrics[name] !== undefined) {
-          values.push(row.metrics[name]);
-        }
-      });
-    });
-
-    if (values.length === 0) return { name, min: 0, max: 0 };
-
-    return {
-      name,
-      min: Math.min(...values),
-      max: Math.max(...values),
-    };
-  });
-
-  return {
-    rawRows: rawData.value, // Keep the original raw data
-    byGeo,
-    geoUnits,
-    uniqueDates,
-    metricNames,
-    metrics,
-    numberOfDays: uniqueDates.length,
-  };
-}
-*/
-
 function onCancel() {
   emit('canceled');
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function handleColumnRoleChange(columnName: string, newRole: any) {
-  // Extract the actual role value if an object was passed
   const roleValue = typeof newRole === 'object' && newRole !== null ? newRole.value : newRole;
 
-  // Update the role for the column
   if (columnName) {
     columnRoles.value[columnName] = roleValue;
   }
 
-  // If new role is Geo, Date, or Cost, clear that role from all other columns
   if (
     roleValue === ColumnRole.Geo ||
     roleValue === ColumnRole.Date ||
@@ -869,7 +1135,6 @@ function handleColumnRoleChange(columnName: string, newRole: any) {
     });
   }
 
-  // Update the data source columns based on roles
   currentDataSource.value.columns.geoColumn = '';
   currentDataSource.value.columns.dateColumn = '';
   currentDataSource.value.columns.metricColumns = [];
@@ -891,5 +1156,305 @@ function handleColumnRoleChange(columnName: string, newRole: any) {
         break;
     }
   });
+}
+
+function openFixDialog() {
+  fixSelection.value = {
+    removeMissingCritical: availableFixTypes.value.removeMissingCritical,
+    fillMissingMetrics: availableFixTypes.value.fillMissingMetrics,
+    fillDateGaps: availableFixTypes.value.fillDateGaps,
+    deduplicateRows: availableFixTypes.value.deduplicateRows,
+  };
+  showFixSelectionDialog.value = true;
+}
+
+function applySelectedFixes() {
+  showFixSelectionDialog.value = false;
+  executeFixes(fixSelection.value);
+}
+
+function executeFixes(selection: FixSelection) {
+  if (!rawData.value.length) return;
+
+  isFixingIssues.value = true;
+  let rowsRemovedCount = 0;
+  let metricsFilledCount = 0;
+  let dateGapsFilledCount = 0;
+  let deduplicatedRowsCount = 0;
+
+  const { geoColumn, dateColumn, metricColumns } = currentDataSource.value.columns;
+
+  let currentProcessedData: Record<string, unknown>[] = [...rawData.value];
+
+  // 1. Remove rows with missing geo/date values
+  if (selection.removeMissingCritical) {
+    const tempData = currentProcessedData
+      .map((row) => {
+        let rowIsValid = true;
+        if (geoColumn && !row[geoColumn]) {
+          rowIsValid = false;
+        }
+        if (dateColumn && !row[dateColumn]) {
+          rowIsValid = false;
+        }
+        return rowIsValid ? row : null;
+      })
+      .filter((row): row is Record<string, unknown> => row !== null);
+    rowsRemovedCount = currentProcessedData.length - tempData.length;
+    currentProcessedData = tempData;
+  }
+
+  // 2. Fill missing metric values
+  if (selection.fillMissingMetrics) {
+    currentProcessedData = currentProcessedData.map((row) => {
+      const newRow = { ...row };
+      if (metricColumns.length > 0) {
+        metricColumns.forEach((metric) => {
+          if (!newRow[metric] && newRow[metric] !== 0) {
+            newRow[metric] = 0;
+            metricsFilledCount++;
+          }
+        });
+      }
+      return newRow;
+    });
+  }
+
+  // 3. Fill date gaps
+  if (selection.fillDateGaps && dateColumn && currentProcessedData.length > 0) {
+    const newRowsToAdd: Record<string, unknown>[] = [];
+    const dataByGeo: Record<string, Record<string, unknown>[]> = {};
+
+    if (geoColumn) {
+      currentProcessedData.forEach((row) => {
+        const geoVal = row[geoColumn];
+        let geo: string;
+        if (geoVal === null || geoVal === undefined) {
+          geo = '__NULL_GEO__';
+        } else if (
+          typeof geoVal === 'string' ||
+          typeof geoVal === 'number' ||
+          typeof geoVal === 'boolean'
+        ) {
+          geo = String(geoVal);
+        } else {
+          geo = JSON.stringify(geoVal);
+        }
+        if (!dataByGeo[geo]) dataByGeo[geo] = [];
+        dataByGeo[geo].push(row);
+      });
+    } else {
+      dataByGeo['__NO_GEO__'] = [...currentProcessedData];
+    }
+
+    Object.keys(dataByGeo).forEach((geoKey) => {
+      const geoGroupData = dataByGeo[geoKey].sort((a, b) => {
+        const dateA = a[dateColumn];
+        const dateB = b[dateColumn];
+        const timeA =
+          typeof dateA === 'string' || typeof dateA === 'number' || dateA instanceof Date
+            ? new Date(dateA).getTime()
+            : 0;
+        const timeB =
+          typeof dateB === 'string' || typeof dateB === 'number' || dateB instanceof Date
+            ? new Date(dateB).getTime()
+            : 0;
+        return timeA - timeB;
+      });
+      if (geoGroupData.length === 0) return;
+
+      const firstDateVal = geoGroupData[0][dateColumn];
+      const lastDateVal = geoGroupData[geoGroupData.length - 1][dateColumn];
+
+      if (
+        !(
+          typeof firstDateVal === 'string' ||
+          typeof firstDateVal === 'number' ||
+          firstDateVal instanceof Date
+        ) ||
+        !(
+          typeof lastDateVal === 'string' ||
+          typeof lastDateVal === 'number' ||
+          lastDateVal instanceof Date
+        )
+      ) {
+        return;
+      }
+
+      const minDate = new Date(firstDateVal);
+      const maxDate = new Date(lastDateVal);
+      const existingDates = new Set(
+        geoGroupData
+          .map((row) => {
+            const dateVal = row[dateColumn];
+            return typeof dateVal === 'string' ||
+              typeof dateVal === 'number' ||
+              dateVal instanceof Date
+              ? new Date(dateVal).toISOString().split('T')[0]
+              : '';
+          })
+          .filter((dateStr) => dateStr !== ''),
+      );
+
+      for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+        const currentDateStr = d.toISOString().split('T')[0];
+        if (!existingDates.has(currentDateStr)) {
+          const newRow: Record<string, unknown> = { __index: -1 };
+          if (geoColumn && geoKey !== '__NO_GEO__' && geoKey !== '__NULL_GEO__') {
+            newRow[geoColumn] = geoKey;
+          } else if (geoColumn) {
+            newRow[geoColumn] = null;
+          }
+          newRow[dateColumn] = currentDateStr;
+          metricColumns.forEach((metric) => {
+            newRow[metric] = 0;
+          });
+
+          columns.value.forEach((colDef) => {
+            if (!(colDef.name in newRow) && colDef.name !== '__index') {
+              newRow[colDef.name] = undefined;
+            }
+          });
+
+          newRowsToAdd.push(newRow);
+          dateGapsFilledCount++;
+        }
+      }
+    });
+
+    if (newRowsToAdd.length > 0) {
+      currentProcessedData.push(...newRowsToAdd);
+      currentProcessedData.sort((a, b) => {
+        if (geoColumn && a[geoColumn] !== b[geoColumn]) {
+          const geoValA = a[geoColumn];
+          const geoValB = b[geoColumn];
+          let geoA_str: string;
+          let geoB_str: string;
+
+          if (geoValA === null || geoValA === undefined) geoA_str = '';
+          else if (
+            typeof geoValA === 'string' ||
+            typeof geoValA === 'number' ||
+            typeof geoValA === 'boolean'
+          )
+            geoA_str = String(geoValA);
+          else geoA_str = JSON.stringify(geoValA);
+
+          if (geoValB === null || geoValB === undefined) geoB_str = '';
+          else if (
+            typeof geoValB === 'string' ||
+            typeof geoValB === 'number' ||
+            typeof geoValB === 'boolean'
+          )
+            geoB_str = String(geoValB);
+          else geoB_str = JSON.stringify(geoValB);
+
+          return geoA_str.localeCompare(geoB_str);
+        }
+        const dateA = a[dateColumn];
+        const dateB = b[dateColumn];
+        const timeA =
+          typeof dateA === 'string' || typeof dateA === 'number' || dateA instanceof Date
+            ? new Date(dateA).getTime()
+            : 0;
+        const timeB =
+          typeof dateB === 'string' || typeof dateB === 'number' || dateB instanceof Date
+            ? new Date(dateB).getTime()
+            : 0;
+        return timeA - timeB;
+      });
+    }
+  }
+
+  // 4. Remove duplicate Geo/Date rows
+  if (selection.deduplicateRows && dateColumn && geoColumn && currentProcessedData.length > 0) {
+    const seenCombinations = new Set<string>();
+    const uniqueRows: Record<string, unknown>[] = [];
+    const originalLength = currentProcessedData.length;
+
+    for (const row of currentProcessedData) {
+      const dateVal = row[dateColumn];
+      const geoVal = row[geoColumn];
+
+      const formattedDate: string = new Date(dateVal as string | number | Date)
+        .toISOString()
+        .split('T')[0];
+
+      let sGeoVal: string;
+      if (geoVal === null || geoVal === undefined) {
+        sGeoVal = 'N/A';
+      } else if (
+        typeof geoVal === 'string' ||
+        typeof geoVal === 'number' ||
+        typeof geoVal === 'boolean'
+      ) {
+        sGeoVal = String(geoVal);
+      } else {
+        sGeoVal = JSON.stringify(geoVal);
+      }
+      const combination = `${sGeoVal}|${formattedDate}`;
+
+      if (!seenCombinations.has(combination)) {
+        seenCombinations.add(combination);
+        uniqueRows.push(row);
+      }
+    }
+    deduplicatedRowsCount = originalLength - uniqueRows.length;
+    currentProcessedData = uniqueRows;
+  }
+
+  rawData.value = currentProcessedData.map((row, index) => ({
+    ...row,
+    __index: index,
+  }));
+
+  let message = 'Fixes applied: ';
+  const fixesApplied = [];
+  if (rowsRemovedCount > 0)
+    fixesApplied.push(`${rowsRemovedCount} row(s) with missing critical data removed`);
+  if (metricsFilledCount > 0)
+    fixesApplied.push(`${metricsFilledCount} missing metric value(s) filled`);
+  if (dateGapsFilledCount > 0) fixesApplied.push(`${dateGapsFilledCount} date gap(s) filled`);
+  if (deduplicatedRowsCount > 0)
+    fixesApplied.push(`${deduplicatedRowsCount} duplicate row(s) removed`);
+
+  if (fixesApplied.length === 0) {
+    message = 'No fixes were applied based on selection or no relevant issues found.';
+  } else {
+    message += fixesApplied.join(', ') + '.';
+  }
+
+  $q.notify({
+    type: fixesApplied.length > 0 ? 'positive' : 'info',
+    message: message.trim(),
+    position: 'top',
+    timeout: 5000,
+    actions: [{ icon: 'close', color: 'white', round: true, dense: true }],
+  });
+
+  isFixingIssues.value = false;
+}
+
+async function triggerValidation() {
+  validateDataLoading.value = true;
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const issuesCount = dataQualityIssues.value.length;
+
+  if (issuesCount > 0) {
+    $q.notify({
+      type: 'warning',
+      message: `Validation complete. ${issuesCount} issue(s) found. Please review the Data Quality Issues section.`,
+      position: 'top',
+      timeout: 3000,
+    });
+  } else {
+    $q.notify({
+      type: 'positive',
+      message: 'Validation complete. No data quality issues detected.',
+      position: 'top',
+      timeout: 3000,
+    });
+  }
+  validateDataLoading.value = false;
 }
 </script>

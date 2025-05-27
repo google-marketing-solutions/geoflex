@@ -4,7 +4,7 @@
       <div>
         <h1 class="text-h4 q-my-none">Data Sources</h1>
         <p class="text-body1 q-my-sm">Manage your data sources for geo-based marketing tests</p>
-        <q-btn color="primary" icon="refresh" label="Reload" @click="loadDataSources()" />
+        <q-btn color="primary" icon="refresh" label="Reload" @click="loadDataSources(true)" />
       </div>
       <q-btn color="primary" icon="add" label="New Data Source" @click="openEditor()" />
     </div>
@@ -16,7 +16,7 @@
       </template>
       {{ error }}
       <template v-slot:action>
-        <q-btn flat label="Retry" @click="loadDataSources" />
+        <q-btn flat label="Retry" @click="loadDataSources(true)" />
       </template>
     </q-banner>
 
@@ -194,9 +194,9 @@ const columns = [
 onMounted(loadDataSources);
 
 // Load data sources
-async function loadDataSources() {
+async function loadDataSources(reload = false) {
   try {
-    await dataSourcesStore.loadDataSources();
+    await dataSourcesStore.loadDataSources(true, reload);
   } catch (err) {
     console.error('Failed to load data sources:', err);
   }
