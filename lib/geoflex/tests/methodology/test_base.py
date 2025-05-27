@@ -15,6 +15,7 @@ import pytest
 Methodology = geoflex.methodology._base.Methodology  # pylint: disable=protected-access
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
+GeoEligibility = geoflex.experiment_design.GeoEligibility
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
@@ -895,7 +896,7 @@ def test_analyze_experiment_returns_intermediate_data_if_requested(
       }), {"mock_intermediate_result": "analyze_experiment"}
 
   default_experiment_design.geo_assignment = GeoAssignment(
-      treatment=[["US", "UK"]], control=["CA", "AU"]
+      treatment=[["geo_1", "geo_2"]], control=["geo_3", "geo_4"]
   )
   (
       results,
@@ -932,7 +933,9 @@ def test_assign_geos_returns_intermediate_data_if_requested(
     ) -> tuple[GeoAssignment, dict[str, Any]]:
       del experiment_design, historical_data
       return (
-          GeoAssignment(treatment=[["US"], ["UK"]], control=["CA", "AU"]),
+          GeoAssignment(
+              treatment=[["geo_1"], ["geo_2"]], control=["geo_3", "geo_4"]
+          ),
           {"mock_intermediate_result": "assign_geos"},
       )
 
@@ -946,3 +949,67 @@ def test_assign_geos_returns_intermediate_data_if_requested(
   )
   assert isinstance(results, GeoAssignment)
   assert intermediate_data == expected_intermediate_data
+
+
+@pytest.mark.parametrize(
+    "assigned_control,assigned_treatment",
+    [
+        (
+            ["geo_2"],
+            [["geo_3", "geo_4"], ["geo_5"]],
+        ),  # geo_1 not assigned to control
+        (
+            ["geo_1", "geo_3"],
+            [["geo_4"], ["geo_5"]],
+        ),  # geo_3 assigned to control
+        (["geo_1"], [["geo_4"], ["geo_5"]]),  # geo_3 excluded
+        (
+            ["geo_2"],
+            [["geo_3", "geo_1"], ["geo_5"]],
+        ),  # geo_1 assigned to treatment 1
+        (
+            ["geo_1"],
+            [["geo_3"], ["geo_5", "geo_4"]],
+        ),  # geo_4 assigned to treatment 2
+        (
+            ["geo_6", "geo_1"],
+            [["geo_3", "geo_4"], ["geo_5"]],
+        ),  # geo_6 not excluded
+    ],
+)
+def test_assign_geos_raises_exception_if_geo_eligibility_is_not_respected(
+    MockMethodology,
+    historical_data,
+    default_experiment_design,
+    assigned_control,
+    assigned_treatment,
+):
+
+  class MockMethodologyWithGeoEligibility(MockMethodology):
+    """Mock methodology for testing."""
+
+    def _methodology_assign_geos(
+        self,
+        experiment_design: ExperimentDesign,
+        historical_data: GeoPerformanceDataset,
+    ) -> tuple[GeoAssignment, dict[str, Any]]:
+      del experiment_design, historical_data
+      return (
+          GeoAssignment(
+              treatment=assigned_treatment,
+              control=assigned_control,
+          ),
+          {},
+      )
+
+  default_experiment_design.geo_eligibility = GeoEligibility(
+      control=["geo_1", "geo_5"],
+      treatment=[["geo_3", "geo_4"], ["geo_3", "geo_5"]],
+      exclude=["geo_4", "geo_6"],
+  )
+
+  with pytest.raises(ValueError):
+    MockMethodologyWithGeoEligibility().assign_geos(
+        default_experiment_design,
+        historical_data,
+    )

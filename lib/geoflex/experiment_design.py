@@ -109,6 +109,59 @@ class GeoEligibility(pydantic.BaseModel):
 
     return dfs
 
+  def create_inflexible_geo_eligibility_from_geos(
+      self, all_geos: set[str]
+  ) -> "GeoEligibility":
+    """Creates an inflexible geo eligibility object.
+
+    This will include only the geos in the input list. If the geo was specified
+    in either the control, treatment or excluded list in the original
+    GeoEligibility object, it will remain in the same group(s). If not, it will
+    be added to all groups to indicate that it is flexible and eligible for all
+    groups. Any geos not in the input list will be ignored.
+
+    Args:
+      all_geos: The list of geos to include in the geo eligibility object.
+
+    Returns:
+      A new GeoEligibility object with the geos in the input list.
+    """
+    control = set()
+    treatment = [set() for _ in range(len(self.treatment))]
+    exclude = set()
+
+    all_specified_geos = (
+        self.control
+        | self.exclude
+        | set(itertools.chain.from_iterable(self.treatment))
+    )
+
+    for geo in all_geos:
+      if geo not in all_specified_geos:
+        control.add(geo)
+        for i in range(len(self.treatment)):
+          treatment[i].add(geo)
+        exclude.add(geo)
+        continue
+
+      if geo in self.control:
+        control.add(geo)
+
+      for i, treatment_cell in enumerate(self.treatment):
+        if geo in treatment_cell:
+          treatment[i].add(geo)
+
+      if geo in self.exclude:
+        exclude.add(geo)
+
+    return GeoEligibility(
+        control=control,
+        treatment=treatment,
+        exclude=exclude,
+        all_geos=all_geos,
+        flexible=False,
+    )
+
   def to_dict(self) -> dict[str, Any]:
     """Creates a dict with the treatment groups as separate keys."""
     out = {

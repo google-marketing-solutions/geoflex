@@ -285,6 +285,39 @@ class Methodology(abc.ABC):
         logger.error(error_message)
         raise ValueError(error_message)
 
+    # Check that the geo eligibility is respected.
+    geo_eligibility = experiment_design.geo_eligibility.create_inflexible_geo_eligibility_from_geos(
+        set(historical_data.geos)
+    )
+
+    bad_control_geos = set(geo_assignment.control) - geo_eligibility.control
+    if bad_control_geos:
+      error_message = (
+          "Assign_geos assigned geos to the control group that are not eligible"
+          f" for control: {bad_control_geos}."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    bad_exclude_geos = set(geo_assignment.exclude) - geo_eligibility.exclude
+    if bad_exclude_geos:
+      error_message = (
+          "Assign_geos assigned geos to the exclude group that are not eligible"
+          f" for exclude: {bad_exclude_geos}."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    for i, treatment_group in enumerate(geo_assignment.treatment):
+      bad_treatment_geos = set(treatment_group) - geo_eligibility.treatment[i]
+      if bad_treatment_geos:
+        error_message = (
+            "Assign_geos assigned geos to treatment group"
+            f" {i+1} that are not eligible for treatment: {bad_treatment_geos}."
+        )
+        logger.error(error_message)
+        raise ValueError(error_message)
+
     return geo_assignment, intermediate_data
 
   @abc.abstractmethod
