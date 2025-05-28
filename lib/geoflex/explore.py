@@ -393,36 +393,47 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     If there are more than 10k eligible designs, it will only count up to 10k.
     """
-    previous_verbosity = op.logging.get_verbosity()
-    op.logging.set_verbosity(logging.CRITICAL)  # Disable logging.
-    with warnings.catch_warnings():
-      # Hide the experiment warning about the BruteForceSampler being
-      # experimental.
-      warnings.filterwarnings(
-          "ignore", message="BruteForceSampler is experimental"
-      )
+    # Get current global logging level
+    previous_global_logging_level = logging.getLogger().getEffectiveLevel()
+    # Set global logging level to ERROR
+    logging.getLogger().setLevel(logging.ERROR)
 
-      counting_study = op.create_study(
-          sampler=op.samplers.BruteForceSampler(), directions=["maximize"]
-      )
+    try:
+      previous_verbosity = op.logging.get_verbosity()
+      op.logging.set_verbosity(logging.CRITICAL)  # Disable logging.
+      try:
+        with warnings.catch_warnings():
+          # Hide the experiment warning about the BruteForceSampler being
+          # experimental.
+          warnings.filterwarnings(
+              "ignore", message="BruteForceSampler is experimental"
+          )
 
-    counting_study.optimize(
-        self._design_counting_objective,
-        n_trials=10_000,
-        n_jobs=-1,
-    )
+          counting_study = op.create_study(
+              sampler=op.samplers.BruteForceSampler(), directions=["maximize"]
+          )
 
-    all_results = counting_study.trials_dataframe()
+        counting_study.optimize(
+            self._design_counting_objective,
+            n_trials=10_000,
+            n_jobs=-1,
+        )
 
-    counts = (
-        all_results.drop_duplicates()
-        .groupby("user_attrs_methodology")["value"]
-        .sum()
-        .astype(int)
-        .to_dict()
-    )
-    op.logging.set_verbosity(previous_verbosity)  # Restore logging.
-    return counts
+        all_results = counting_study.trials_dataframe()
+
+        counts = (
+            all_results.drop_duplicates()
+            .groupby("user_attrs_methodology")["value"]
+            .sum()
+            .astype(int)
+            .to_dict()
+        )
+      finally:
+        op.logging.set_verbosity(previous_verbosity)  # Restore logging.
+      return counts
+    finally:
+      # Restore global logging level
+      logging.getLogger().setLevel(previous_global_logging_level)
 
   def explore(
       self,

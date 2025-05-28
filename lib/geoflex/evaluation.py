@@ -670,8 +670,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     for sample in self.bootstrapper.sample_dataframes(n_simulations):
       # New random seed for each sample
       random_seed += 1
-      sample_design = design_with_inverted_metrics.model_copy(
-          update={"random_seed": random_seed}, deep=True
+      sample_design = design_with_inverted_metrics.make_variation(
+          random_seed=random_seed,
+          geo_assignment=None,
       )
 
       self._assign_geos_with_pretest_sample_data(
@@ -679,11 +680,13 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           sample_design,
           exp_start_date,
       )
+
       if sample_design.geo_assignment is None:
         logger.warning(
             "The original data was eligible for the design, but one of the"
-            " bootstrap samples is not. This might be an error with the"
-            " bootstrap sampler.",
+            " bootstrap samples is not, because the geo assignment failed."
+            " This might be an error with the bootstrap sampler or the"
+            " methodology.",
         )
         results = RawExperimentSimulationResults(
             design=design,
@@ -697,6 +700,20 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       sample_results = self._analyze_simulated_experiment(
           sample, sample_design, exp_start_date
       )
+      if sample_results is None:
+        logger.warning(
+            "The original data was eligible for the design, but one of the"
+            " bootstrap samples is not, because the analysis failed. This"
+            " might be an error with the bootstrap sampler or the methodology."
+        )
+        results = RawExperimentSimulationResults(
+            design=design,
+            simulation_results=pd.DataFrame(),
+            representiveness_scores=None,
+            design_is_valid=False,
+        )
+        self.raw_simulation_results[design.design_id] = results
+        return results
 
       results_list.append(sample_results)
 

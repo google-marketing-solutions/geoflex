@@ -711,7 +711,20 @@ def analyze_experiment(
     A dataframe with the analysis results, or None if the design is not valid
     for the methodology.
   """
-  if not design_is_eligible_for_data(experiment_design, runtime_data):
+  if pretest_period_end_date is None:
+    pretest_period_end_date = experiment_start_date
+  pretest_period_end_date = pd.to_datetime(pretest_period_end_date)
+
+  pretest_data = GeoPerformanceDataset(
+      data=runtime_data.parsed_data[
+          runtime_data.parsed_data[runtime_data.date_column]
+          < pretest_period_end_date
+      ],
+      geo_id_column=runtime_data.geo_id_column,
+      date_column=runtime_data.date_column,
+  )
+
+  if not design_is_eligible_for_data(experiment_design, pretest_data):
     logger.warning(
         "Design or data are not valid for methodology %s, skipping analysis.",
         experiment_design.methodology,
