@@ -182,12 +182,11 @@ class GBR(_base.Methodology):
     if metric_values is not None:
       metric_values_dict = metric_values.to_dict()
       metric_values = [metric_values_dict[geo_id] for geo_id in eligible_geos]
-      max_metric_per_group = [
-          value if value is not None else np.inf
-          for value in experiment_design.cell_volume_constraint.values
-      ]
-    else:
-      max_metric_per_group = None
+
+    max_metric_per_group = [
+        value if value is not None else np.inf
+        for value in experiment_design.cell_volume_constraint.values
+    ]
 
     raw_assignments, _ = geoflex.utils.assign_geos_randomly(
         geo_ids=eligible_geos,
@@ -241,8 +240,8 @@ class GBR(_base.Methodology):
     pretest_data = runtime_data.parsed_data[is_pretest].copy()
     experiment_data = runtime_data.parsed_data[is_runtime].copy()
 
-    n_pretest_dates = pretest_data["date"].nunique()
-    n_experiment_dates = experiment_data["date"].nunique()
+    n_pretest_dates = pretest_data[runtime_data.date_column].nunique()
+    n_experiment_dates = experiment_data[runtime_data.date_column].nunique()
     if n_pretest_dates != n_experiment_dates:
       logger.warning(
           "The pretest and experiment data have different numbers of dates."
@@ -473,7 +472,6 @@ class GBR(_base.Methodology):
     metric provided in the experiment data. The columns are the following:
 
     - metric: The metric name.
-    - is_primary_metric: Whether the metric is a primary metric.
     - cell: The cell number.
     - point_estimate: The point estimate of the treatment effect.
     - lower_bound: The lower bound of the confidence interval.
@@ -557,9 +555,6 @@ class GBR(_base.Methodology):
         )
 
         results_i["cell"] = cell
-        results_i["is_primary_metric"] = (
-            metric == experiment_design.primary_metric
-        )
         results.append(results_i)
 
     return pd.DataFrame(results), intermediate_data

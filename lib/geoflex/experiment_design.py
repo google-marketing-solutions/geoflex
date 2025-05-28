@@ -472,6 +472,13 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     representiveness_scores_per_cell: The representativeness score of each of
       the treatment group cells. If the effect scope of the design is not
       ALL_GEOS, then this will be 0 for all cells.
+    actual_cell_volumes: The cell volume actuals for the design. This will be
+      None if the design does not have a cell volume constraint. If the design
+      has a cell volume constraint, then this will be a CellVolumeConstraint
+      object with the actual cell volumes for the design.
+    other_errors: A list of errors that were generated during the evaluation,
+      that are not coming from a specific metric. For example, this includes
+      errors that the cell volume constraint was not met.
     is_valid_design: Whether the design is valid. This will be false if the
       methodology is not eligible for the design. All of the design results will
       be None in this case.
@@ -484,6 +491,8 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
       dict[str, list[SingleEvaluationResult]] | None
   ) = None
   representiveness_scores_per_cell: list[float] | None = None
+  actual_cell_volumes: CellVolumeConstraint | None = None
+  other_errors: list[str] = []
   is_valid_design: bool
 
   model_config = pydantic.ConfigDict(extra="forbid")
@@ -639,12 +648,17 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     """Returns the evaluation results as a summary pandas series."""
     if self.all_metric_results is None:
       return {
-          "failing_checks": ["Design is not eligible for this methodology"],
+          "failing_checks": (
+              ["Design is not eligible for this methodology"]
+              + self.other_errors
+          ),
           "all_checks_pass": False,
-          "primary_metric_failing_checks": [
-              "Design is not eligible for this methodology"
-          ],
+          "primary_metric_failing_checks": (
+              ["Design is not eligible for this methodology"]
+              + self.other_errors
+          ),
           "primary_metric_all_checks_pass": False,
+          "actual_cell_volumes": str(self.actual_cell_volumes),
       }
 
     absolute_mde = self.get_mde(
@@ -662,9 +676,10 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
       relative_mde = {}
 
     output = {
-        "failing_checks": [],
+        "failing_checks": self.other_errors,
         "all_checks_pass": True,
         "representiveness_score": self.representiveness_score,
+        "actual_cell_volumes": str(self.actual_cell_volumes),
     }
     for metric_name, result in self.all_metric_results.items():
       if "__INVERTED__" in metric_name:
@@ -680,7 +695,9 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
 
       if metric_name == self.primary_metric_name:
         is_primary_string = ", primary metric"
-        output["primary_metric_failing_checks"] = result.failing_checks
+        output["primary_metric_failing_checks"] = (
+            self.other_errors + result.failing_checks
+        )
         output["primary_metric_all_checks_pass"] = result.all_checks_pass
         output["primary_metric_standard_error"] = standard_error
       else:

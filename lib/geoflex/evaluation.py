@@ -29,6 +29,9 @@ ExperimentDesignEvaluationResults = (
 )
 SingleEvaluationResult = geoflex.experiment_design.SingleEvaluationResult
 EffectScope = geoflex.experiment_design.EffectScope
+GeoAssignment = geoflex.experiment_design.GeoAssignment
+CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
+CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 
 class GeoAssignmentRepresentivenessScorer:
@@ -330,6 +333,88 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
     return self
 
 
+def validate_cell_volume_constraint_is_respected(
+    geo_assignment: GeoAssignment,
+    cell_volume_constraint: CellVolumeConstraint,
+    historical_data: GeoPerformanceDataset,
+) -> tuple[CellVolumeConstraint | None, bool, str]:
+  """Validates that the cell volume constraint is respected.
+
+  Args:
+    geo_assignment: The geo assignment to validate.
+    cell_volume_constraint: The cell volume constraint to validate.
+    historical_data: The historical data to use for the validation.
+
+  Returns:
+    A list of the cell volumes where the first element is the control cell
+    volume, and the rest are the treatment cell volumes, a boolean indicating
+    whether the constraint is respected, and an error message if the constraint
+    is not respected. If there are no constraints, the cell volumes are None.
+  """
+  if all(value is None for value in cell_volume_constraint.values):
+    # If there are no constraints, it always passes.
+    actual_cell_volumes = None
+    is_valid = True
+    error_message = ""
+    return actual_cell_volumes, is_valid, error_message
+
+  if (
+      cell_volume_constraint.constraint_type
+      == CellVolumeConstraintType.MAX_GEOS
+  ):
+    # Cell volume is the number of geos in each cell.
+    actual_cell_volumes = [len(geo_assignment.control)]
+    for treatment_group in geo_assignment.treatment:
+      actual_cell_volumes.append(len(treatment_group))
+
+  elif cell_volume_constraint.constraint_type == (
+      CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC
+  ):
+    # Cell volume is the percentage of the metric in each cell.
+    data = historical_data.parsed_data.copy()
+    data["geo_assignment"] = geo_assignment.make_geo_assignment_array(
+        data["geo_id"].values
+    )
+    cell_volumes = data.groupby("geo_assignment")[
+        cell_volume_constraint.metric_column
+    ].sum()
+    cell_volumes /= cell_volumes.sum()
+
+    actual_cell_volumes = [
+        float(cell_volumes.loc[i])
+        for i in range(len(geo_assignment.treatment) + 1)
+    ]
+  else:
+    raise ValueError(
+        "Unsupported cell volume constraint type:"
+        f" {cell_volume_constraint.constraint_type}"
+    )
+
+  error_message = ""
+  is_valid = True
+  actual_cell_volumes = CellVolumeConstraint(
+      constraint_type=cell_volume_constraint.constraint_type,
+      metric_column=cell_volume_constraint.metric_column,
+      values=actual_cell_volumes,
+  )
+
+  for actual_cell_volume, constraint_value in zip(
+      actual_cell_volumes.values, cell_volume_constraint.values
+  ):
+    if constraint_value is None:
+      continue
+
+    if actual_cell_volume > constraint_value:
+      is_valid = False
+      error_message = (
+          "Cell volume constraint is not respected. Target ="
+          f" {cell_volume_constraint}, Actual = {actual_cell_volumes}."
+      )
+      break
+
+  return actual_cell_volumes, is_valid, error_message
+
+
 class ExperimentDesignEvaluator(pydantic.BaseModel):
   """The class for evaluating experiment designs.
 
@@ -569,6 +654,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       self.raw_simulation_results[design.design_id] = results
       return results
 
+    # Assign geos if they are not already assigned.
     if design.geo_assignment is None:
       geoflex.methodology.assign_geos(design, self.historical_data)
 
@@ -769,6 +855,29 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     """
     design = raw_simulation_results.design
 
+    other_errors = []
+    if design.geo_assignment is not None:
+      # Validate the cell volume constraint is respected if the assignment
+      # has been made.
+      (
+          actual_cell_volumes,
+          is_valid_cell_volume_constraint,
+          cell_volume_constraint_error,
+      ) = geoflex.evaluation.validate_cell_volume_constraint_is_respected(
+          geo_assignment=design.geo_assignment,
+          cell_volume_constraint=design.cell_volume_constraint,
+          historical_data=self.historical_data,
+      )
+      other_errors.append(cell_volume_constraint_error)
+    else:
+      actual_cell_volumes = None
+      is_valid_cell_volume_constraint = True
+
+    is_valid_design = (
+        is_valid_cell_volume_constraint
+        and raw_simulation_results.design_is_valid
+    )
+
     if not raw_simulation_results.design_is_valid:
       # If the design is not eligible for the methodology, then the results
       # are None, and we don't want to evaluate it. We just return the design
@@ -779,6 +888,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           alpha=design.alpha,
           alternative_hypothesis=design.alternative_hypothesis,
           representiveness_scores_per_cell=None,
+          actual_cell_volumes=actual_cell_volumes,
+          other_errors=other_errors,
           is_valid_design=False,
       )
       self.experiment_design_evaluation_results[design.design_id] = results
@@ -829,7 +940,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         alpha=design.alpha,
         alternative_hypothesis=design.alternative_hypothesis,
         representiveness_scores_per_cell=raw_simulation_results.representiveness_scores,
-        is_valid_design=True,
+        actual_cell_volumes=actual_cell_volumes,
+        other_errors=other_errors,
+        is_valid_design=is_valid_design,
     )
     self.experiment_design_evaluation_results[design.design_id] = results
     return results
@@ -891,6 +1004,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         return design.evaluation_results
 
     logger.info("Evaluating design %s.", design.design_id)
+
     raw_simulation_results = self.simulate_experiment_results(
         design, self.simulations_per_trial, exp_start_date
     )

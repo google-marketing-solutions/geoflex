@@ -323,6 +323,7 @@ def test_get_design_summaries_returns_correct_data_relative_effects(
       "primary_metric_all_checks_pass": "bool",
       "primary_metric_standard_error": "float64",
       "Relative MDE (revenue, primary metric)": "float64",
+      "actual_cell_volumes": "object",
   }
   assert len(design_summaries) == 3
 
@@ -368,6 +369,7 @@ def test_get_design_summaries_returns_correct_data_absolute_effects(
       "primary_metric_all_checks_pass": "bool",
       "primary_metric_standard_error": "float64",
       "MDE (revenue, primary metric)": "float64",
+      "actual_cell_volumes": "object",
   }
   assert len(design_summaries) == 3
 

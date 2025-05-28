@@ -9,6 +9,9 @@ import pandas as pd
 import pytest
 
 ExperimentDesignEvaluator = geoflex.evaluation.ExperimentDesignEvaluator
+CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
+CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
+GeoAssignment = geoflex.experiment_design.GeoAssignment
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -377,3 +380,193 @@ def test_evaluator_evaluate_design_returns_correct_data_and_adds_results_to_desi
   assert len(evaluation_results.representiveness_scores_per_cell) == 2
   for metric_results in evaluation_results.all_metric_results_per_cell.values():
     assert len(metric_results) == 2
+
+
+def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+  # Mock is_valid_for_design_and_data to always return False.
+  with mock.patch.object(
+      geoflex.methodology.testing_methodology.TestingMethodology,
+      "is_eligible_for_design_and_data",
+      autospec=True,
+  ) as mock_is_eligible_for_design_and_data:
+    mock_is_eligible_for_design_and_data.return_value = False
+    evaluation_results = evaluator.evaluate_design(mock_design)
+
+  assert isinstance(
+      evaluation_results, geoflex.evaluation.ExperimentDesignEvaluationResults
+  )
+  assert mock_design.evaluation_results is not None
+  assert mock_design.evaluation_results == evaluation_results
+
+  assert not evaluation_results.is_valid_design
+  assert (
+      evaluation_results.primary_metric_name == mock_design.primary_metric.name
+  )
+  assert evaluation_results.alpha == mock_design.alpha
+  assert (
+      evaluation_results.alternative_hypothesis
+      == mock_design.alternative_hypothesis
+  )
+
+  assert evaluation_results.representiveness_scores_per_cell is None
+
+  # Results are None because the design is invalid.
+  assert evaluation_results.all_metric_results_per_cell is None
+  assert evaluation_results.all_metric_results is None
+  assert evaluation_results.primary_metric_results is None
+  assert evaluation_results.primary_metric_results_per_cell is None
+
+
+@pytest.fixture(name="historical_data_with_fixed_values")
+def historical_data_with_fixed_values_fixture():
+  """Fixture for a mock historical data with fixed values."""
+  return geoflex.data.GeoPerformanceDataset(
+      data=pd.DataFrame({
+          "geo_id": ["geo_1", "geo_2", "geo_3", "geo_4"] * 2,
+          "date": ["2024-01-01"] * 4 + ["2024-01-02"] * 4,
+          "clicks": np.linspace(100, 800, 8),
+          "cost": np.linspace(20, 27, 8),
+          "revenue": np.linspace(50, 36, 8),
+      })
+  )
+
+
+@pytest.mark.parametrize(
+    "constraint, geo_assignment, expected_values,expected_is_valid,"
+    " expected_error_message",
+    [
+        (  # No cell volume constraint
+            CellVolumeConstraint(
+                values=[None, None],
+                constraint_type=CellVolumeConstraintType.MAX_GEOS,
+            ),
+            GeoAssignment(
+                control=["geo_1", "geo_2"], treatment=[["geo_3", "geo_4"]]
+            ),
+            None,
+            True,
+            "",
+        ),
+        (  # Good max cells constraint
+            CellVolumeConstraint(
+                values=[2, 2],
+                constraint_type=CellVolumeConstraintType.MAX_GEOS,
+            ),
+            GeoAssignment(control=["geo_1"], treatment=[["geo_3", "geo_4"]]),
+            [1, 2],
+            True,
+            "",
+        ),
+        (  # Good max revenue constraint
+            CellVolumeConstraint(
+                values=[0.5, 0.5],
+                constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
+                metric_column="revenue",
+            ),
+            GeoAssignment(control=["geo_1"], treatment=[["geo_3", "geo_4"]]),
+            [0.26744186046511625, 0.47674418604651164],
+            True,
+            "",
+        ),
+        (  # Too many geos in control
+            CellVolumeConstraint(
+                values=[1, None],
+                constraint_type=CellVolumeConstraintType.MAX_GEOS,
+            ),
+            GeoAssignment(
+                control=["geo_1", "geo_2", "geo_3"], treatment=[["geo_4"]]
+            ),
+            [3, 1],
+            False,
+            (
+                "Cell volume constraint is not respected. Target = control: 1"
+                " geos, treatment_1: None, Actual = control: 3 geos,"
+                " treatment_1: 1 geos."
+            ),
+        ),
+        (  # Too many geos in treatment
+            CellVolumeConstraint(
+                values=[None, 1],
+                constraint_type=CellVolumeConstraintType.MAX_GEOS,
+            ),
+            GeoAssignment(
+                control=["geo_1"], treatment=[["geo_2", "geo_3", "geo_4"]]
+            ),
+            [1, 3],
+            False,
+            (
+                "Cell volume constraint is not respected. Target = control:"
+                " None, treatment_1: 1 geos, Actual = control: 1 geos,"
+                " treatment_1: 3 geos."
+            ),
+        ),
+        (  # Too much revenue in control
+            CellVolumeConstraint(
+                values=[0.1, None],
+                constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
+                metric_column="revenue",
+            ),
+            GeoAssignment(
+                control=["geo_1", "geo_2"], treatment=[["geo_3", "geo_4"]]
+            ),
+            [0.5232558139534884, 0.47674418604651164],
+            False,
+            (
+                "Cell volume constraint is not respected. Target = control:"
+                " 0.1% of revenue, treatment_1: None, Actual = control:"
+                " 0.5232558139534884% of revenue, treatment_1:"
+                " 0.47674418604651164% of revenue."
+            ),
+        ),
+        (  # Too much revenue in treatment
+            CellVolumeConstraint(
+                values=[None, 0.1],
+                constraint_type=CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC,
+                metric_column="revenue",
+            ),
+            GeoAssignment(
+                control=["geo_1"], treatment=[["geo_2", "geo_3", "geo_4"]]
+            ),
+            [0.26744186046511625, 0.7325581395348837],
+            False,
+            (
+                "Cell volume constraint is not respected. Target = control:"
+                " None, treatment_1: 0.1% of revenue, Actual = control:"
+                " 0.26744186046511625% of revenue, treatment_1:"
+                " 0.7325581395348837% of revenue."
+            ),
+        ),
+    ],
+)
+def test_validate_cell_volume_constraint_is_respected_returns_expected_results(
+    constraint,
+    geo_assignment,
+    historical_data_with_fixed_values,
+    expected_values,
+    expected_is_valid,
+    expected_error_message,
+):
+  actual_cell_volumes, actual_is_valid, actual_error_message = (
+      geoflex.evaluation.validate_cell_volume_constraint_is_respected(
+          geo_assignment=geo_assignment,
+          cell_volume_constraint=constraint,
+          historical_data=historical_data_with_fixed_values,
+      )
+  )
+
+  expected_cell_volumes = None
+  if expected_values is not None:
+    expected_cell_volumes = CellVolumeConstraint(
+        constraint_type=constraint.constraint_type,
+        metric_column=constraint.metric_column,
+        values=expected_values,
+    )
+
+  assert actual_cell_volumes == expected_cell_volumes
+  assert actual_is_valid == expected_is_valid
+  assert actual_error_message == expected_error_message

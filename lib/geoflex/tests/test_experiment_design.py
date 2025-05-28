@@ -423,6 +423,11 @@ def mock_design_evaluation_results_fixture():
       alpha=0.1,
       alternative_hypothesis="two-sided",
       representiveness_scores_per_cell=[1.0, 2.0],
+      actual_cell_volumes=CellVolumeConstraint(
+          constraint_type=CellVolumeConstraintType.MAX_GEOS,
+          values=[5, 10, 9],
+      ),
+      other_errors=["some error"],
       all_metric_results_per_cell={
           "revenue": [
               geoflex.evaluation.SingleEvaluationResult(
@@ -605,15 +610,22 @@ def test_get_summary_dict_returns_correct_dict(
   assert mock_design_evaluation_results.get_summary_dict(
       target_power=0.8, use_relative_effects_where_possible=True
   ) == {
-      "failing_checks": ["something failed", "something else failed"],
+      "failing_checks": [
+          "some error",
+          "something failed",
+          "something else failed",
+      ],
       "all_checks_pass": False,
       "representiveness_score": 1.0,
-      "primary_metric_failing_checks": [],
+      "primary_metric_failing_checks": ["some error"],
       "primary_metric_all_checks_pass": True,
       "primary_metric_standard_error": 2.1,
       "Relative MDE (revenue, primary metric)": 5.221597207101212,
       "MDE (iROAS)": 5.47024469315365,
       "MDE (CPiA)": 0.18280717885464282,
+      "actual_cell_volumes": (
+          "control: 5 geos, treatment_1: 10 geos, treatment_2: 9 geos"
+      ),
   }
 
 
@@ -659,15 +671,22 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "alpha": 0.1,
       "alternative_hypothesis": "two-sided",
       "random_seed": 0,
-      "failing_checks": ["something failed", "something else failed"],
+      "failing_checks": [
+          "some error",
+          "something failed",
+          "something else failed",
+      ],
       "all_checks_pass": False,
       "representiveness_score": 1.0,
-      "primary_metric_failing_checks": [],
+      "primary_metric_failing_checks": ["some error"],
       "primary_metric_all_checks_pass": True,
       "primary_metric_standard_error": 2.1,
       "Relative MDE (revenue, primary metric)": 5.221597207101212,
       "MDE (iROAS)": 5.47024469315365,
       "MDE (CPiA)": 0.18280717885464282,
+      "actual_cell_volumes": (
+          "control: 5 geos, treatment_1: 10 geos, treatment_2: 9 geos"
+      ),
   }
 
 
