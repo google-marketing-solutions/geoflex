@@ -35,7 +35,7 @@ class TestingMethodology(_base.Methodology):
   default_methodology_parameter_candidates = {"mock_parameter": [1, 2]}
 
   def _methodology_is_eligible_for_design_and_data(
-      self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+      self, design: ExperimentDesign, pretest_data: GeoPerformanceDataset
   ) -> bool:
     """Checks if the testing methodology is eligible for the given design.
 
@@ -45,7 +45,7 @@ class TestingMethodology(_base.Methodology):
 
     Args:
       design: The design to check against.
-      historical_data: The dataset to check against.
+      pretest_data: The dataset to check against.
 
     Returns:
       True if an RCT is eligible for the given design, False

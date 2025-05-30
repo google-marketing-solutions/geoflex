@@ -496,14 +496,47 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     max_date = self.historical_data.parsed_data[
         self.historical_data.date_column
     ].max()
+    min_date = self.historical_data.parsed_data[
+        self.historical_data.date_column
+    ].min()
+
     latest_exp_start_date = max_date - pd.Timedelta(weeks=design.runtime_weeks)
+    earliest_exp_start_date = min_date + pd.Timedelta(
+        weeks=design.runtime_weeks
+    )
+
+    days_of_data = (max_date - min_date).days + 1
+    weeks_of_data = days_of_data / 7
+
+    if latest_exp_start_date < earliest_exp_start_date:
+      error_message = (
+          f"The runtime weeks {design.runtime_weeks} is too long for the"
+          " available historical data. We require at least double the runtime"
+          " weeks of historical data to run the evaluation, but there are only"
+          f" {days_of_data} days ({weeks_of_data:.2f} weeks) of historical"
+          " data."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
     if exp_start_date is None:
       exp_start_date = latest_exp_start_date
-    elif exp_start_date > latest_exp_start_date:
+
+    if exp_start_date > latest_exp_start_date:
       error_message = (
           f"The experiment start date {exp_start_date:%Y-%m-%d} for the"
           " simulation is after the latest feasible date in the historical"
           f" data {latest_exp_start_date:%Y-%m-%d}. This can happen if the"
+          " runtime weeks are too long for the available historical data."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    if exp_start_date < earliest_exp_start_date:
+      error_message = (
+          f"The experiment start date {exp_start_date:%Y-%m-%d} for the"
+          " simulation is before the earliest feasible date in the historical"
+          f" data {earliest_exp_start_date:%Y-%m-%d}. This can happen if the"
           " runtime weeks are too long for the available historical data."
       )
       logger.error(error_message)
@@ -642,8 +675,20 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       maximum date in the historical data minus the runtime weeks in the
       experiment design.
     """
+    exp_start_date = self._set_exp_start_date(design, exp_start_date)
+
+    is_pretest = (
+        self.historical_data.parsed_data[self.historical_data.date_column]
+        < exp_start_date
+    )
+    simulated_pretest_data = GeoPerformanceDataset(
+        data=self.historical_data.parsed_data.loc[is_pretest],
+        geo_id_column=self.historical_data.geo_id_column,
+        date_column=self.historical_data.date_column,
+    )
+
     if not geoflex.methodology.design_is_eligible_for_data(
-        design, self.historical_data
+        design, simulated_pretest_data
     ):
       results = RawExperimentSimulationResults(
           design=design,
@@ -662,7 +707,6 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         design
     )
 
-    exp_start_date = self._set_exp_start_date(design, exp_start_date)
     design_with_inverted_metrics = self._invert_cost_per_metric_metrics(design)
 
     results_list = []

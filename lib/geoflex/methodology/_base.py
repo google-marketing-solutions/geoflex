@@ -48,7 +48,7 @@ class Methodology(abc.ABC):
     return validated_experiment_design
 
   def _methodology_is_eligible_for_design_and_data(
-      self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+      self, design: ExperimentDesign, pretest_data: GeoPerformanceDataset
   ) -> bool:
     """Methodology specific checks for eligibility for the design and dataset.
 
@@ -57,17 +57,18 @@ class Methodology(abc.ABC):
 
     Args:
       design: The design to check against.
-      historical_data: The historical data to check against.
+      pretest_data: The pretest data to check against. This is the data from
+        before the experiment start date or the simulated experiment start date.
 
     Returns:
       True if this methodology is eligible for the given design and dataset,
       False otherwise.
     """
-    del design, historical_data  # Unused
+    del design, pretest_data  # Unused
     return True
 
   def is_eligible_for_design_and_data(
-      self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+      self, design: ExperimentDesign, pretest_data: GeoPerformanceDataset
   ) -> bool:
     """Checks if this methodology is eligible for the given design and dataset.
 
@@ -80,7 +81,8 @@ class Methodology(abc.ABC):
 
     Args:
       design: The design to check against.
-      historical_data: The historical data to check against.
+      pretest_data: The pretest data to check against. This is the data from
+        before the experiment start date or the simulated experiment start date.
 
     Returns:
       True if this methodology is eligible for the given design and dataset,
@@ -94,15 +96,17 @@ class Methodology(abc.ABC):
       )
       return False
 
-    n_days_in_data = len(historical_data.dates)
+    n_days_in_data = len(pretest_data.dates)
     n_full_weeks_in_data = n_days_in_data // 7
 
-    if n_full_weeks_in_data < 2 * design.runtime_weeks:
-      # We need double the runtime weeks, to ensure there is enough runtime and
-      # pretest data.
+    if n_full_weeks_in_data < design.runtime_weeks:
+      # We need at least the runtime weeks in the pretest data.
+      # This means in total we need double the runtime weeks in the data,
+      # because we need the runtime weeks for the experiment, and then at least
+      # the runtime weeks again for the pretest data.
       logger.error(
           "Data has %d days, which is not enough for a %d week experiment, need"
-          " double the runtime weeks.",
+          " at least the runtime weeks in the pretest data.",
           n_days_in_data,
           design.runtime_weeks,
       )
@@ -115,7 +119,7 @@ class Methodology(abc.ABC):
     ):
       if (
           design.cell_volume_constraint.metric_column
-          not in historical_data.parsed_data.columns
+          not in pretest_data.parsed_data.columns
       ):
         logger.error(
             "The cell volume metric column %s is not in the data.",
@@ -127,14 +131,14 @@ class Methodology(abc.ABC):
     for metric in [design.primary_metric] + design.secondary_metrics:
       if (
           metric.cost_column
-          and metric.cost_column not in historical_data.parsed_data.columns
+          and metric.cost_column not in pretest_data.parsed_data.columns
       ):
         logger.error(
             "The cost column %s is not in the data.", metric.cost_column
         )
         return False
 
-      if metric.column not in historical_data.parsed_data.columns:
+      if metric.column not in pretest_data.parsed_data.columns:
         logger.error(
             "The response column %s is not in the data.", metric.column
         )
@@ -147,7 +151,7 @@ class Methodology(abc.ABC):
     ):
       for metric in [design.primary_metric] + design.secondary_metrics:
         if metric.cost_per_metric or metric.metric_per_cost:
-          if historical_data.parsed_data[metric.cost_column].sum() <= 0:
+          if pretest_data.parsed_data[metric.cost_column].sum() <= 0:
             # The costs are zero, so a percentage change budget is not possible.
             logger.error(
                 "Costs are zero or negative for metric %s, which is a cost per"
@@ -161,7 +165,7 @@ class Methodology(abc.ABC):
     design = self._fill_missing_methodology_parameters(design)
 
     return self._methodology_is_eligible_for_design_and_data(
-        design, historical_data
+        design, pretest_data
     )
 
   @property
@@ -729,7 +733,10 @@ def analyze_experiment(
         "Design or data are not valid for methodology %s, skipping analysis.",
         experiment_design.methodology,
     )
-    return None, {}
+    if return_intermediate_data:
+      return None, {}
+    else:
+      return None
 
   methodology = get_methodology(experiment_design.methodology)
   results, intermediate_data = methodology.analyze_experiment(
@@ -748,7 +755,7 @@ def analyze_experiment(
 
 
 def design_is_eligible_for_data(
-    experiment_design: ExperimentDesign, data: GeoPerformanceDataset
+    experiment_design: ExperimentDesign, pretest_data: GeoPerformanceDataset
 ) -> bool:
   """Checks if the experiment design valid.
 
@@ -758,10 +765,14 @@ def design_is_eligible_for_data(
 
   Args:
     experiment_design: The experiment design to check.
-    data: The data for the experiment.
+    pretest_data: The pretest data for the experiment. This should only contain
+      the data before the experiment start date or the simulated experiment
+      start date.
 
   Returns:
     True if the design is valid, False otherwise.
   """
   methodology = get_methodology(experiment_design.methodology)
-  return methodology.is_eligible_for_design_and_data(experiment_design, data)
+  return methodology.is_eligible_for_design_and_data(
+      experiment_design, pretest_data
+  )

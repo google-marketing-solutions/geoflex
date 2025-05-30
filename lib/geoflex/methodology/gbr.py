@@ -49,7 +49,7 @@ class GBR(_base.Methodology):
   }
 
   def _methodology_is_eligible_for_design_and_data(
-      self, design: ExperimentDesign, historical_data: GeoPerformanceDataset
+      self, design: ExperimentDesign, pretest_data: GeoPerformanceDataset
   ) -> bool:
     """Checks if the methodology is eligible for the given design.
 
@@ -61,7 +61,7 @@ class GBR(_base.Methodology):
 
     Args:
       design: The design to check against.
-      historical_data: The dataset to check against.
+      pretest_data: The dataset to check against.
 
     Returns:
       True if the methodology is eligible for the design and data
@@ -98,10 +98,10 @@ class GBR(_base.Methodology):
       # then this will fail
       if cost_columns:
         costs_all_zero = (
-            (historical_data.parsed_data[cost_columns] == 0).all().all()
+            (pretest_data.parsed_data[cost_columns] == 0).all().all()
         )
         costs_all_positive = (
-            (historical_data.parsed_data[cost_columns] > 0).all().all()
+            (pretest_data.parsed_data[cost_columns] > 0).all().all()
         )
         if not (costs_all_positive or costs_all_zero):
           logger.info(
@@ -113,7 +113,7 @@ class GBR(_base.Methodology):
           return False
 
       # If the metrics are ever zero or negative it also fails
-      if not (historical_data.parsed_data[metric_columns] > 0).all().all():
+      if not (pretest_data.parsed_data[metric_columns] > 0).all().all():
         logger.info(
             "GBR ineligible for design %s: Metric columns contain some zero or"
             " negative values. Metrics must be all positive.",
@@ -122,13 +122,13 @@ class GBR(_base.Methodology):
         return False
 
     # If there are too few geos it won't work
-    geos_per_cell = len(historical_data.geos) / design.n_cells
+    geos_per_cell = len(pretest_data.geos) / design.n_cells
     if geos_per_cell < 4:
       logger.info(
           "GBR is ineligible for design %s: GBR requires at least 4 geos per"
           " cell on average, but got %s geos and %s cells",
           design.design_id,
-          len(historical_data.geos),
+          len(pretest_data.geos),
           design.n_cells,
       )
       return False
