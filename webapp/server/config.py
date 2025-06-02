@@ -20,6 +20,7 @@ import json
 import google.auth
 import smart_open
 from logger import logger
+from typing import Any
 
 
 class InvalidConfigurationError(Exception):
@@ -42,7 +43,7 @@ class ConfigItemBase:
     for attr in members:
       setattr(self, attr, getattr(self, attr))
 
-  def update(self, kw: dict):
+  def update(self, kw: dict[str, Any]):
     """Update current object with values from json/dict.
 
     Only known properties (i.e. those that exist in object's class
@@ -56,7 +57,7 @@ class ConfigItemBase:
       if hasattr(cls, k):
         new_val = kw[k]
         def_val = getattr(cls, k)
-        if new_val == '' and def_val != '':
+        if not new_val and def_val:
           new_val = def_val
         setattr(self, k, new_val)
 
@@ -67,7 +68,7 @@ class Config(ConfigItemBase):
   spreadsheet_id: str = ''
   config_location: str = ''
 
-  def to_dict(self) -> dict:
+  def to_dict(self) -> dict[str, Any]:
     """Convert to a dictionary."""
     values = {
         'project_id': self.project_id,
@@ -98,7 +99,7 @@ def parse_arguments(only_known: bool = True) -> argparse.Namespace:
   return args
 
 
-def find_project_id(args: argparse.Namespace):
+def find_project_id(args: argparse.Namespace) -> str:
   if getattr(args, 'project_id', ''):
     project_id = getattr(args, 'project_id')
   else:
@@ -106,13 +107,13 @@ def find_project_id(args: argparse.Namespace):
   return project_id
 
 
-def get_config_url(args: argparse.Namespace):
+def get_config_url(args: argparse.Namespace) -> str:
   """Return a config file path.
 
   Args:
     args: cli arguments.
 
-  Raises
+  Raises:
     InvalidConfigurationError: config file path contains PROJECT_ID macro
       but we can't detect a GCP project in the environment.
   """
