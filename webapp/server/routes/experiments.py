@@ -184,8 +184,8 @@ async def explore_experiment_designs(
   design_explorer = geoflex.ExperimentDesignExplorer(
       explore_spec=exploration_spec,
       historical_data=historical_data,
-      simulations_per_trial=request.simulations_per_trial
-      if request.simulations_per_trial > 1 else 100,
+      simulations_per_trial=request.simulations_per_trial if
+      request.simulations_per_trial and request.simulations_per_trial > 1 else 100,
   )
   design_explorer.explore(max_trials=request.max_trials or 100)
 
