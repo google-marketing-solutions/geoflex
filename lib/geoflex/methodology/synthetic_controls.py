@@ -36,103 +36,249 @@ class SyntheticControls(_base.Methodology):
     the prediction and actual values.
   """
 
-  def assign_geos(
+  default_methodology_parameter_candidates = {
+      "min_treatment_geos": [1],
+      "num_iterations": [10],
+  }
+
+  def _randomly_assign_geos(
       self,
       experiment_design: ExperimentDesign,
       historical_data: GeoPerformanceDataset,
       rng: np.random.Generator,
-  ) -> GeoAssignment:
+    ) -> tuple[GeoAssignment, dict[str, Any]] | None:
+    """This function randomly assigns geos.
+
+    Assign treatment and control groups, fits a synthetic control model
+    using historical data, and calculates the out-of-sample R² as a measure
+    of the model's predictive power.
+
+    Args:
+      experiment_design: The design parameters for the experiment.
+      historical_data: Historical geo performance data.
+      rng: Random number generator for reproducible sampling.
+
+    Returns:
+      A tuple with the geo assignment and a dictionary of results for this
+      iteration, or None if invalid.
+    """
+
+    # Get Data
+    df = historical_data.parsed_data
+    dep = experiment_design.primary_metric.column
+
+    # Params
+    params = experiment_design.methodology_parameters
+    min_treatment_geos = params["min_treatment_geos"]
+
+    treatment_list = experiment_design.geo_eligibility.treatment
+    force_test = treatment_list[0] if treatment_list else []
+    force_control = experiment_design.geo_eligibility.control or []
+    exclude = experiment_design.geo_eligibility.exclude or []
+    all_geos = historical_data.geos
+
+    num_forced_control = len(set(force_control) - set(force_test))
+    required_controls = max(1, num_forced_control)
+    max_treatment_geos = len(all_geos) - required_controls
+    if (
+        experiment_design.cell_volume_constraint.constraint_type
+        == geoflex.CellVolumeConstraintType.MAX_GEOS
+    ):
+      max_treatment_geos = experiment_design.cell_volume_constraint.values[1]
+
+    # Sample Geos
+    sample = self._sample_geos(
+        all_geos,
+        force_test,
+        force_control,
+        exclude,
+        min_treatment_geos,
+        max_treatment_geos,
+        rng
+    )
+    if sample is None:
+      return None
+    test_geos, control_geos = sample
+
+    # Aggregate
+    df_agg = self.aggregate_treatment(
+        df,
+        test_geos,
+        control_geos,
+        historical_data.geo_id_column,
+        historical_data.date_column,
+        dep
+        )
+    if df_agg.empty:
+      return None
+
+    # Fit Model
+    mr = self._fit_model(
+        df_agg,
+        historical_data.geo_id_column,
+        historical_data.date_column,
+        dep,
+        control_geos=control_geos,
+        test_geo="Aggregated_Treatment",
+        treatment_geos=test_geos,
+        train_start_date=df[historical_data.date_column].min(),
+        predictor_start_date=df[historical_data.date_column].min(),
+        predictor_end_date=df[historical_data.date_column].max(),
+        )
+
+    # build the GeoAssignment
+    treat = set(test_geos)
+    ctrl = set(control_geos)
+    excl = set(exclude)
+
+    geo_assignment = GeoAssignment(
+        treatment=treat,
+        control=ctrl,
+        exclude=excl,
+        all_geos=treat | ctrl | excl
+    )
+
+    return geo_assignment, mr
+
+  def _sample_geos(
+      self,
+      all_geos: list[str],
+      force_test: list[str],
+      force_control: list[str],
+      exclude: list[str],
+      min_treatment_geos: int,
+      max_treatment_geos: int,
+      rng: np.random.Generator,
+  ) -> tuple[list[str], list[str]] | None:
+    """Randomly sample treatment and control geos given constraints.
+
+    Args:
+      all_geos: List of all candidate geo identifiers.
+      force_test: Geos that must be included in treatment.
+      force_control: Geos that must be included in control.
+      exclude: Geos to exclude entirely.
+      min_treatment_geos: Minimum number of treatment geos.
+      max_treatment_geos: Maximum number of treatment geos.
+      rng: Random number generator for reproducible sampling.
+
+    Returns:
+      A tuple (treatment_geos, control_geos) or None if constraints unmet.
+    """
+
+    pool = set(all_geos) - set(exclude)
+    f_test = set(force_test)
+    f_control = set(force_control) - f_test
+
+    available = list(pool - f_test - f_control)
+    need_min = max(0, min_treatment_geos - len(f_test))
+    max_extra = max(0, max_treatment_geos - len(f_test))
+
+    if len(available) < need_min:
+      return None
+
+    extra = int(rng.integers(need_min, min(max_extra, len(available)) + 1))
+    new_test = (
+        list(rng.choice(available, size=extra, replace=False))
+        if extra else []
+    )
+
+    test_geos = list(f_test | set(new_test))
+    control_geos = list(f_control | (set(available) - set(new_test)))
+
+    if not test_geos or not control_geos:
+      return None
+
+    return test_geos, control_geos
+
+  # pylint: disable=unused-argument
+  def _fit_model(
+      self,
+      df_agg: pd.DataFrame,
+      geo_var: str,
+      time_var: str,
+      dependent: str,
+      control_geos: list[str],
+      test_geo: str,
+      treatment_geos: list[str],
+      train_start_date: str,
+      predictor_start_date: str,
+      predictor_end_date: str,
+  ) -> dict[str, Any]:
+    """Fit the synthetic control model on aggregated data.
+
+    Args:
+      df_agg: Aggregated treatment/control data.
+      geo_var: Column name for geo identifiers.
+      time_var: Column name for time identifiers.
+      dependent: Column name for the outcome variable.
+      control_geos: List of control geos.
+      test_geo: Identifier for the synthetic treatment geo.
+      treatment_geos: List of treatment geos.
+      train_start_date: Starting date for training the model.
+      predictor_start_date: Start date for predictors.
+      predictor_end_date: End date for predictors.
+
+    Returns:
+      A dictionary of model fit results.
+    """
+    pass
+
+  def _methodology_assign_geos(
+      self,
+      experiment_design: ExperimentDesign,
+      historical_data: GeoPerformanceDataset,
+  ) -> tuple[GeoAssignment, dict[str, Any]]:
     """Assigns geos to control and test based on the synthetic controls method.
 
     Args:
       experiment_design: The experiment design to assign geos for.
       historical_data: The historical data for the experiment. Can be used to
         choose geos that are similar to geos that have been used in the past.
-      rng: The random number generator to use for randomization, if needed.
 
     Returns:
       A GeoAssignment object containing the lists of geos for the control and
       treatment groups, and optionally a list of geos that should be ignored.
     """
+    num_iters = experiment_design.methodology_parameters["num_iterations"]
+    exclude = experiment_design.geo_eligibility.exclude or []
 
-    params = {}
-    if experiment_design.methodology_parameters:
-      params = experiment_design.methodology_parameters
+    # run all iterations
+    best_iter = None
+    best_validation = float("-inf")
+    rng = experiment_design.get_rng()
 
-    exclude_geos_input = list(self._get_param(params, "exclude_geos"))
+    for _ in range(num_iters):
+      iter_output = self._randomly_assign_geos(
+          experiment_design,
+          historical_data,
+          rng
+      )
+      if not iter_output:
+        continue
 
-    results_df, _ = run_experiment_simulations(
-        df=historical_data.parsed_data,
-        geo_var=historical_data.geo_id_column,
-        time_var=historical_data.date_column,
-        dependent=experiment_design.primary_metric.column,
-        num_iterations=int(self._get_param(params, "num_iterations")),
-        min_treatment_geos=int(self._get_param(params, "min_treatment_geos")),
-        max_treatment_geos=int(self._get_param(params, "max_treatment_geos")),
-        force_test_geos=list(self._get_param(params, "force_test_geos")),
-        force_control_geos=list(self._get_param(params, "force_control_geos")),
-        exclude_geos=exclude_geos_input,
-        effect_size=float(self._get_param(params, "effect_size")),
-        test_duration=int(self._get_param(params, "test_duration")),
-        alpha=float(self._get_param(params, "alpha")),
-        target_power=float(self._get_param(params, "target_power"))
-    )
+      _, result = iter_output
 
-    best_assignment_series = results_df.iloc[0]
+      # pull out the validation R²; skip if missing
+      val_r2 = result.get("validation_r2")
+      if val_r2 is None:
+        continue
 
-    final_treatment_geos_list = best_assignment_series.get("treatment_geos", [])
-    final_control_geos_list = best_assignment_series.get("control_geos", [])
+      # keep the iteration with highest validation_r2
+      if val_r2 > best_validation:
+        best_validation = val_r2
+        best_iter = result
 
-    if final_treatment_geos_list:
-      treatment_as_set = final_treatment_geos_list
-    else:
-      treatment_as_set = []
-    treatment_as_set = set(treatment_as_set)
-
-    if final_control_geos_list:
-      control_as_set = final_control_geos_list
-    else:
-      control_as_set = []
-    control_as_set = set(control_as_set)
-
-    exclude_as_set = set(exclude_geos_input if exclude_geos_input else [])
-
-    all_assigned_geos_set = treatment_as_set | control_as_set | exclude_as_set
+    # build the GeoAssignment from the best iteration
+    treat = set(best_iter["treatment_geos"])
+    ctrl = set(best_iter["control_geos"])
+    excl = set(exclude)
 
     return GeoAssignment(
-        treatment=[treatment_as_set],
-        control=control_as_set,
-        exclude=exclude_as_set,
-        all_geos=all_assigned_geos_set
-    )
-
-  def _get_param(
-      self,
-      methodology_parameters: dict[str, Any],
-      param_name: str,
-      required: bool = False
-  ) -> Any:
-    """Assigns geos to control and test based on the synthetic controls method.
-
-    Args:
-      methodology_parameters: a dictionary with the methodology parameters.
-      param_name: the name of the param to get.
-      required: boolean - is it required or not.
-
-    Returns:
-      The value of the parameter that was required.
-    """
-
-    val = methodology_parameters.get(
-        param_name, self.default_params.get(param_name)
-    )
-    if val is None and required:
-      if param_name in self.default_params:
-        return self.default_params[param_name]
-      raise ValueError(
-          f"""Required parameter '{param_name}'
-          not found in methodology_parameters or defaults.""")
-    return val
+        treatment=treat,
+        control=ctrl,
+        exclude=excl,
+        all_geos=treat | ctrl | excl
+    ), {}
 
   def analyze_experiment(
       self,
@@ -166,45 +312,3 @@ class SyntheticControls(_base.Methodology):
       A dataframe with the analysis results.
     """
     pass
-
-
-# pylint: disable=unused-argument]
-def run_experiment_simulations(
-    df: pd.DataFrame,
-    geo_var: str,
-    time_var: str,
-    dependent: str,
-    num_iterations: int,
-    min_treatment_geos: int,
-    max_treatment_geos: int,
-    force_test_geos: list[str],
-    force_control_geos: list[str],
-    exclude_geos: list[str],
-    effect_size: float,
-    test_duration: int,
-    alpha: float,
-    target_power: float,
-) -> pd.DataFrame:
-  """Wraps the provided script for running synthetic control simulations.
-
-  Args:
-    df: DataFrame containing the historical data.
-    geo_var: Name of the column identifying the geo units.
-    time_var: Name of the column identifying the time periods.
-    dependent: Name of the dependent variable column.
-    num_iterations: Number of simulation iterations.
-    min_treatment_geos: Minimum number of geos in the treatment group.
-    max_treatment_geos: Maximum number of geos in the treatment group.
-    force_test_geos: List of geos to always include in the treatment group.
-    force_control_geos: List of geos to always include in the control group.
-    exclude_geos: List of geos to exclude from any group.
-    effect_size: Assumed effect size for power calculations.
-    test_duration: Duration of the hypothetical test (e.g., in days) for
-      power calculations.
-    alpha: Significance level for power calculations.
-    target_power: Target power for MDE calculations.
-
-  Returns:
-    A DataFrame containing the results of the simulations, sorted by power.
-  """
-  pass
