@@ -642,7 +642,8 @@ def test_experiment_design_get_summary_dict_returns_correct_dict_without_evaluat
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
-          "control: None, treatment_1: None, treatment_2: None"
+          "control: No Constraint, treatment_1: No Constraint, treatment_2: No"
+          " Constraint"
       ),
       "effect_scope": "all_geos",
       "alpha": 0.1,
@@ -665,7 +666,8 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
-          "control: None, treatment_1: None, treatment_2: None"
+          "control: No Constraint, treatment_1: No Constraint, treatment_2: No"
+          " Constraint"
       ),
       "effect_scope": "all_geos",
       "alpha": 0.1,
@@ -708,7 +710,8 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_geo_assi
       "runtime_weeks": 4,
       "n_cells": 3,
       "cell_volume_constraint": (
-          "control: None, treatment_1: None, treatment_2: None"
+          "control: No Constraint, treatment_1: No Constraint, treatment_2: No"
+          " Constraint"
       ),
       "effect_scope": "all_geos",
       "alpha": 0.1,

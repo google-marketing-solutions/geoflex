@@ -167,9 +167,9 @@ class GBR(_base.Methodology):
         experiment_design.cell_volume_constraint.constraint_type
         == geoflex.CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC
     ):
-      metric_values = historical_data.parsed_data.groupby("geo_id")[
-          experiment_design.cell_volume_constraint.metric_column
-      ].sum()
+      metric_values = historical_data.parsed_data.groupby(
+          historical_data.geo_id_column
+      )[experiment_design.cell_volume_constraint.metric_column].sum()
       metric_values /= metric_values.sum()
     else:
       error_message = (
@@ -258,6 +258,7 @@ class GBR(_base.Methodology):
       all_metrics: list[Metric],
       pretest_data: pd.DataFrame,
       experiment_data: pd.DataFrame,
+      geo_id_column: str,
       all_geos: list[str],
       linear_model_type: str,
       geo_assignment: GeoAssignment,
@@ -276,29 +277,29 @@ class GBR(_base.Methodology):
     all_cost_columns = list(all_cost_columns)
 
     geo_data = pd.DataFrame({
-        "geo_id": all_geos,
+        geo_id_column: all_geos,
         "geo_assignment": geo_assignment.make_geo_assignment_array(all_geos),
-    }).set_index("geo_id")
+    }).set_index(geo_id_column)
 
     geo_data = geo_data.loc[
         geo_data["geo_assignment"] >= 0.0
     ]  # Exclude excluded geos
 
     for column in all_metric_columns:
-      geo_data[f"{column}_pretest"] = pretest_data.groupby("geo_id")[
+      geo_data[f"{column}_pretest"] = pretest_data.groupby(geo_id_column)[
           column
       ].sum()
-      geo_data[f"{column}_runtime"] = experiment_data.groupby("geo_id")[
+      geo_data[f"{column}_runtime"] = experiment_data.groupby(geo_id_column)[
           column
       ].sum()
 
     for cost_column in all_cost_columns:
-      geo_data[f"{cost_column}_pretest"] = pretest_data.groupby("geo_id")[
+      geo_data[f"{cost_column}_pretest"] = pretest_data.groupby(geo_id_column)[
           cost_column
       ].sum()
-      geo_data[f"{cost_column}_runtime"] = experiment_data.groupby("geo_id")[
-          cost_column
-      ].sum()
+      geo_data[f"{cost_column}_runtime"] = experiment_data.groupby(
+          geo_id_column
+      )[cost_column].sum()
 
     # Missing values are assumed to be 0.0
     if geo_data.isna().any().any():
@@ -509,12 +510,15 @@ class GBR(_base.Methodology):
 
     # Construct geo level data (one row per geo)
     geo_data = self._construct_geo_level_data(
-        all_metrics,
-        pretest_data,
-        experiment_data,
-        runtime_data.geos,
-        experiment_design.methodology_parameters["linear_model_type"],
-        experiment_design.geo_assignment,
+        all_metrics=all_metrics,
+        pretest_data=pretest_data,
+        experiment_data=experiment_data,
+        all_geos=runtime_data.geos,
+        linear_model_type=experiment_design.methodology_parameters[
+            "linear_model_type"
+        ],
+        geo_assignment=experiment_design.geo_assignment,
+        geo_id_column=runtime_data.geo_id_column,
     )
     intermediate_data["geo_data"] = geo_data
 

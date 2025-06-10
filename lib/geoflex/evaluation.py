@@ -128,8 +128,8 @@ class GeoAssignmentRepresentivenessScorer:
               .select_dtypes("number")
               .values
           )
-          x_normed = (x - x.mean(axis=0)) / x.std(axis=0)
-          y_normed = (y - y.mean(axis=0)) / y.std(axis=0)
+          x_normed = (x - x.mean(axis=0)) / (x.std(axis=0) + 1e-10)
+          y_normed = (y - y.mean(axis=0)) / (y.std(axis=0) + 1e-10)
           corr = dcor.distance_correlation(x_normed, y_normed)
           distance_matrix[i, j] = 1.0 - corr
           distance_matrix[j, i] = 1.0 - corr
@@ -373,7 +373,7 @@ def validate_cell_volume_constraint_is_respected(
     # Cell volume is the percentage of the metric in each cell.
     data = historical_data.parsed_data.copy()
     data["geo_assignment"] = geo_assignment.make_geo_assignment_array(
-        data["geo_id"].values
+        data[historical_data.geo_id_column].values
     )
     cell_volumes = data.groupby("geo_assignment")[
         cell_volume_constraint.metric_column

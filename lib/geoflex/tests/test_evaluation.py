@@ -485,7 +485,7 @@ def historical_data_with_fixed_values_fixture():
             False,
             (
                 "Cell volume constraint is not respected. Target = control: 1"
-                " geos, treatment_1: None, Actual = control: 3 geos,"
+                " geos, treatment_1: No Constraint, Actual = control: 3 geos,"
                 " treatment_1: 1 geos."
             ),
         ),
@@ -501,7 +501,7 @@ def historical_data_with_fixed_values_fixture():
             False,
             (
                 "Cell volume constraint is not respected. Target = control:"
-                " None, treatment_1: 1 geos, Actual = control: 1 geos,"
+                " No Constraint, treatment_1: 1 geos, Actual = control: 1 geos,"
                 " treatment_1: 3 geos."
             ),
         ),
@@ -518,9 +518,8 @@ def historical_data_with_fixed_values_fixture():
             False,
             (
                 "Cell volume constraint is not respected. Target = control:"
-                " 0.1% of revenue, treatment_1: None, Actual = control:"
-                " 0.5232558139534884% of revenue, treatment_1:"
-                " 0.47674418604651164% of revenue."
+                " 10.0% of revenue, treatment_1: No Constraint, Actual ="
+                " control: 52.3% of revenue, treatment_1: 47.7% of revenue."
             ),
         ),
         (  # Too much revenue in treatment
@@ -535,10 +534,9 @@ def historical_data_with_fixed_values_fixture():
             [0.26744186046511625, 0.7325581395348837],
             False,
             (
-                "Cell volume constraint is not respected. Target = control:"
-                " None, treatment_1: 0.1% of revenue, Actual = control:"
-                " 0.26744186046511625% of revenue, treatment_1:"
-                " 0.7325581395348837% of revenue."
+                "Cell volume constraint is not respected. Target = control: No"
+                " Constraint, treatment_1: 10.0% of revenue, Actual = control:"
+                " 26.7% of revenue, treatment_1: 73.3% of revenue."
             ),
         ),
     ],

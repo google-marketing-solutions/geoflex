@@ -382,18 +382,24 @@ class CellVolumeConstraint(pydantic.BaseModel):
 
   def __str__(self) -> str:
     """Returns the cell volume constraint as a string for printing."""
-    if self.constraint_type == CellVolumeConstraintType.MAX_GEOS:
-      suffix = " geos"
-    else:
-      suffix = f"% of {self.metric_column}"
-
     values = []
     for i, value in enumerate(self.values):
-      suffix_i = suffix if value else ""
       if i == 0:
-        values.append(f"control: {value}{suffix_i}")
+        group = "control"
       else:
-        values.append(f"treatment_{i}: {value}{suffix_i}")
+        group = f"treatment_{i}"
+
+      if value is None:
+        values.append(f"{group}: No Constraint")
+      elif self.constraint_type == CellVolumeConstraintType.MAX_GEOS:
+        values.append(f"{group}: {value:.0f} geos")
+      elif (
+          self.constraint_type
+          == CellVolumeConstraintType.MAX_PERCENTAGE_OF_METRIC
+      ):
+        values.append(f"{group}: {value:.1%} of {self.metric_column}")
+      else:
+        raise RuntimeError(f"Invalid constraint type {self.constraint_type}")
 
     return ", ".join(values)
 
