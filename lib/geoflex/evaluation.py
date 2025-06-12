@@ -719,18 +719,29 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     results_list = []
     random_seed = design.random_seed
     for sample in self.bootstrapper.sample_dataframes(n_simulations):
-      # New random seed for each sample
-      random_seed += 1
-      sample_design = design_with_inverted_metrics.make_variation(
-          random_seed=random_seed,
-          geo_assignment=None,
-      )
 
-      self._assign_geos_with_pretest_sample_data(
-          sample,
-          sample_design,
-          exp_start_date,
-      )
+      if geoflex.methodology.is_pseudo_experiment(design):
+        # For pseudo experiments, we don't want to re-assign the geos for every
+        # sample, so we will use the original geo assignment. This is because
+        # the geo assignment for a pseudo experiment is typically not random,
+        # or at least the validity of the experiment does not depend on the
+        # randomisation of the geo assignment. Since the geo assignment can be
+        # slow, we will skip reassigning the geos for each sample.
+        sample_design = design_with_inverted_metrics.model_copy()
+      else:
+        # If it's not a pseudo experiment, we will reassign the geos for each
+        # sample. This is because for a non-pseudo experiment the randomisation
+        # of the geos is a key aspect of ensuring unbiased results.
+        random_seed = np.random.default_rng(random_seed).integers(0, 2**31 - 1)
+        sample_design = design_with_inverted_metrics.make_variation(
+            random_seed=random_seed,
+            geo_assignment=None,
+        )
+        self._assign_geos_with_pretest_sample_data(
+            sample,
+            sample_design,
+            exp_start_date,
+        )
 
       if sample_design.geo_assignment is None:
         logger.warning(

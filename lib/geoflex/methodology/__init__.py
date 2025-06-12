@@ -11,3 +11,4 @@ list_methodologies = _base.list_methodologies
 assign_geos = _base.assign_geos
 analyze_experiment = _base.analyze_experiment
 design_is_eligible_for_data = _base.design_is_eligible_for_data
+is_pseudo_experiment = _base.is_pseudo_experiment

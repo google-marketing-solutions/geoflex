@@ -231,3 +231,10 @@ class TestingMethodology(_base.Methodology):
     return pd.DataFrame(results), {
         "mock_intermediate_result": "analyze_experiment"
     }
+
+
+@register_methodology
+class PseudoExperimentTestingMethodology(TestingMethodology):
+  """A testing methodology for GeoFleX. Used for testing purposes only."""
+
+  is_pseudo_experiment = True

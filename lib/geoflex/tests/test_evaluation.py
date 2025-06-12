@@ -359,12 +359,17 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_representiven
     )
 
 
+@pytest.mark.parametrize(
+    "methodology", ["TestingMethodology", "PseudoExperimentTestingMethodology"]
+)
 def test_evaluator_evaluate_design_returns_correct_data_and_adds_results_to_design(
-    historical_data, mock_design
+    historical_data, mock_design, methodology
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
   )
+
+  mock_design = mock_design.make_variation(methodology=methodology)
   evaluation_results = evaluator.evaluate_design(mock_design)
 
   assert isinstance(
@@ -427,6 +432,30 @@ def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
   assert evaluation_results.all_metric_results is None
   assert evaluation_results.primary_metric_results is None
   assert evaluation_results.primary_metric_results_per_cell is None
+
+
+def test_evaluator_evaluate_design_does_not_reassign_geos_for_pseudo_experiments(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+  mock_design = mock_design.make_variation(
+      methodology="PseudoExperimentTestingMethodology"
+  )
+
+  geoflex.methodology.assign_geos(mock_design, historical_data)
+
+  # check that assign geos is not called
+  with mock.patch.object(
+      geoflex.methodology.Methodology,
+      "assign_geos",
+      autospec=True,
+  ) as mock_assign_geos:
+    mock_assign_geos.return_value = None, None
+    evaluator.evaluate_design(mock_design)
+
+  mock_assign_geos.assert_not_called()
 
 
 @pytest.fixture(name="historical_data_with_fixed_values")

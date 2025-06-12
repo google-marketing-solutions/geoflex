@@ -339,3 +339,21 @@ def test_testing_methodology_analyze_experiment_works_for_any_alternative_hypoth
       performance_data, experiment_design, "2024-01-01"
   )
   assert isinstance(analysis_results, pd.DataFrame)
+
+
+@pytest.mark.parametrize(
+    "methodology, expected_is_pseudo_experiment",
+    [
+        ("TestingMethodology", False),
+        ("PseudoExperimentTestingMethodology", True),
+    ],
+)
+def test_is_pseudo_experiment(methodology, expected_is_pseudo_experiment):
+  design = ExperimentDesign(
+      methodology=methodology, primary_metric="revenue", runtime_weeks=4
+  )
+
+  assert (
+      geoflex.methodology.is_pseudo_experiment(design)
+      == expected_is_pseudo_experiment
+  )

@@ -28,7 +28,21 @@ class Methodology(abc.ABC):
 
   This contains a unified interface to design and analyse experiments
   using different methodologies.
+
+  Attributes:
+    is_pseudo_experiment: Whether the methodology is a pseudo experiment
+      methodology. Pseudo experiment methodologies do not randomise the geo
+      assignment, and therefore are more model based and susceptible to bias.
+      For a pseudo experiment, when performing the bootstrapping for the power
+      calculation, we will not re-assign the geos for every sample, while for a
+      non-pseudo experiment, we will re-assign the geos for every sample.
+    default_methodology_parameter_candidates: A dictionary of parameter names
+      and a list of valid values. The first value in the list will be used as
+      the default value for the parameter, if an experiment design does not
+      specify a value for it.
   """
+
+  is_pseudo_experiment: bool = False
 
   def _fill_missing_methodology_parameters(
       self, experiment_design: ExperimentDesign
@@ -618,7 +632,7 @@ def list_methodologies() -> list[str]:
   return [
       methodology_name
       for methodology_name in _METHODOLOGIES.keys()
-      if methodology_name != "TestingMethodology"
+      if "TestingMethodology" not in methodology_name
   ]
 
 
@@ -776,3 +790,9 @@ def design_is_eligible_for_data(
   return methodology.is_eligible_for_design_and_data(
       experiment_design, pretest_data
   )
+
+
+def is_pseudo_experiment(experiment_design: ExperimentDesign) -> bool:
+  """Checks if the experiment design is a pseudo experiment."""
+  methodology = get_methodology(experiment_design.methodology)
+  return methodology.is_pseudo_experiment
