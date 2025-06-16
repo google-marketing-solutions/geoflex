@@ -60,12 +60,14 @@ def performance_data_fixture(request):
     data = pd.DataFrame({
         "geo_id": [f"geo_{i}" for i in range(20) for _ in range(100)],  # pylint: disable=g-complex-comprehension
         "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 20,
-        "revenue": rng.random(size=2000) - 0.5,
-        "cost": rng.random(size=2000) - 0.2,  # Has negatives and positives
+        "revenue": rng.random(size=2000) + 5,
+        "cost": rng.random(size=2000) + 5,
         "conversions": rng.random(size=2000) + 5,
     })
-    # Ensure 'cost' has a mix for WLS failure
+
     data.loc[data["geo_id"] == "geo_0", "cost"] = 0  # Add some zeros
+    data.loc[data["geo_id"] == "geo_0", "revenue"] = 0  # Add some zeros
+    data.loc[data["geo_id"] == "geo_0", "conversions"] = 0  # Add some zeros
     data["date"] = data["date"].dt.strftime("%Y-%m-%d")
     return GeoPerformanceDataset(data=data)
   elif request.param == "gbr_few_geos_data":

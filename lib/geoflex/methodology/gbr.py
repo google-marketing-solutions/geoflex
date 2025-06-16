@@ -98,25 +98,27 @@ class GBR(_base.Methodology):
       # then this will fail
       if cost_columns:
         costs_all_zero = (
-            (pretest_data.parsed_data[cost_columns] == 0).all().all()
+            (pretest_data.pivoted_data[cost_columns] == 0).sum().all()
         )
         costs_all_positive = (
-            (pretest_data.parsed_data[cost_columns] > 0).all().all()
+            (pretest_data.pivoted_data[cost_columns] > 0).sum().all()
         )
         if not (costs_all_positive or costs_all_zero):
           logger.info(
-              "GBR ineligible for design %s: Cost columns contain a mix of some"
-              " positive and some zero or negative values. Costs must be all"
-              " positive or all zero, but not a mix.",
+              "GBR ineligible for design %s: Cost column totals contain a mix"
+              " of some positive and some zero or negative values in the"
+              " pretest data. For WLS, costs must be all positive or all zero,"
+              " but not a mix.",
               design.design_id,
           )
           return False
 
       # If the metrics are ever zero or negative it also fails
-      if not (pretest_data.parsed_data[metric_columns] > 0).all().all():
+      if not (pretest_data.pivoted_data[metric_columns] > 0).sum().all():
         logger.info(
-            "GBR ineligible for design %s: Metric columns contain some zero or"
-            " negative values. Metrics must be all positive.",
+            "GBR ineligible for design %s: Metric column totals contain some"
+            " zero or negative values in the pretest data. For WLS, metrics"
+            " must be all positive.",
             design.design_id,
         )
         return False
@@ -293,6 +295,12 @@ class GBR(_base.Methodology):
           column
       ].sum()
 
+      if (geo_data[f"{column}_pretest"] <= 0.0).any():
+        # If any of the metrics are non-positive, then we can't use WLS because
+        # it assumes everything is positive. This shouldn't happen but in
+        # case we fall back to robust ols.
+        linear_model_type = "robust_ols"
+
     for cost_column in all_cost_columns:
       geo_data[f"{cost_column}_pretest"] = pretest_data.groupby(geo_id_column)[
           cost_column
@@ -300,6 +308,16 @@ class GBR(_base.Methodology):
       geo_data[f"{cost_column}_runtime"] = experiment_data.groupby(
           geo_id_column
       )[cost_column].sum()
+
+      some_costs_not_positive = (
+          geo_data[f"{cost_column}_pretest"] <= 0.0
+      ).any() and not (geo_data[f"{cost_column}_pretest"] == 0.0).all()
+
+      if some_costs_not_positive:
+        # If any of the costs are non-positive (but not all), then we can't use
+        # WLS because it assumes everything is positive. This shouldn't happen
+        # but in case we fall back to robust ols.
+        linear_model_type = "robust_ols"
 
     # Missing values are assumed to be 0.0
     if geo_data.isna().any().any():
@@ -316,7 +334,7 @@ class GBR(_base.Methodology):
           geo_data, cost_column, linear_model_type
       )
 
-    return geo_data
+    return geo_data, linear_model_type
 
   def _add_cost_differential(
       self, geo_data: pd.DataFrame, cost_column: str, model_type: str
@@ -509,7 +527,7 @@ class GBR(_base.Methodology):
     ] + experiment_design.secondary_metrics
 
     # Construct geo level data (one row per geo)
-    geo_data = self._construct_geo_level_data(
+    geo_data, adjusted_linear_model_type = self._construct_geo_level_data(
         all_metrics=all_metrics,
         pretest_data=pretest_data,
         experiment_data=experiment_data,
@@ -543,7 +561,7 @@ class GBR(_base.Methodology):
         params, covariance, degrees_of_freedom = self._fit_linear_model(
             cell_data,
             metric,
-            experiment_design.methodology_parameters["linear_model_type"],
+            adjusted_linear_model_type,
         )
         intermediate_data["params"].append(params)
         intermediate_data["covariance"].append(covariance)

@@ -231,9 +231,16 @@ def test_evaluator_bootstrapper_is_initialized_correctly(historical_data):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
   )
-  assert evaluator.bootstrapper.log_transform
+  assert evaluator.bootstrapper.sampling_type == "permutation"
   assert evaluator.bootstrapper.seasonality == 7
-  assert evaluator.bootstrapper.seasons_per_block == 2
+  assert evaluator.bootstrapper.seasons_per_block == 4
+  assert evaluator.bootstrapper.model_type == "multiplicative"
+  assert evaluator.bootstrapper.stl_params == {
+      "seasonal_deg": 0,
+      "trend_deg": 0,
+      "low_pass_deg": 0,
+      "robust": False,
+  }
 
 
 def test_evaluator_representativeness_scorer_is_initialized_correctly(

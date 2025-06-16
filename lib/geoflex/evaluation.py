@@ -2,6 +2,7 @@
 
 import functools
 import logging
+from typing import Any
 import dcor
 import geoflex.bootstrap
 import geoflex.data
@@ -14,6 +15,7 @@ import pandas as pd
 import pydantic
 from scipy import stats
 from sklearn.metrics import silhouette_score
+
 
 logger = logging.getLogger(__name__)
 
@@ -423,10 +425,14 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     simulations_per_trial: The number of simulations to run per trial.
     bootstrapper_seasons_per_block: The number of seasons per block to use for
       the bootstrapper.
-    bootstrapper_log_transform: Whether to log transform the data for the
-      bootstrapper.
+    bootstrapper_model_type: The model type to use for the bootstrapper. Either
+      "additive" or "multiplicative".
     bootstrapper_seasonality: The seasonality to use for the bootstrapper.
-    bootstrapper_max_lag: The maximum lag to use for the bootstrapper.
+    bootstrapper_sampling_type: The sampling type to use for the bootstrapper.
+      Either "permutation" or "random".
+    bootstrapper_stl_params: The parameters for the STL model. Defaults to 0 for
+      seasonal degree, 0 for trend degree, 0 for low pass degree, and False for
+      robust.
     validation_check_threhold: The threhold to use for the validation check.
       Defaults to 0.001, which is a 99.9% confidence level. Typically this does
       not need to be changed.
@@ -443,10 +449,11 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   historical_data: GeoPerformanceDataset
   simulations_per_trial: int = 100
 
-  bootstrapper_seasons_per_block: int = 2
-  bootstrapper_log_transform: bool = True
+  bootstrapper_seasons_per_block: int = 4
+  bootstrapper_model_type: str = "multiplicative"
   bootstrapper_seasonality: int = 7
-  bootstrapper_max_lag: int = 30
+  bootstrapper_sampling_type: str = "permutation"
+  bootstrapper_stl_params: dict[str, Any] | None = None
 
   validation_check_threhold: float = 0.001
 
@@ -463,14 +470,14 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     used to estimate the standard error of the primary metric.
     """
     bootstrapper = MultivariateTimeseriesBootstrap(
-        log_transform=self.bootstrapper_log_transform,
+        model_type=self.bootstrapper_model_type,
         seasonality=self.bootstrapper_seasonality,
         seasons_per_block=self.bootstrapper_seasons_per_block,
-        max_lag=self.bootstrapper_max_lag,
+        sampling_type=self.bootstrapper_sampling_type,
+        stl_params=self.bootstrapper_stl_params,
     )
     bootstrapper.fit(
         self.historical_data.pivoted_data,
-        seasons_per_filt=self.bootstrapper_seasons_per_block,
     )
     return bootstrapper
 
