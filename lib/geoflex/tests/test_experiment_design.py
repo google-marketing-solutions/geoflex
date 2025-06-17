@@ -428,6 +428,8 @@ def mock_design_evaluation_results_fixture():
           values=[5, 10, 9],
       ),
       other_errors=["some error"],
+      warnings=["some warning"],
+      sufficient_simulations=True,
       all_metric_results_per_cell={
           "revenue": [
               geoflex.evaluation.SingleEvaluationResult(
@@ -563,6 +565,7 @@ def test_invalid_experiment_design_results_has_none_for_all_properties():
       alternative_hypothesis="two-sided",
       representativeness_scores_per_cell=None,
       all_metric_results_per_cell=None,
+      sufficient_simulations=True,
   )
 
   assert invalid_design_results.primary_metric_results is None
@@ -626,6 +629,8 @@ def test_get_summary_dict_returns_correct_dict(
       "actual_cell_volumes": (
           "control: 5 geos, treatment_1: 10 geos, treatment_2: 9 geos"
       ),
+      "warnings": ["some warning"],
+      "sufficient_simulations": True,
   }
 
 
@@ -678,6 +683,8 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
           "something failed",
           "something else failed",
       ],
+      "warnings": ["some warning"],
+      "sufficient_simulations": True,
       "all_checks_pass": False,
       "representativeness_score": 1.0,
       "primary_metric_failing_checks": ["some error"],

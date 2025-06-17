@@ -79,7 +79,10 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
   Attributes:
     historical_data: The historical data to design the experiment for.
     explore_spec: The experiment design exploration spec.
-    simulations_per_trial: The number of simulations to run per trial.
+    simulations_per_trial: The number of simulations to run per trial. If None,
+      the number of simulations will be automatically selected to ensure that
+      there are enough simulations to meet the minimum sample size required for
+      the validation checks.
     bootstrapper_seasons_per_block: The number of seasons per block to use for
       the bootstrapper.
     bootstrapper_model_type: The model type to use for the bootstrapper. Either
@@ -103,7 +106,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
   historical_data: GeoPerformanceDataset
   explore_spec: ExperimentDesignExplorationSpec
-  simulations_per_trial: int = 100
+  simulations_per_trial: int | None = None
 
   bootstrapper_seasons_per_block: int = 4
   bootstrapper_model_type: str = "multiplicative"

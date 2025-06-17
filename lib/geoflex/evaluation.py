@@ -218,12 +218,15 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
       design, of each treatment cell.
     design_is_valid: Whether the design is valid or not. The design is not valid
       if the methodology is not eligible for the design.
+    warnings: A list of warnings that were generated during the simulation.
   """
 
   design: ExperimentDesign
   simulation_results: ParquetDataFrame
   representativeness_scores: list[float] | None
   design_is_valid: bool
+  sufficient_simulations: bool
+  warnings: list[str] = []
 
   model_config = pydantic.ConfigDict(
       extra="forbid",
@@ -355,12 +358,55 @@ def validate_cell_volume_constraint_is_respected(
   return actual_cell_volumes, is_valid, error_message
 
 
+def estimate_validation_check_minimum_sample_size(
+    p_null: float,
+    p_delta: float,
+    alpha: float,
+    power: float = 0.8,
+) -> int:
+  """Estimates the minimum sample size for the validation check.
+
+  The validation checks are proportion checks, performed with a binomial test.
+  The minimum sample size is estimated using the normal approximation of the
+  binomial distribution.
+
+  The validation check is a one-sided test, and the direction is inferred based
+  on the sign of the delta.
+
+  Args:
+    p_null: The proportion for the null hypothesis.
+    p_delta: The change in proportion for the alternative hypothesis.
+    alpha: The alpha level of the test.
+    power: The power level of the test.
+
+  Returns:
+    The minimum sample size.
+  """
+  p_alt = np.clip(p_null + p_delta, a_min=0.0, a_max=1.0)
+
+  z_alpha = stats.norm.ppf(1 - alpha)
+  z_beta = stats.norm.ppf(power)
+
+  numerator = (
+      z_alpha * np.sqrt(p_null * (1 - p_null))
+      + z_beta * np.sqrt(p_alt * (1 - p_alt))
+  ) ** 2
+  denominator = (p_alt - p_null) ** 2
+  n_analytical = numerator / denominator
+
+  # The sample size must be an integer, so we round up.
+  return int(np.ceil(n_analytical))
+
+
 class ExperimentDesignEvaluator(pydantic.BaseModel):
   """The class for evaluating experiment designs.
 
   Attributes:
     historical_data: The historical data to use for the experiment design.
-    simulations_per_trial: The number of simulations to run per trial.
+    simulations_per_trial: The number of simulations to run per trial. If None,
+      the number of simulations will be automatically selected to ensure that
+      there are enough simulations to meet the minimum sample size required for
+      the validation checks.
     bootstrapper_seasons_per_block: The number of seasons per block to use for
       the bootstrapper.
     bootstrapper_model_type: The model type to use for the bootstrapper. Either
@@ -390,7 +436,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   """
 
   historical_data: GeoPerformanceDataset
-  simulations_per_trial: int = 100
+  simulations_per_trial: int | None = None
 
   bootstrapper_seasons_per_block: int = 4
   bootstrapper_model_type: str = "multiplicative"
@@ -440,6 +486,23 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     return GeoAssignmentRepresentativenessScorer(
         historical_data=data,
         geos=self.historical_data.geos,
+    )
+
+  def get_aa_coverage_minimum_sample_size(self, alpha: float) -> int:
+    """The minimum sample size for the A/A coverage check.
+
+    Args:
+      alpha: The alpha level of the test.
+
+    Returns:
+      The minimum sample size required to test the coverage of the A/A test,
+      given the alpha level.
+    """
+    return estimate_validation_check_minimum_sample_size(
+        p_null=1.0 - alpha,
+        p_delta=-0.1,
+        alpha=self.validation_check_threhold,
+        power=0.8,
     )
 
   def _set_exp_start_date(
@@ -597,7 +660,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   def simulate_experiment_results(
       self,
       design: ExperimentDesign,
-      n_simulations: int,
+      n_simulations: int | None = None,
       exp_start_date: pd.Timestamp | None = None,
   ) -> RawExperimentSimulationResults | None:
     """Simulates experiments for the given design.
@@ -615,7 +678,10 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
 
     Args:
       design: The experiment design to evaluate.
-      n_simulations: The number of simulations to run.
+      n_simulations: The number of simulations to run. If None, the number of
+        simulations will be automatically selected to ensure that there are
+        enough simulations to meet the minimum sample size required for the
+        validation checks.
       exp_start_date: The start date to use to simulate the experiment. If None,
         the start date will be calculated from the maximum date in the
         historical data and the runtime weeks in the experiment design.
@@ -630,6 +696,27 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       maximum date in the historical data minus the runtime weeks in the
       experiment design.
     """
+    warnings = []
+
+    min_simulations = self.get_aa_coverage_minimum_sample_size(
+        alpha=design.alpha
+    )
+    if n_simulations is None:
+      logger.debug(
+          "Number of simulations set automatically to %s.", min_simulations
+      )
+      n_simulations = min_simulations
+    else:
+      logger.debug("Number of simulations set by user to %s.", n_simulations)
+
+    sufficient_simulations = n_simulations >= min_simulations
+    if not sufficient_simulations:
+      warnings.append(
+          f"The number of simulations ({n_simulations}) is less than the"
+          " minimum required for conclusive validation checks"
+          f" ({min_simulations})."
+      )
+
     exp_start_date = self._set_exp_start_date(design, exp_start_date)
 
     is_pretest = (
@@ -650,6 +737,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           simulation_results=pd.DataFrame(),
           representativeness_scores=None,
           design_is_valid=False,
+          warnings=warnings,
+          sufficient_simulations=sufficient_simulations,
       )
       self.raw_simulation_results[design.design_id] = results
       return results
@@ -703,6 +792,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
             simulation_results=pd.DataFrame(),
             representativeness_scores=None,
             design_is_valid=False,
+            warnings=warnings,
+            sufficient_simulations=sufficient_simulations,
         )
         self.raw_simulation_results[design.design_id] = results
         return results
@@ -721,6 +812,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
             simulation_results=pd.DataFrame(),
             representativeness_scores=None,
             design_is_valid=False,
+            warnings=warnings,
+            sufficient_simulations=sufficient_simulations,
         )
         self.raw_simulation_results[design.design_id] = results
         return results
@@ -732,6 +825,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         simulation_results=pd.concat(results_list),
         representativeness_scores=representativeness_scores,
         design_is_valid=True,
+        warnings=warnings,
+        sufficient_simulations=sufficient_simulations
     )
     self.raw_simulation_results[design.design_id] = results
     return results
@@ -918,6 +1013,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           actual_cell_volumes=actual_cell_volumes,
           other_errors=other_errors,
           is_valid_design=False,
+          warnings=raw_simulation_results.warnings,
+          sufficient_simulations=raw_simulation_results.sufficient_simulations,
       )
       self.experiment_design_evaluation_results[design.design_id] = results
       return results
@@ -970,6 +1067,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         actual_cell_volumes=actual_cell_volumes,
         other_errors=other_errors,
         is_valid_design=is_valid_design,
+        warnings=raw_simulation_results.warnings,
+        sufficient_simulations=raw_simulation_results.sufficient_simulations,
     )
     self.experiment_design_evaluation_results[design.design_id] = results
     return results

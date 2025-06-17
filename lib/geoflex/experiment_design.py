@@ -490,6 +490,9 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     is_valid_design: Whether the design is valid. This will be false if the
       methodology is not eligible for the design. All of the design results will
       be None in this case.
+    warnings: A list of warnings that were generated during the evaluation.
+    sufficient_simulations: Whether the number of simulations was sufficient for
+      conclusive validation checks.
   """
 
   primary_metric_name: str
@@ -502,6 +505,8 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
   actual_cell_volumes: CellVolumeConstraint | None = None
   other_errors: list[str] = []
   is_valid_design: bool
+  warnings: list[str] = []
+  sufficient_simulations: bool
 
   model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -667,6 +672,8 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
           ),
           "primary_metric_all_checks_pass": False,
           "actual_cell_volumes": str(self.actual_cell_volumes),
+          "warnings": self.warnings,
+          "sufficient_simulations": self.sufficient_simulations,
       }
 
     absolute_mde = self.get_mde(
@@ -685,9 +692,11 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
 
     output = {
         "failing_checks": self.other_errors,
+        "warnings": self.warnings,
         "all_checks_pass": True,
         "representativeness_score": self.representativeness_score,
         "actual_cell_volumes": str(self.actual_cell_volumes),
+        "sufficient_simulations": self.sufficient_simulations,
     }
     for metric_name, result in self.all_metric_results.items():
       if "__INVERTED__" in metric_name:
@@ -1168,14 +1177,15 @@ class ExperimentDesign(pydantic.BaseModel):
     return variation
 
 
-def _format_check_column(value: bool | None) -> str:
+def _format_check_column(value: str | None) -> str:
   if value is None:
     return ""
-  return (
-      "background-color:lightgreen"
-      if value == "None"
-      else "background-color:darkred;color:white"
-  )
+  elif value == "None":
+    return "background-color:lightgreen"
+  elif value.startswith("WARNING: "):
+    return "background-color:yellow"
+  else:
+    return "background-color:darkred;color:white"
 
 
 def _clean_column_names(summary_data: pd.DataFrame) -> pd.DataFrame:
@@ -1268,6 +1278,7 @@ def compare_designs(
       + [
           "failing_checks",
           "all_checks_pass",
+          "warnings",
       ]
   )
 
@@ -1320,8 +1331,20 @@ def compare_designs(
   summary_data["Failing Checks"] = summary_data["Failing Checks"].apply(
       ", ".join
   )
-  summary_data.loc[summary_data["All Checks Pass"], "Failing Checks"] = "None"
-  summary_data.drop(columns=["All Checks Pass"], inplace=True)
+  summary_data.loc[
+      summary_data["All Checks Pass"]
+      & (summary_data["Warnings"].apply(len) == 0),
+      "Failing Checks",
+  ] = "None"
+  summary_data["Failing Checks"] = (
+      summary_data["Warnings"].apply(
+          lambda x: ", ".join(["WARNING: " + w for w in x])
+          if isinstance(x, list)
+          else x
+      )
+      + summary_data["Failing Checks"]
+  )
+  summary_data.drop(columns=["All Checks Pass", "Warnings"], inplace=True)
 
   styled_summary_data = (
       summary_data.style.format(

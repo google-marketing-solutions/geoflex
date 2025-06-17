@@ -222,6 +222,7 @@ def test_evaluator_simulate_experiment_results_returns_correct_data(
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
+      simulations_per_trial=5,
   )
   raw_results = evaluator.simulate_experiment_results(
       mock_design, n_simulations=3
@@ -260,6 +261,7 @@ def test_evaluator_simulate_experiment_results_for_invalid_design(
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
+      simulations_per_trial=5,
   )
 
   # Mock the TestingMethodology methodology to always say invalid design.
@@ -289,6 +291,7 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_results(
         simulation_results=pd.DataFrame({"cell": [1]}),
         representativeness_scores=[1, 2],
         design_is_valid=True,
+        sufficient_simulations=True,
     )
 
 
@@ -301,6 +304,7 @@ def test_raw_experiment_simulation_results_does_not_raise_error_if_all_results_e
       simulation_results=pd.DataFrame({"cell": [1, 2]}),
       representativeness_scores=[1, 2],
       design_is_valid=True,
+      sufficient_simulations=True,
   )
 
 
@@ -314,6 +318,7 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_representativ
         simulation_results=pd.DataFrame({"cell": [1, 2]}),
         representativeness_scores=[1],
         design_is_valid=True,
+        sufficient_simulations=True,
     )
 
 
@@ -325,9 +330,41 @@ def test_evaluator_evaluate_design_returns_correct_data_and_adds_results_to_desi
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
+      simulations_per_trial=5,
   )
 
   mock_design = mock_design.make_variation(methodology=methodology)
+  evaluation_results = evaluator.evaluate_design(mock_design)
+
+  assert isinstance(
+      evaluation_results, geoflex.evaluation.ExperimentDesignEvaluationResults
+  )
+  assert mock_design.evaluation_results is not None
+  assert mock_design.evaluation_results == evaluation_results
+
+  assert evaluation_results.is_valid_design
+  assert (
+      evaluation_results.primary_metric_name == mock_design.primary_metric.name
+  )
+  assert evaluation_results.alpha == mock_design.alpha
+  assert (
+      evaluation_results.alternative_hypothesis
+      == mock_design.alternative_hypothesis
+  )
+
+  # Check number of cells matches design.
+  assert len(evaluation_results.representativeness_scores_per_cell) == 2
+  for metric_results in evaluation_results.all_metric_results_per_cell.values():
+    assert len(metric_results) == 2
+
+
+def test_evaluator_evaluate_design_correctly_sets_automatic_sample_size(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+
   evaluation_results = evaluator.evaluate_design(mock_design)
 
   assert isinstance(
@@ -357,6 +394,7 @@ def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
+      simulations_per_trial=5,
   )
   # Mock is_valid_for_design_and_data to always return False.
   with mock.patch.object(
@@ -397,6 +435,7 @@ def test_evaluator_evaluate_design_does_not_reassign_geos_for_pseudo_experiments
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
+      simulations_per_trial=5,
   )
   mock_design = mock_design.make_variation(
       methodology="PseudoExperimentTestingMethodology"
