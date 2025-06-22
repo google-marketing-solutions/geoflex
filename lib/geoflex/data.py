@@ -326,7 +326,7 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       self,
       experiment_start_date: dt.date,
       design: ExperimentDesign,
-      treatment_effect_size: float = 0.0,
+      treatment_effect_sizes: list[float] | None = None,
   ) -> "GeoPerformanceDataset":
     """Simulates a geo experiment in the data.
 
@@ -338,25 +338,28 @@ class GeoPerformanceDataset(pydantic.BaseModel):
       experiment_start_date: The start date of the experiment. This is the date
         that the treatment geos were first exposed to the treatment.
       design: The experiment design.
-      treatment_effect_size: The treatment effect size. This is the percentage
-        change in the response metric that the treatment geos will experience
-        compared to the control geos in all response metrics.
+      treatment_effect_sizes: The absolute treatment effect sizes for the
+        primary metric. One value per treatment cell. If None, then the
+        treatment effect size is 0.0 for all treatment cells.
 
     Returns:
       The simulated experiment data.
 
     Raises:
-      NotImplementedError: If the treatment effect size is not 0.0.
       ValueError: If the experiment type is hold back and the cost metric is
         not 0.0.
     """
-    if not np.isclose(treatment_effect_size, 0.0):
+    treatment_effect_sizes = treatment_effect_sizes or [0.0] * (
+        design.n_cells - 1
+    )
+    if len(treatment_effect_sizes) != design.n_cells - 1:
       error_message = (
-          "Simulate experiment is currently only supported for A/A simulations"
-          " with no treatment effect."
+          "Treatment effect sizes must be specified for all treatment cells,"
+          f" got {len(treatment_effect_sizes)} treatment effect sizes for"
+          f" {design.n_cells - 1} treatment cells."
       )
       logger.error(error_message)
-      raise NotImplementedError(error_message)
+      raise ValueError(error_message)
 
     # Get all cost metrics.
     all_metrics = [design.primary_metric] + design.secondary_metrics
@@ -470,7 +473,56 @@ class GeoPerformanceDataset(pydantic.BaseModel):
               )
           )
 
-      # Create the runtime dataset and analyse it
+    # Now if there is a non zero treatment effect size, then apply it to the
+    # primary metric.
+    for treatment_cell, treatment_effect_size in zip(
+        design.geo_assignment.treatment, treatment_effect_sizes
+    ):
+      if not np.isclose(treatment_effect_size, 0.0):
+        # For a cost per metric or metric per cost, we need to calculate the
+        # delta in cost and use that to calculate the delta in the metric.
+        if (
+            design.primary_metric.cost_per_metric
+            or design.primary_metric.metric_per_cost
+        ):
+          cost_delta = (
+              data.loc[
+                  treatment_dates_mask,
+                  (design.primary_metric.cost_column, list(treatment_cell)),
+              ]
+              - self.pivoted_data.loc[
+                  treatment_dates_mask,
+                  (design.primary_metric.cost_column, list(treatment_cell)),
+              ]
+          )
+        else:
+          cost_delta = 0.0
+
+        if design.primary_metric.metric_per_cost:
+          data.loc[
+              treatment_dates_mask,
+              (design.primary_metric.column, list(treatment_cell)),
+          ] += (
+              cost_delta.values * treatment_effect_size
+          )
+        elif design.primary_metric.cost_per_metric:
+          data.loc[
+              treatment_dates_mask,
+              (design.primary_metric.column, list(treatment_cell)),
+          ] += (
+              cost_delta.values / treatment_effect_size
+          )
+        else:
+          # For a regular metric, it's just the absolute lift in the metric. The
+          # absolute lift is the total lift across the geos, so we will divide
+          # it equally across the geos and the days.
+          n_geos = len(treatment_cell)
+          n_days = treatment_dates_mask.sum()
+          data.loc[
+              treatment_dates_mask,
+              (design.primary_metric.column, list(treatment_cell)),
+          ] += treatment_effect_size / (n_geos * n_days)
+
     return self.from_pivoted_data(
         data,
         geo_id_column=self.geo_id_column,
