@@ -17,6 +17,7 @@ dependencies = [
   "scikit-learn",
   "pyarrow",
   "PyYAML",
+  "pysyncon",
 ]
 requires-python = ">=3.8"
 authors = [
