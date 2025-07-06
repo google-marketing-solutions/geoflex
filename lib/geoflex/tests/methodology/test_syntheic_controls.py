@@ -1,0 +1,240 @@
+"""Tests for the Synthetic Controls module."""
+from typing import Any
+
+from geoflex.data import GeoPerformanceDataset
+from geoflex.experiment_design import ExperimentDesign
+from geoflex.experiment_design import GeoAssignment
+from geoflex.methodology.synthetic_controls import SyntheticControls
+from geoflex.metrics import Metric
+import numpy as np
+import pandas as pd
+import pytest
+
+# pylint:disable=protected-access
+# pylint: disable=redefined-outer-name
+
+
+def setup_fixtures_data() -> dict[str, Any]:
+  """Sets up all common data and objects needed for the tests."""
+  data = {
+      'date': [
+          '2025-01-01', '2025-01-01', '2025-01-01', '2025-01-01', '2025-01-01',
+          '2025-01-02', '2025-01-02', '2025-01-02', '2025-01-02', '2025-01-02',
+          '2025-01-03', '2025-01-03', '2025-01-03', '2025-01-03', '2025-01-03',
+          '2025-01-04', '2025-01-04', '2025-01-04', '2025-01-04', '2025-01-04',
+          '2025-01-05', '2025-01-05', '2025-01-05', '2025-01-05', '2025-01-05',
+          '2025-01-06', '2025-01-06', '2025-01-06', '2025-01-06', '2025-01-06',
+          '2025-01-07', '2025-01-07', '2025-01-07', '2025-01-07', '2025-01-07',
+          '2025-01-08', '2025-01-08', '2025-01-08', '2025-01-08', '2025-01-08',
+          ],
+      'geo_id': ['G1', 'G2', 'G3', 'G4', 'G5'] * 8,
+      'sales': [100, 200, 300, 400, 500, 110, 220, 330, 440, 550, 105, 215,
+                315, 415, 515, 115, 225, 325, 425, 525, 100, 200, 300, 400,
+                500, 110, 220, 330, 440, 550, 105, 215, 315, 415, 515, 115,
+                225, 325, 425, 525]
+    }
+  sample_df = pd.DataFrame(data)
+
+  fixtures = {
+      'geo_col': 'geo_id',
+      'date_col': 'date',
+      'dependent_var': 'sales',
+      'sc_method': SyntheticControls(),
+      'historical_data': GeoPerformanceDataset(
+          data=sample_df, geo_id_column='geo_id', date_column='date'
+      ),
+      'experiment_design': ExperimentDesign(
+          primary_metric=Metric(name='sales'),
+          methodology='SyntheticControls',
+          runtime_weeks=4,
+          methodology_parameters={'min_treatment_geos': 2, 'num_iterations': 5}
+      )
+    }
+  return fixtures
+
+
+@pytest.fixture(name='fixtures')
+def fixtures_fixture() -> dict[str, Any]:
+  return setup_fixtures_data()
+
+
+def setup_aggregated_df(fixtures: dict[str, Any]):
+  """Sets up the aggregated dataframe."""
+  return fixtures['sc_method'].aggregate_treatment(
+      df=fixtures['historical_data'].parsed_data,
+      treatment_geos=['G1', 'G2'],
+      control_geos=['G3', 'G4', 'G5'],
+      geo_var=fixtures['geo_col'],
+      time_var=fixtures['date_col'],
+      dependent=fixtures['dependent_var']
+  )
+
+
+@pytest.fixture(name='aggregated_df')
+def aggregated_df_fixture(fixtures):
+  return setup_aggregated_df(fixtures)
+
+
+def setup_fit_results_and_validation_df(fixtures, aggregated_df):
+  """Sets up the fit results and validation dataframe."""
+  train_end_date = pd.to_datetime('2025-01-06')
+  fit_results = fixtures['sc_method']._fit_model(
+      df_agg=aggregated_df,
+      geo_var=fixtures['geo_col'],
+      time_var=fixtures['date_col'],
+      dependent=fixtures['dependent_var'],
+      control_geos=['G3', 'G4', 'G5'],
+      test_geo='Aggregated_Treatment',
+      treatment_geos=['G1', 'G2'],
+      train_start_date=aggregated_df[fixtures['date_col']].min(),
+      train_end_date=train_end_date,
+      predictor_start_date=aggregated_df[fixtures['date_col']].min(),
+      predictor_end_date=aggregated_df[fixtures['date_col']].max()
+  )
+  validation_df = aggregated_df[
+      aggregated_df[fixtures['date_col']] > train_end_date]
+  return fit_results, validation_df
+
+
+@pytest.fixture(name='fit_results_and_validation_df')
+def fit_results_and_validation_df_fixture(fixtures, aggregated_df):
+  return setup_fit_results_and_validation_df(fixtures, aggregated_df)
+
+
+def test_aggregate_treatment(aggregated_df):
+  """Tests the treatment aggregation logic."""
+  assert 'Aggregated_Treatment' in aggregated_df['geo_id'].unique()
+  assert 'G1' not in aggregated_df['geo_id'].unique()
+
+
+def test_sample_geos(fixtures: dict[str, Any]):
+  """Tests the geo sampling logic, both with and without constraints."""
+
+  # Test 1: Basic sampling
+  rng = np.random.default_rng(seed=42)
+  sample_result = fixtures['sc_method']._sample_geos(
+      all_geos=fixtures['historical_data'].geos,
+      force_test=[], force_control=[], exclude=[],
+      min_treatment_geos=2, max_treatment_geos=3, rng=rng
+    )
+  assert len(sample_result[0]) >= 2 and len(sample_result[0]) <= 3
+
+  # Test 2: Sampling with constraints
+  rng_constrained = np.random.default_rng(seed=99)
+  constrained_sample = fixtures['sc_method']._sample_geos(
+      all_geos=fixtures['historical_data'].geos,
+      force_test=['G1'], force_control=['G5'], exclude=['G3'],
+      min_treatment_geos=2, max_treatment_geos=2, rng=rng_constrained
+  )
+  assert 'G1' in constrained_sample[0]
+  assert 'G5' in constrained_sample[1]
+  assert 'G3' not in (constrained_sample[0] + constrained_sample[1])
+
+
+def test_randomly_assign_geos(fixtures: dict[str, Any]):
+  """Tests the wrapper function for random assignment."""
+  rng = np.random.default_rng(seed=123)
+  result = fixtures['sc_method']._randomly_assign_geos(
+      experiment_design=fixtures['experiment_design'],
+      historical_data=fixtures['historical_data'], rng=rng
+  )
+  assert isinstance(result, tuple) and len(result) == 2
+  min_geos = fixtures[
+      'experiment_design'].methodology_parameters['min_treatment_geos']
+  assert len(result[0]) >= min_geos
+
+
+def test_fit_model(fit_results_and_validation_df):
+  """Tests the core model fitting logic and returns results for other tests."""
+  fit_results, _ = fit_results_and_validation_df
+  assert fit_results['validation_r2'] is not None
+
+
+def test_calculate_r2(fixtures: dict[str, Any], fit_results_and_validation_df):
+  """Tests the R2 score calculation using a real fitted model."""
+  fit_results, validation_df = fit_results_and_validation_df
+  r2_score = SyntheticControls._calculate_r2(
+      synth_model=fit_results['synth_model'],
+      df=validation_df,
+      unit_var=fixtures['geo_col'],
+      time_var=fixtures['date_col'],
+      dependent=fixtures['dependent_var'],
+      control_geos=fit_results['control_geos'],
+      test_geo='Aggregated_Treatment'
+  )
+  assert isinstance(r2_score, float) and r2_score <= 1.0
+
+
+def test_aggregate_and_fit(fixtures: dict[str, Any]):
+  """Tests the function that combines aggregation and model fitting."""
+  fixed_sample = (['G1', 'G2'], ['G3', 'G4', 'G5'])
+  geo_assignment, model_results = fixtures['sc_method']._aggregate_and_fit(
+      experiment_design=fixtures['experiment_design'],
+      historical_data=fixtures['historical_data'], sample=fixed_sample
+  )
+  assert isinstance(geo_assignment, GeoAssignment)
+  assert isinstance(model_results, dict)
+
+
+def test_methodology_assign_geos(fixtures: dict[str, Any]):
+  """Tests the main orchestrator for the entire assignment process."""
+  final_assignment, _ = fixtures['sc_method']._methodology_assign_geos(
+      experiment_design=fixtures['experiment_design'],
+      historical_data=fixtures['historical_data']
+  )
+  assert isinstance(final_assignment, GeoAssignment)
+  assigned_geos = (
+      set().union(*final_assignment.treatment)
+      | final_assignment.control
+      | final_assignment.exclude
+  )
+  assert assigned_geos == set(fixtures['historical_data'].geos)
+
+
+def test_methodology_analyze_experiment(fixtures: dict[str, Any]):
+  """Tests the experiment analysis logic."""
+
+  # Use a fixed assignment for reproducibility
+  geo_assignment = GeoAssignment(
+      treatment=[{'G1', 'G2'}], control={'G3', 'G4', 'G5'})
+  fixtures['experiment_design'].geo_assignment = geo_assignment
+
+  # Define dates for the analysis
+  pretest_end_date = pd.to_datetime('2025-01-04')
+  experiment_start_date = pd.to_datetime('2025-01-05')
+  experiment_end_date = pd.to_datetime('2025-01-08')
+
+  # Run the analysis
+  results_df, _ = fixtures['sc_method']._methodology_analyze_experiment(
+      runtime_data=fixtures['historical_data'],
+      experiment_design=fixtures['experiment_design'],
+      experiment_start_date=experiment_start_date,
+      experiment_end_date=experiment_end_date,
+      pretest_period_end_date=pretest_end_date,
+  )
+
+  # Assertions
+  assert not results_df.empty
+  assert 'metric' in results_df.columns
+  assert 'point_estimate' in results_df.columns
+  assert 'p_value' in results_df.columns
+  assert results_df['metric'].iloc[0] == 'sales'
+
+
+if __name__ == '__main__':
+  fixtures_data = setup_fixtures_data()
+  aggregated_data = setup_aggregated_df(fixtures_data)
+
+  test_aggregate_treatment(aggregated_data)
+  test_sample_geos(fixtures_data)
+  test_randomly_assign_geos(fixtures_data)
+
+  fit_results, validation_df = setup_fit_results_and_validation_df(
+      fixtures_data, aggregated_data
+  )
+  test_fit_model((fit_results, validation_df))
+  test_calculate_r2(fixtures_data, (fit_results, validation_df))
+
+  test_aggregate_and_fit(fixtures_data)
+  test_methodology_assign_geos(fixtures_data)
+  test_methodology_analyze_experiment(fixtures_data)
