@@ -16,6 +16,7 @@ dependencies = [
   "pyarrow",
   "PyYAML",
   "matplotlib",
+  "tqdm",
   "pysyncon",
 ]
 requires-python = ">=3.8"

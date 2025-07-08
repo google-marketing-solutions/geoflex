@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pydantic
 from scipy import stats
+import tqdm.auto as tqdm
 
 
 logger = logging.getLogger(__name__)
@@ -662,6 +663,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       design: ExperimentDesign,
       n_simulations: int | None = None,
       exp_start_date: pd.Timestamp | None = None,
+      with_progress_bar: bool = False,
   ) -> RawExperimentSimulationResults | None:
     """Simulates experiments for the given design.
 
@@ -685,6 +687,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       exp_start_date: The start date to use to simulate the experiment. If None,
         the start date will be calculated from the maximum date in the
         historical data and the runtime weeks in the experiment design.
+      with_progress_bar: Whether to show a progress bar. Defaults to False. It's
+        recommended to set this to True only if you are not also printing info
+        logs to the console.
 
     Returns:
       The results of the simulations, or None if the design is not eligible for
@@ -755,7 +760,14 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
 
     results_list = []
     random_seed = design.random_seed
-    for sample in self.bootstrapper.sample_dataframes(n_simulations):
+
+    iterator = self.bootstrapper.sample_dataframes(n_simulations)
+    if with_progress_bar:
+      iterator = tqdm.tqdm(
+          iterator, total=n_simulations, desc=f"Evaluating {design.design_id}"
+      )
+
+    for sample in iterator:
 
       if geoflex.methodology.is_pseudo_experiment(design):
         # For pseudo experiments, we don't want to re-assign the geos for every
@@ -1079,6 +1091,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       exp_start_date: pd.Timestamp | None = None,
       add_to_design: bool = True,
       force_evaluation: bool = False,
+      with_progress_bar: bool = False,
   ) -> ExperimentDesignEvaluationResults | None:
     """Evaluates the design.
 
@@ -1102,6 +1115,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       force_evaluation: Whether to force evaluation, even if the design already
         has evaluation results. If true, and add_to_design is true, the
         evaluation results will be overwritten.
+      with_progress_bar: Whether to show a progress bar while evaluating the
+        design. Defaults to False. It's recommended to set this to True only if
+        you are not also printing info logs to the console.
 
     Returns:
       The experiment design evaluation results.
@@ -1132,7 +1148,10 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     logger.info("Evaluating design %s.", design.design_id)
 
     raw_simulation_results = self.simulate_experiment_results(
-        design, self.simulations_per_trial, exp_start_date
+        design,
+        self.simulations_per_trial,
+        exp_start_date,
+        with_progress_bar=with_progress_bar,
     )
     evaluation_results = self._evaluate_raw_simulation_results(
         raw_simulation_results

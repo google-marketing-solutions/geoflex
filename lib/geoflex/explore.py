@@ -14,6 +14,7 @@ import numpy as np
 import optuna as op
 import pandas as pd
 import pydantic
+import tqdm.auto as tqdm
 
 ExperimentDesignExplorationSpec = (
     geoflex.exploration_spec.ExperimentDesignExplorationSpec
@@ -39,13 +40,20 @@ class MaxTrialsCallback:
   number.
   """
 
-  def __init__(self, max_trials: int):
+  def __init__(self, max_trials: int, with_progress_bar: bool = False):
     """Initializes the callback.
 
     Args:
       max_trials: The maximum number of valid trials to run.
+      with_progress_bar: Whether to show a progress bar. Defaults to False. It's
+        recommended to set this to True only if you are not also printing info
+        logs to the console.
     """
     self.max_trials = max_trials
+    self.with_progress_bar = with_progress_bar
+
+    if with_progress_bar:
+      self.pbar = tqdm.tqdm(total=max_trials, desc="GeoFleX Exploration")
 
   @staticmethod
   def get_n_completed_trials(study: op.Study) -> int:
@@ -59,9 +67,18 @@ class MaxTrialsCallback:
   def __call__(self, study: op.Study, trial: op.Trial) -> None:
     n_non_inf_trials = self.get_n_completed_trials(study)
 
+    if (
+        self.with_progress_bar
+        and trial.values is not None
+        and not np.isinf(trial.values[0])
+    ):
+      self.pbar.update(1)
+
     if n_non_inf_trials == self.max_trials:
       logger.info("Stopping study after %s trials.", n_non_inf_trials)
       study.stop()
+      if self.with_progress_bar:
+        self.pbar.close()
     elif n_non_inf_trials > self.max_trials:
       logger.info(
           "Stopping study after %s trials. Overshot the max trials (%s) by %s,"
@@ -71,6 +88,8 @@ class MaxTrialsCallback:
           n_non_inf_trials - self.max_trials,
       )
       study.stop()
+      if self.with_progress_bar:
+        self.pbar.close()
 
 
 class ExperimentDesignExplorer(pydantic.BaseModel):
@@ -451,8 +470,20 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       n_jobs: int = -1,
       seed: int = 0,
       warm_start: bool = True,
+      with_progress_bar: bool = False,
   ) -> None:
-    """Explores experiment designs."""
+    """Explores experiment designs.
+
+    Args:
+      max_trials: The maximum number of trials to explore.
+      n_jobs: The number of parallel jobs to use for the optimization. Defaults
+        to -1, which means all available cores will be used.
+      seed: The seed to use for the optimization.
+      warm_start: Whether to warm start the optimization.
+      with_progress_bar: Whether to show a progress bar while exploring the
+        designs. Defaults to False. It's recommended to set this to True only if
+        you are not also printing info logs to the console.
+    """
 
     # Call the bootstrapper to make it fit to the data.
     _ = self._experiment_design_evaluator.bootstrapper
@@ -525,7 +556,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     self.study.optimize(
         objective,
         n_trials=max_trials * 10,
-        callbacks=[MaxTrialsCallback(target_trials)],
+        callbacks=[MaxTrialsCallback(target_trials, with_progress_bar)],
         n_jobs=n_jobs,
         catch=Exception,  # Catch all exceptions, never stop the study.
     )
