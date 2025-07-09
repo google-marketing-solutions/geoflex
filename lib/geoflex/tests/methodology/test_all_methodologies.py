@@ -198,6 +198,9 @@ VALID_COMBINATIONS = [
     ("GBR", "cost_metrics_test", "basic_data"),
     ("GBR", "max_geos_constraint_test", "basic_data"),
     ("GBR", "max_revenue_pct_constraint_test", "basic_data"),
+    ("TBRMM", "unconstrained_ab_test", "basic_data"),
+    ("TBRMM", "ab_test_with_excluded_geos", "basic_data"),
+    ("TBRMM", "max_geos_constraint_test", "basic_data"),
 ]
 INVALID_COMBINATIONS = [
     (
@@ -225,6 +228,11 @@ INVALID_COMBINATIONS = [
         "gbr_robust_ols_design",
         "gbr_few_geos_data",
     ),  # Robust OLS GBR fails with too few geos
+    (
+        "TBRMM",
+        "multicell_ab_test",
+        "basic_data",
+    ),  # Multi-cell is not supported for TBRMM
 ]
 
 
