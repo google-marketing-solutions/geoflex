@@ -98,10 +98,6 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
   Attributes:
     historical_data: The historical data to design the experiment for.
     explore_spec: The experiment design exploration spec.
-    simulations_per_trial: The number of simulations to run per trial. If None,
-      the number of simulations will be automatically selected to ensure that
-      there are enough simulations to meet the minimum sample size required for
-      the validation checks.
     bootstrapper_seasons_per_block: The number of seasons per block to use for
       the bootstrapper.
     bootstrapper_model_type: The model type to use for the bootstrapper. Either
@@ -125,7 +121,6 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
   historical_data: GeoPerformanceDataset
   explore_spec: ExperimentDesignExplorationSpec
-  simulations_per_trial: int | None = None
 
   bootstrapper_seasons_per_block: int = 4
   bootstrapper_model_type: str = "multiplicative"
@@ -170,7 +165,6 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     """Returns the experiment design evaluator."""
     return ExperimentDesignEvaluator(
         historical_data=self.historical_data,
-        simulations_per_trial=self.simulations_per_trial,
         bootstrapper_seasons_per_block=self.bootstrapper_seasons_per_block,
         bootstrapper_model_type=self.bootstrapper_model_type,
         bootstrapper_seasonality=self.bootstrapper_seasonality,
@@ -307,7 +301,8 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
   def _exploration_objective(
       self,
       trial: op.Trial,
-      simulations_per_trial: int,
+      aa_simulations_per_trial: int | None,
+      ab_simulations_per_trial: int | None,
   ) -> tuple[float, float]:
     """Suggests a new experiment design, and evaluates it.
 
@@ -322,9 +317,12 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     Args:
       trial: The Optuna trial to use to suggest the experiment design.
-      simulations_per_trial: The number of simulations to run per trial. The
-        siumulations are used to calculate the standard error of the effect
-        size.
+      aa_simulations_per_trial: The number of simulations to run per trial. If
+        None, the number of simulations will be automatically determined to
+        ensure statistically rigorous evaluations.
+      ab_simulations_per_trial: The number of simulations to run per trial. If
+        None, the number of simulations will be automatically determined to
+        ensure statistically rigorous evaluations.
 
     Returns:
       A tuple of the standard error of the primary metric, and the
@@ -343,6 +341,9 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     evaluation_results = self._experiment_design_evaluator.evaluate_design(
         design=design,
         exp_start_date=self.exp_start_date,
+        n_aa_simulations=aa_simulations_per_trial,
+        n_ab_simulations=ab_simulations_per_trial,
+        overwrite_mode="overwrite",
     )
 
     # If the design is not eligible for the methdology, the results will be
@@ -367,10 +368,8 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     # If the design fails any checks, then log the failing checks.
     if not evaluation_results.primary_metric_results.all_checks_pass:
-      failed_checks = (
-          evaluation_results.primary_metric_results.failing_checks.aggregate(
-              lambda x: ", ".join(list(set(sum(x, []))))
-          )
+      failed_checks = ", ".join(
+          list(set(evaluation_results.primary_metric_results.failing_checks))
       )
       logger.info(
           "Design %s (trial %s) does not meet the validation checks for the"
@@ -467,7 +466,9 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
   def explore(
       self,
       max_trials: int,
-      n_jobs: int = -1,
+      aa_simulations_per_trial: int | None = None,
+      ab_simulations_per_trial: int | None = None,
+      n_jobs: int = 1,
       seed: int = 0,
       warm_start: bool = True,
       with_progress_bar: bool = False,
@@ -476,6 +477,12 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     Args:
       max_trials: The maximum number of trials to explore.
+      aa_simulations_per_trial: The number of A/A simulations to run per trial.
+        If None, the number of A/A simulations will be automatically determined
+        to ensure statistically rigorous evaluations.
+      ab_simulations_per_trial: The number of A/B simulations to run per trial.
+        If None, the number of A/B simulations will be automatically determined
+        to ensure statistically rigorous evaluations.
       n_jobs: The number of parallel jobs to use for the optimization. Defaults
         to -1, which means all available cores will be used.
       seed: The seed to use for the optimization.
@@ -490,7 +497,8 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     objective = lambda trial: self._exploration_objective(
         trial,
-        simulations_per_trial=self.simulations_per_trial,
+        aa_simulations_per_trial=aa_simulations_per_trial,
+        ab_simulations_per_trial=ab_simulations_per_trial,
     )
 
     if warm_start and self.study is None and self.explored_designs:
@@ -577,7 +585,10 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       self.pareto_front_design_ids = []
 
   def get_designs(
-      self, top_n: int | None = None, pareto_front_only: bool = False
+      self,
+      top_n: int | None = None,
+      pareto_front_only: bool = False,
+      sort_failing_designs_last: bool = False,
   ) -> list[ExperimentDesign]:
     """Returns the explored experiment designs.
 
@@ -587,6 +598,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       pareto_front_only: Whether to only return the pareto front designs. These
         are the designs that have the smallest MDE for the primary metric, and
         the highest representativeness score.
+      sort_failing_designs_last: Whether to sort the failing designs last.
 
     Returns:
       The explored experiment designs.
@@ -610,7 +622,25 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       absolute_standard_error = (
           design.evaluation_results.primary_metric_results.standard_error_absolute_effect
       )
-      return relative_standard_error or absolute_standard_error
+
+      standard_error = relative_standard_error or absolute_standard_error
+      if sort_failing_designs_last:
+        if not design.evaluation_results.get_summary_dict()["all_checks_pass"]:
+          # If any checks fail, worst case
+          failing_index = 2
+        elif not design.evaluation_results.sufficient_simulations:
+          # If they don't fail but don't have enough simulations, that's better
+          failing_index = 1
+        else:
+          # If they pass and have enough simulations, that's best
+          failing_index = 0
+
+        return (
+            failing_index,
+            standard_error,
+        )
+      else:
+        return standard_error
 
     all_designs.sort(
         key=_get_sort_key,
@@ -626,6 +656,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       self,
       top_n: int | None = None,
       pareto_front_only: bool = False,
+      sort_failing_designs_last: bool = False,
       target_power: float = 0.8,
       target_primary_metric_mde: float | None = None,
       use_relative_effects_where_possible: bool = True,
@@ -648,6 +679,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       pareto_front_only: Whether to only include the pareto front of the
         experiment designs. The pareto front is the set of designs that have the
         best performance on both representativeness and performance metrics.
+      sort_failing_designs_last: Whether to sort the failing designs last.
       target_power: The target power to use for the MDE calculations. The MDE
         will be calculated for every metric specified in the design spec.
       target_primary_metric_mde: The target MDE for the primary metric. If this
@@ -679,7 +711,11 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         self.explore_spec.effect_scope == EffectScope.ALL_GEOS
     )
 
-    designs = self.get_designs(top_n, pareto_front_only)
+    designs = self.get_designs(
+        top_n,
+        pareto_front_only=pareto_front_only,
+        sort_failing_designs_last=sort_failing_designs_last,
+    )
     return geoflex.experiment_design.compare_designs(
         designs=designs,
         target_power=target_power,
@@ -702,3 +738,85 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       The experiment design with the given ID, or None if not found.
     """
     return self.explored_designs.get(design_id)
+
+  def extend_top_n_designs(
+      self,
+      top_n: int,
+      n_aa_simulations: int | None = None,
+      n_ab_simulations: int | None = None,
+      with_progress_bar: bool = False,
+  ) -> None:
+    """Extends the top n designs with the given number of A/A and A/B simulations.
+
+    This can be useful if you first run a small number of simulations to get
+    the designs, and then you want to run more simulations on the designs that
+    you like.
+
+    Selects the top n designs ranked by the MDE of the primary metric,
+    prioritizing those that have not failed any checks.
+
+    Args:
+      top_n: The number of top designs to extend.
+      n_aa_simulations: The number of extra A/A simulations to run. If None, the
+        number of A/A simulations will be automatically determined to ensure
+        statistically rigorous evaluations.
+      n_ab_simulations: The number of extra A/B simulations to run. If None, the
+        number of A/B simulations will be automatically determined to ensure
+        statistically rigorous evaluations.
+      with_progress_bar: Whether to show a progress bar while extending the
+        designs. Defaults to False. It's recommended to set this to True only if
+        you are not also printing info logs to the console.
+    """
+    designs = self.get_designs(top_n=top_n, sort_failing_designs_last=True)
+
+    for design in designs:
+      self._experiment_design_evaluator.evaluate_design(
+          design,
+          n_aa_simulations=n_aa_simulations,
+          n_ab_simulations=n_ab_simulations,
+          with_progress_bar=with_progress_bar,
+          overwrite_mode="extend",
+          exp_start_date=self.exp_start_date,
+      )
+
+  def extend_design_by_id(
+      self,
+      design_id: str | list[str],
+      n_aa_simulations: int | None = None,
+      n_ab_simulations: int | None = None,
+      with_progress_bar: bool = False,
+  ) -> None:
+    """Extends the design with the given ID with the given number of A/A and A/B simulations.
+
+    Args:
+      design_id: The ID of the design(s) to extend. Either a single design ID or
+        a list of design IDs.
+      n_aa_simulations: The number of extra A/A simulations to run. If None, the
+        number of A/A simulations will be automatically determined to ensure
+        statistically rigorous evaluations.
+      n_ab_simulations: The number of extra A/B simulations to run. If None, the
+        number of A/B simulations will be automatically determined to ensure
+        statistically rigorous evaluations.
+      with_progress_bar: Whether to show a progress bar while extending the
+        design. Defaults to False. It's recommended to set this to True only if
+        you are not also printing info logs to the console.
+    """
+    if isinstance(design_id, str):
+      design_ids = [design_id]
+    else:
+      design_ids = design_id
+
+    for design_id in design_ids:
+      design = self.get_design_by_id(design_id)
+      if design is None:
+        logger.warning("Design with ID %s not found, skipping.", design_id)
+        continue
+
+      self._experiment_design_evaluator.evaluate_design(
+          design,
+          n_aa_simulations=n_aa_simulations,
+          n_ab_simulations=n_ab_simulations,
+          with_progress_bar=with_progress_bar,
+          overwrite_mode="extend",
+          exp_start_date=self.exp_start_date,
+      )

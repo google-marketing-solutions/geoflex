@@ -446,6 +446,9 @@ class SingleEvaluationResult(pydantic.BaseModel):
     standard_error_relative_effect: The standard error of the relative effect.
     coverage_absolute_effect: The coverage of the absolute effect.
     coverage_relative_effect: The coverage of the relative effect.
+    empirical_power: The percentage of the time the result is stat-sig when
+      there is a true effect of the size of the MDE. Should be 0.8 or greater.
+      None if there were no A/B simulations.
     all_checks_pass: Whether all checks pass.
     failing_checks: The list of failing checks. If all checks pass, this will be
       an empty list.
@@ -455,6 +458,7 @@ class SingleEvaluationResult(pydantic.BaseModel):
   standard_error_relative_effect: float | None
   coverage_absolute_effect: float
   coverage_relative_effect: float | None
+  empirical_power: float | None
   all_checks_pass: bool
   failing_checks: list[str]
 
@@ -558,6 +562,14 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
         standard_error_relative_effect = None
         coverage_relative_effect = None
 
+      if results_per_cell[0].empirical_power is not None:
+        empirical_power = min(
+            [result.empirical_power for result in results_per_cell]
+        )
+      else:
+        # Can be None if there were no A/B simulations
+        empirical_power = None
+
       all_checks_pass = all(
           [result.all_checks_pass for result in results_per_cell]
       )
@@ -570,6 +582,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
           standard_error_relative_effect=standard_error_relative_effect,
           coverage_absolute_effect=coverage_absolute_effect,
           coverage_relative_effect=coverage_relative_effect,
+          empirical_power=empirical_power,
           all_checks_pass=all_checks_pass,
           failing_checks=failing_checks,
       )
@@ -691,7 +704,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
       relative_mde = {}
 
     output = {
-        "failing_checks": self.other_errors,
+        "failing_checks": self.other_errors.copy(),
         "warnings": self.warnings,
         "all_checks_pass": True,
         "representativeness_score": self.representativeness_score,

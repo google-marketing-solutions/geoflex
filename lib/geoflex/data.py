@@ -322,6 +322,36 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         date_column=date_column,
     )
 
+  def get_pivoted_treatment_data(
+      self, design: ExperimentDesign, experiment_start_date: dt.date
+  ) -> list[pd.DataFrame]:
+    """Returns the pivoted data for the treatment geos and experiment dates.
+
+    Args:
+      design: The experiment design.
+      experiment_start_date: The start date of the experiment.
+
+    Returns:
+      A list of pivoted data frames, one for each treatment cell.
+    """
+    pivoted_data = self.pivoted_data.copy()
+
+    experiment_end_date = experiment_start_date + dt.timedelta(
+        weeks=design.runtime_weeks
+    )
+    treatment_dates_mask = (
+        pivoted_data.index.values >= experiment_start_date
+    ) & (pivoted_data.index.values < experiment_end_date)
+
+    treatment_data = []
+    for treatment_cell in design.geo_assignment.treatment:
+      treatment_data.append(
+          pivoted_data.loc[
+              treatment_dates_mask, (slice(None), list(treatment_cell))
+          ]
+      )
+    return treatment_data
+
   def simulate_experiment(
       self,
       experiment_start_date: dt.date,

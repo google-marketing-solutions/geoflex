@@ -3,6 +3,7 @@
 import functools
 import logging
 from typing import Any
+import uuid
 import geoflex.bootstrap
 import geoflex.data
 import geoflex.experiment_design
@@ -214,18 +215,22 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
 
   Attributes:
     design: The experiment design that was simulated.
-    simulation_results: The simulation results for the experiment design.
+    aa_simulation_results: The A/A simulation results for the experiment design.
+    ab_simulation_results: The A/B simulation results for the experiment design.
     representativeness_scores: The representativeness scores for the experiment
       design, of each treatment cell.
-    design_is_valid: Whether the design is valid or not. The design is not valid
+    is_valid_design: Whether the design is valid or not. The design is not valid
       if the methodology is not eligible for the design.
+    sufficient_simulations: Whether the design has sufficient simulations to
+      calculate the minimum detectable effect.
     warnings: A list of warnings that were generated during the simulation.
   """
 
   design: ExperimentDesign
-  simulation_results: ParquetDataFrame
+  aa_simulation_results: ParquetDataFrame
+  ab_simulation_results: ParquetDataFrame
   representativeness_scores: list[float] | None
-  design_is_valid: bool
+  is_valid_design: bool
   sufficient_simulations: bool
   warnings: list[str] = []
 
@@ -239,11 +244,15 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
       self,
   ) -> "RawExperimentSimulationResults":
     """Sets the design id in simulation results."""
-    if not self.design_is_valid:
+    if not self.is_valid_design:
       # Simulation results are empty if the design is not valid.
       return self
 
-    self.simulation_results["design_id"] = self.design.design_id
+    self.aa_simulation_results["design_id"] = self.design.design_id
+
+    if self.ab_simulation_results.empty:
+      return self
+    self.ab_simulation_results["design_id"] = self.design.design_id
     return self
 
   @pydantic.model_validator(mode="after")
@@ -251,25 +260,37 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
       self,
   ) -> "RawExperimentSimulationResults":
     """Checks that the results for all cells exist."""
-    if not self.design_is_valid:
+    if not self.is_valid_design:
       # Simulation results are empty if the design is not valid.
       return self
 
     n_treatment_cells = self.design.n_cells - 1
-    if n_treatment_cells != self.simulation_results["cell"].nunique():
-      error_message = (
-          f"The simulation results for design {self.design.design_id} do not"
-          f" contain results for all cells. Expected {self.design.n_cells},"
-          f" got {len(self.simulation_results.index)}."
-      )
-      logger.error(error_message)
-      raise ValueError(error_message)
-
     if n_treatment_cells != len(self.representativeness_scores):
       error_message = (
           f"The simulation results for design {self.design.design_id} do not"
           " contain representativeness scores for all cells. Expected"
           f" {self.design.n_cells}, got {len(self.representativeness_scores)}."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    if n_treatment_cells != self.aa_simulation_results["cell"].nunique():
+      error_message = (
+          f"The A/A simulation results for design {self.design.design_id} do"
+          f" not contain results for all cells. Expected {self.design.n_cells},"
+          f" got {len(self.aa_simulation_results.index)}."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    if self.ab_simulation_results.empty:
+      return self
+
+    if n_treatment_cells != self.ab_simulation_results["cell"].nunique():
+      error_message = (
+          f"The A/B simulation results for design {self.design.design_id} do"
+          f" not contain results for all cells. Expected {self.design.n_cells},"
+          f" got {len(self.ab_simulation_results.index)}."
       )
       logger.error(error_message)
       raise ValueError(error_message)
@@ -404,10 +425,6 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
 
   Attributes:
     historical_data: The historical data to use for the experiment design.
-    simulations_per_trial: The number of simulations to run per trial. If None,
-      the number of simulations will be automatically selected to ensure that
-      there are enough simulations to meet the minimum sample size required for
-      the validation checks.
     bootstrapper_seasons_per_block: The number of seasons per block to use for
       the bootstrapper.
     bootstrapper_model_type: The model type to use for the bootstrapper. Either
@@ -437,7 +454,6 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   """
 
   historical_data: GeoPerformanceDataset
-  simulations_per_trial: int | None = None
 
   bootstrapper_seasons_per_block: int = 4
   bootstrapper_model_type: str = "multiplicative"
@@ -453,6 +469,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   experiment_design_evaluation_results: dict[
       str, ExperimentDesignEvaluationResults
   ] = {}
+
+  model_config = pydantic.ConfigDict(extra="forbid")
 
   @functools.cached_property
   def bootstrapper(self) -> MultivariateTimeseriesBootstrap:
@@ -502,6 +520,23 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     return estimate_validation_check_minimum_sample_size(
         p_null=1.0 - alpha,
         p_delta=-0.1,
+        alpha=self.validation_check_threhold,
+        power=0.8,
+    )
+
+  def get_ab_power_minimum_sample_size(self, power: float) -> int:
+    """The minimum sample size for the A/B power check.
+
+    Args:
+      power: The power level of the test.
+
+    Returns:
+      The minimum sample size required to test the power of the A/B test,
+      given the alpha and power levels.
+    """
+    return estimate_validation_check_minimum_sample_size(
+        p_null=power,
+        p_delta=-0.2,
         alpha=self.validation_check_threhold,
         power=0.8,
     )
@@ -620,22 +655,88 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       sample: pd.DataFrame,
       design: ExperimentDesign,
       exp_start_date: pd.Timestamp,
+      treatment_effect_sizes: list[float] | None = None,
   ):
     """Simulates an experiment and analyzes it."""
-    runtime_dataset = GeoPerformanceDataset.from_pivoted_data(
+    runtime_dataset_baseline = GeoPerformanceDataset.from_pivoted_data(
         sample,
         geo_id_column=self.historical_data.geo_id_column,
         date_column=self.historical_data.date_column,
-    ).simulate_experiment(
-        experiment_start_date=exp_start_date,
-        design=design,
     )
 
-    return geoflex.methodology.analyze_experiment(
+    runtime_dataset = runtime_dataset_baseline.simulate_experiment(
+        experiment_start_date=exp_start_date,
+        design=design,
+        treatment_effect_sizes=treatment_effect_sizes,
+    )
+
+    treatment_data_list_baseline = (
+        runtime_dataset_baseline.get_pivoted_treatment_data(
+            design, exp_start_date
+        )
+    )
+    treatment_data_list = runtime_dataset.get_pivoted_treatment_data(
+        design, exp_start_date
+    )
+
+    results = geoflex.methodology.analyze_experiment(
         design,
         runtime_dataset,
         exp_start_date.strftime("%Y-%m-%d"),
     )
+
+    # Get the true effects for each metric and cell.
+    results["true_point_estimate"] = 0.0
+    results["true_point_estimate_relative"] = 0.0
+    results.loc[
+        results["point_estimate_relative"].isna(),
+        "true_point_estimate_relative",
+    ] = pd.NA
+
+    for cell, (treatment_data, treatment_data_baseline) in enumerate(
+        zip(treatment_data_list, treatment_data_list_baseline), 1
+    ):
+      for metric in [design.primary_metric] + design.secondary_metrics:
+        cell_mask = results["cell"] == cell
+        metric_mask = results["metric"] == metric.name
+
+        response_baseline = treatment_data_baseline[metric.column].sum().sum()
+        response_delta = (
+            treatment_data[metric.column].sum().sum() - response_baseline
+        )
+        if not metric.cost_column:
+          results.loc[cell_mask & metric_mask, "true_point_estimate"] = (
+              response_delta
+          )
+          results.loc[
+              cell_mask & metric_mask, "true_point_estimate_relative"
+          ] = (response_delta / response_baseline)
+          continue
+
+        # If the metric is cost per metric, then it will have been inverted
+        # already, so there should not be any cost per metric metrics in the
+        # design at this point.
+        if metric.cost_per_metric:
+          error_message = (
+              "Cost per metric metrics should have been inverted already, but"
+              f" got metric: {metric}."
+          )
+          logger.error(error_message)
+          raise RuntimeError(error_message)
+
+        # Handle metric per cost metrics.
+        cost_delta = (
+            treatment_data[metric.cost_column].sum().sum()
+            - treatment_data_baseline[metric.cost_column].sum().sum()
+        )
+        results.loc[cell_mask & metric_mask, "true_point_estimate_relative"] = (
+            pd.NA
+        )
+        results.loc[cell_mask & metric_mask, "true_point_estimate"] = (
+            response_delta / cost_delta
+        )
+
+    return results
 
   def _evaluate_representativeness_if_all_geos_scope(
       self, design: ExperimentDesign
@@ -658,117 +759,27 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
 
     return representativeness_scores
 
-  def simulate_experiment_results(
+  def _run_simulations(
       self,
+      n_simulations: int,
       design: ExperimentDesign,
-      n_simulations: int | None = None,
-      exp_start_date: pd.Timestamp | None = None,
+      exp_start_date: pd.Timestamp,
       with_progress_bar: bool = False,
-  ) -> RawExperimentSimulationResults | None:
-    """Simulates experiments for the given design.
-
-    This creates n_simulations bootstrap samples of the historical data,
-    and then for each sample it assigns the geos, simulates an experiment,
-    analyzed the experiment, and records the results.
-
-    If a metric is a cost-per-metric metric, then the results are inverted
-    because we will run an A/A test, and the metric impact is 0, which
-    makes cost-per-metric metrics undefined. We will re-invert the results
-    at the end to get to the MDE for the original metric.
-
-    If the design does not have a geo assignment, then it will create one.
-
-    Args:
-      design: The experiment design to evaluate.
-      n_simulations: The number of simulations to run. If None, the number of
-        simulations will be automatically selected to ensure that there are
-        enough simulations to meet the minimum sample size required for the
-        validation checks.
-      exp_start_date: The start date to use to simulate the experiment. If None,
-        the start date will be calculated from the maximum date in the
-        historical data and the runtime weeks in the experiment design.
-      with_progress_bar: Whether to show a progress bar. Defaults to False. It's
-        recommended to set this to True only if you are not also printing info
-        logs to the console.
-
-    Returns:
-      The results of the simulations, or None if the design is not eligible for
-      the methodology.
-
-    Raises:
-      ValueError: If the experiment start date is after the latest feasible date
-      in the historical data. The latest feasible date is calculated as the
-      maximum date in the historical data minus the runtime weeks in the
-      experiment design.
-    """
-    warnings = []
-
-    min_simulations = self.get_aa_coverage_minimum_sample_size(
-        alpha=design.alpha
-    )
-    if n_simulations is None:
-      logger.debug(
-          "Number of simulations set automatically to %s.", min_simulations
-      )
-      n_simulations = min_simulations
-    else:
-      logger.debug("Number of simulations set by user to %s.", n_simulations)
-
-    sufficient_simulations = n_simulations >= min_simulations
-    if not sufficient_simulations:
-      warnings.append(
-          f"The number of simulations ({n_simulations}) is less than the"
-          " minimum required for conclusive validation checks"
-          f" ({min_simulations})."
-      )
-
-    exp_start_date = self._set_exp_start_date(design, exp_start_date)
-
-    is_pretest = (
-        self.historical_data.parsed_data[self.historical_data.date_column]
-        < exp_start_date
-    )
-    simulated_pretest_data = GeoPerformanceDataset(
-        data=self.historical_data.parsed_data.loc[is_pretest],
-        geo_id_column=self.historical_data.geo_id_column,
-        date_column=self.historical_data.date_column,
-    )
-
-    if not geoflex.methodology.design_is_eligible_for_data(
-        design, simulated_pretest_data
-    ):
-      results = RawExperimentSimulationResults(
-          design=design,
-          simulation_results=pd.DataFrame(),
-          representativeness_scores=None,
-          design_is_valid=False,
-          warnings=warnings,
-          sufficient_simulations=sufficient_simulations,
-      )
-      self.raw_simulation_results[design.design_id] = results
-      return results
-
-    # Assign geos if they are not already assigned.
-    if design.geo_assignment is None:
-      geoflex.methodology.assign_geos(design, self.historical_data)
-
-    representativeness_scores = (
-        self._evaluate_representativeness_if_all_geos_scope(design)
-    )
-
-    design_with_inverted_metrics = self._invert_cost_per_metric_metrics(design)
-
+      treatment_effect_sizes: list[float] | None = None,
+      label: str = "A/A simulations",
+  ) -> pd.DataFrame | None:
     results_list = []
     random_seed = design.random_seed
 
     iterator = self.bootstrapper.sample_dataframes(n_simulations)
     if with_progress_bar:
       iterator = tqdm.tqdm(
-          iterator, total=n_simulations, desc=f"Evaluating {design.design_id}"
+          iterator,
+          total=n_simulations,
+          desc=f"Evaluating {design.design_id} ({label})",
       )
 
     for sample in iterator:
-
       if geoflex.methodology.is_pseudo_experiment(design):
         # For pseudo experiments, we don't want to re-assign the geos for every
         # sample, so we will use the original geo assignment. This is because
@@ -776,13 +787,13 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         # or at least the validity of the experiment does not depend on the
         # randomisation of the geo assignment. Since the geo assignment can be
         # slow, we will skip reassigning the geos for each sample.
-        sample_design = design_with_inverted_metrics.model_copy()
+        sample_design = design.model_copy()
       else:
         # If it's not a pseudo experiment, we will reassign the geos for each
         # sample. This is because for a non-pseudo experiment the randomisation
         # of the geos is a key aspect of ensuring unbiased results.
         random_seed = np.random.default_rng(random_seed).integers(0, 2**31 - 1)
-        sample_design = design_with_inverted_metrics.make_variation(
+        sample_design = design.make_variation(
             random_seed=random_seed,
             geo_assignment=None,
         )
@@ -799,19 +810,10 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
             " This might be an error with the bootstrap sampler or the"
             " methodology.",
         )
-        results = RawExperimentSimulationResults(
-            design=design,
-            simulation_results=pd.DataFrame(),
-            representativeness_scores=None,
-            design_is_valid=False,
-            warnings=warnings,
-            sufficient_simulations=sufficient_simulations,
-        )
-        self.raw_simulation_results[design.design_id] = results
-        return results
+        return None
 
       sample_results = self._analyze_simulated_experiment(
-          sample, sample_design, exp_start_date
+          sample, sample_design, exp_start_date, treatment_effect_sizes
       )
       if sample_results is None:
         logger.warning(
@@ -819,39 +821,148 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
             " bootstrap samples is not, because the analysis failed. This"
             " might be an error with the bootstrap sampler or the methodology."
         )
-        results = RawExperimentSimulationResults(
-            design=design,
-            simulation_results=pd.DataFrame(),
-            representativeness_scores=None,
-            design_is_valid=False,
-            warnings=warnings,
-            sufficient_simulations=sufficient_simulations,
-        )
-        self.raw_simulation_results[design.design_id] = results
-        return results
+        return None
 
+      sample_results["sample_id"] = uuid.uuid4()
       results_list.append(sample_results)
+    return pd.concat(results_list)
 
-    results = RawExperimentSimulationResults(
-        design=design,
-        simulation_results=pd.concat(results_list),
-        representativeness_scores=representativeness_scores,
-        design_is_valid=True,
-        warnings=warnings,
-        sufficient_simulations=sufficient_simulations
+  def _prepare_simulation_counts(
+      self,
+      design: ExperimentDesign,
+      n_aa_simulations: int | None,
+      n_ab_simulations: int | None,
+      n_existing_aa_simulations: int,
+      n_existing_ab_simulations: int,
+  ) -> tuple[int, int, int, int]:
+    min_aa_simulations = self.get_aa_coverage_minimum_sample_size(design.alpha)
+    min_ab_simulations = self.get_ab_power_minimum_sample_size(power=0.8)
+
+    if n_aa_simulations is None:
+      total_aa_simulations = max(min_aa_simulations, n_existing_aa_simulations)
+      n_aa_simulations = total_aa_simulations - n_existing_aa_simulations
+      logger.debug(
+          "Number of A/A simulations set automatically to %s. %s simulations"
+          " already exist, so only running %s simulations.",
+          total_aa_simulations,
+          n_existing_aa_simulations,
+          n_aa_simulations,
+      )
+    else:
+      total_aa_simulations = n_aa_simulations + n_existing_aa_simulations
+      logger.debug(
+          "Number of A/A simulations set by user to %s.", n_aa_simulations
+      )
+
+    if n_ab_simulations is None:
+      total_ab_simulations = max(min_ab_simulations, n_existing_ab_simulations)
+      n_ab_simulations = total_ab_simulations - n_existing_ab_simulations
+      logger.debug(
+          "Number of A/B simulations set automatically to %s. %s simulations"
+          " already exist, so only running %s simulations.",
+          total_ab_simulations,
+          n_existing_ab_simulations,
+          n_ab_simulations,
+      )
+    else:
+      total_ab_simulations = n_ab_simulations + n_existing_ab_simulations
+      logger.debug(
+          "Number of A/B simulations set by user to %s.", n_ab_simulations
+      )
+
+    return (
+        n_aa_simulations,
+        n_ab_simulations,
+        min_aa_simulations,
+        min_ab_simulations,
+        total_aa_simulations,
+        total_ab_simulations,
     )
-    self.raw_simulation_results[design.design_id] = results
-    return results
+
+  def _assign_geos_if_needed(
+      self, design: ExperimentDesign
+  ) -> list[float] | None:
+    """Assigns geos based on historical data if they are not already assigned.
+
+    Args:
+      design: The experiment design to use for assignment.
+
+    Returns:
+      The representativeness scores for the assignment, or None if the design is
+      not eligible for the historical data.
+    """
+    if not geoflex.methodology.design_is_eligible_for_data(
+        design, self.historical_data
+    ):
+      return None
+
+    # Assign geos if they are not already assigned.
+    if design.geo_assignment is None:
+      geoflex.methodology.assign_geos(design, self.historical_data)
+
+    representativeness_scores = (
+        self._evaluate_representativeness_if_all_geos_scope(design)
+    )
+
+    return representativeness_scores
+
+  def _prepare_pretest_data(
+      self, exp_start_date: pd.Timestamp, design: ExperimentDesign
+  ) -> GeoPerformanceDataset | None:
+    """Prepares the pretest data for the simulation.
+
+    This takes the historical data from before the synthetic experiment start
+    date, and creates a new GeoPerformanceDataset object from it. If the design
+    is not eligible for the pretest data, then it will return None.
+
+    Args:
+      exp_start_date: The start date of the synthetic experiment.
+      design: The experiment design to evaluate.
+
+    Returns:
+      The pretest data, or None if the design is not eligible for the pretest
+      data.
+    """
+    is_pretest = (
+        self.historical_data.parsed_data[self.historical_data.date_column]
+        < exp_start_date
+    )
+    simulated_pretest_data = GeoPerformanceDataset(
+        data=self.historical_data.parsed_data.loc[is_pretest],
+        geo_id_column=self.historical_data.geo_id_column,
+        date_column=self.historical_data.date_column,
+    )
+
+    if not geoflex.methodology.design_is_eligible_for_data(
+        design, simulated_pretest_data
+    ):
+      return None
+
+    return simulated_pretest_data
 
   def _estimate_standard_errors(
       self, data: pd.DataFrame
   ) -> tuple[float, float | None]:
-    """Estimates the standard errors."""
-    absolute_effect_standard_error = data["point_estimate"].std()
+    """Estimates the standard errors.
+
+    Args:
+      data: The data to use for estimation. This is the concatenated results of
+        both the A/A and A/B simulations for a single metric and cell.
+
+    Returns:
+      A tuple containing the standard error of the absolute effect and the
+      standard error of the relative effect. The relative effect standard error
+      will be None if there is no relative effect.
+    """
+    absolute_effect_standard_error = (
+        data["point_estimate"] - data["true_point_estimate"]
+    ).std()
 
     has_relative = np.all(~data["point_estimate_relative"].isna())
     if has_relative:
-      relative_effect_standard_error = data["point_estimate_relative"].std()
+      relative_effect_standard_error = (
+          data["point_estimate_relative"] - data["true_point_estimate_relative"]
+      ).std()
     else:
       relative_effect_standard_error = None
 
@@ -862,7 +973,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   ) -> tuple[bool, bool | None]:
     """Checks if the absolute effect is unbiased."""
     unbiased_absolute_effect_pval = stats.ttest_1samp(
-        data["point_estimate"], 0
+        data["point_estimate"] - data["true_point_estimate"], 0
     ).pvalue
     absolute_effect_is_unbiased = (
         unbiased_absolute_effect_pval >= self.validation_check_threhold
@@ -871,7 +982,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     has_relative = np.all(~data["point_estimate_relative"].isna())
     if has_relative:
       unbiased_relative_effect_pval = stats.ttest_1samp(
-          data["point_estimate_relative"].astype(float), 0
+          data["point_estimate_relative"].astype(float)
+          - data["true_point_estimate_relative"].astype(float),
+          0,
       ).pvalue
       relative_effect_is_unbiased = (
           unbiased_relative_effect_pval >= self.validation_check_threhold
@@ -889,7 +1002,9 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
 
     # Get coverage
     covered_absolute_effect = (
-        data["lower_bound"] * data["upper_bound"] < 0.0
+        (data["lower_bound"] - data["true_point_estimate"])
+        * (data["upper_bound"] - data["true_point_estimate"])
+        < 0.0
     ).sum()
     coverage_absolute_effect = covered_absolute_effect / n_rows
 
@@ -908,7 +1023,12 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     has_relative = np.all(~data["point_estimate_relative"].isna())
     if has_relative:
       covered_relative_effect = (
-          data["lower_bound_relative"] * data["upper_bound_relative"] < 0.0
+          (data["lower_bound_relative"] - data["true_point_estimate_relative"])
+          * (
+              data["upper_bound_relative"]
+              - data["true_point_estimate_relative"]
+          )
+          < 0.0
       ).sum()
       coverage_relative_effect = covered_relative_effect / n_rows
       coverage_relative_effect_pval = stats.binomtest(
@@ -931,6 +1051,41 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         relative_effect_has_coverage,
     )
 
+  def _estimate_empirical_power(
+      self, ab_data: pd.DataFrame, alpha: float
+  ) -> tuple[float | None, bool | None]:
+    """Estimates the coverage and whether it meets the target coverage.
+
+    Args:
+      ab_data: The A/B simulation data.
+      alpha: The significance level.
+
+    Returns:
+      A tuple containing the empirical power and whether it meets the target
+      power. If the ab_data is empty then it returns None for both the empirical
+      power and whether it meets the target power.
+    """
+    if ab_data.empty:
+      return None, None
+
+    target_power = 0.8
+    n_rows = len(ab_data)
+
+    # Get power
+    n_significant = (ab_data["p_value"] < alpha).sum()
+    emprical_power = n_significant / n_rows
+
+    # Check power meets target
+    power_absolute_effect_pval = stats.binomtest(
+        n_significant,
+        n=n_rows,
+        p=target_power,
+        alternative="less",
+    ).pvalue
+    has_power = power_absolute_effect_pval >= self.validation_check_threhold
+
+    return emprical_power, has_power
+
   def _summarise_checks(
       self,
       metric_name: str,
@@ -938,6 +1093,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       absolute_effect_has_coverage: bool,
       relative_effect_is_unbiased: bool | None,
       relative_effect_has_coverage: bool | None,
+      has_power: bool | None,
   ) -> tuple[bool, list[str]]:
     """Summarises the checks."""
     metric_name_uninverted = metric_name.replace("__INVERTED__", "")
@@ -973,6 +1129,13 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           f" coverage ({metric_name_uninverted})"
       )
 
+    if has_power is not None and not has_power:
+      all_checks_pass = False
+      failing_checks.append(
+          "Empirical power is less than 80% for the estimated MDE for the"
+          f" primary metric ({metric_name_uninverted})"
+      )
+
     return all_checks_pass, failing_checks
 
   def _evaluate_raw_simulation_results(
@@ -1002,17 +1165,18 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           cell_volume_constraint=design.cell_volume_constraint,
           historical_data=self.historical_data,
       )
-      other_errors.append(cell_volume_constraint_error)
+      if not is_valid_cell_volume_constraint:
+        other_errors.append(cell_volume_constraint_error)
     else:
       actual_cell_volumes = None
       is_valid_cell_volume_constraint = True
 
     is_valid_design = (
         is_valid_cell_volume_constraint
-        and raw_simulation_results.design_is_valid
+        and raw_simulation_results.is_valid_design
     )
 
-    if not raw_simulation_results.design_is_valid:
+    if not raw_simulation_results.is_valid_design:
       # If the design is not eligible for the methodology, then the results
       # are None, and we don't want to evaluate it. We just return the design
       # unchanged.
@@ -1031,11 +1195,28 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       self.experiment_design_evaluation_results[design.design_id] = results
       return results
 
-    simulation_results = raw_simulation_results.simulation_results
+    aa_simulation_results = raw_simulation_results.aa_simulation_results
     all_metric_results_per_cell = {}
-    for metric_name, metric_data in simulation_results.groupby("metric"):
+    for metric_name, metric_data in aa_simulation_results.groupby("metric"):
       all_metric_results_per_cell[metric_name] = []
-      for _, data in metric_data.sort_values("cell").groupby("cell"):
+      for cell, aa_data in metric_data.sort_values("cell").groupby("cell"):
+
+        if raw_simulation_results.ab_simulation_results.empty:
+          ab_data = pd.DataFrame(columns=aa_data.columns)
+        else:
+          ab_data = raw_simulation_results.ab_simulation_results.loc[
+              (
+                  raw_simulation_results.ab_simulation_results["metric"]
+                  == metric_name
+              )
+              & (raw_simulation_results.ab_simulation_results["cell"] == cell)
+          ]
+
+        if ab_data.empty:
+          data = aa_data
+        else:
+          data = pd.concat([aa_data, ab_data])
+
         standard_error_absolute_effect, standard_error_relative_effect = (
             self._estimate_standard_errors(data)
         )
@@ -1051,12 +1232,17 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
             relative_effect_has_coverage,
         ) = self._estimate_coverage(data, design.alpha)
 
+        empirical_power, has_power = self._estimate_empirical_power(
+            ab_data, design.alpha
+        )
+
         all_checks_pass, failing_checks = self._summarise_checks(
             metric_name,
-            absolute_effect_is_unbiased,
-            absolute_effect_has_coverage,
-            relative_effect_is_unbiased,
-            relative_effect_has_coverage,
+            absolute_effect_is_unbiased=absolute_effect_is_unbiased,
+            absolute_effect_has_coverage=absolute_effect_has_coverage,
+            relative_effect_is_unbiased=relative_effect_is_unbiased,
+            relative_effect_has_coverage=relative_effect_has_coverage,
+            has_power=has_power,
         )
 
         all_metric_results_per_cell[metric_name].append(
@@ -1065,6 +1251,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
                 standard_error_relative_effect=standard_error_relative_effect,
                 coverage_absolute_effect=coverage_absolute_effect,
                 coverage_relative_effect=coverage_relative_effect,
+                empirical_power=empirical_power,
                 all_checks_pass=all_checks_pass,
                 failing_checks=failing_checks,
             )
@@ -1088,75 +1275,299 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   def evaluate_design(
       self,
       design: ExperimentDesign,
+      n_aa_simulations: int | None = None,
+      n_ab_simulations: int | None = None,
       exp_start_date: pd.Timestamp | None = None,
       add_to_design: bool = True,
-      force_evaluation: bool = False,
+      overwrite_mode: str = "extend",
       with_progress_bar: bool = False,
   ) -> ExperimentDesignEvaluationResults | None:
     """Evaluates the design.
 
     This will perform the following steps:
-    1. Create n_simulations bootstrap samples of the historical data.
-    2. For each sample, assign geos, simulate an experiment, and analyze it.
-    3. Record the results of each simulation (bootstrap sample).
-    4. Evaluate the results of the simulations to estimate the standard errors
+    1. If the design does not have a geo assignment, then it will create one.
+    2. Create n_simulations bootstrap samples of the historical data.
+    3. For each sample, assign geos, simulate an experiment, and analyze it.
+    4. Record the results of each simulation (bootstrap sample).
+    5. Evaluate the results of the simulations to estimate the standard errors
        and check the coverage.
+
+    If a metric is a cost-per-metric metric, then the results are inverted
+    because we will run an A/A test, and the metric impact is 0, which
+    makes cost-per-metric metrics undefined. We will re-invert the results
+    at the end to get to the MDE for the original metric.
 
     It will record the raw simulation results in the `raw_simulation_results`
     dictionary attribute of this evaluator object, if needed for debugging.
 
     Args:
       design: The experiment design to evaluate.
+      n_aa_simulations: The number of AA simulations to run.
+      n_ab_simulations: The number of AB simulations to run.
       exp_start_date: The start date to use to simulate the experiment. If None,
         the start date will be calculated from the maximum date in the
         historical data and the runtime weeks in the experiment design.
       add_to_design: Whether to add the evaluation results to the experiment
         design.
-      force_evaluation: Whether to force evaluation, even if the design already
-        has evaluation results. If true, and add_to_design is true, the
-        evaluation results will be overwritten.
+      overwrite_mode: How to handle the case where the design already has
+        evaluation results. If "extend", the existing simulations will be
+        extended with the new simulations. If "overwrite", the existing
+        simulations will be replaced with the new simulations. If "skip", the
+        existing simulations will be used and no new simulations will be run.
       with_progress_bar: Whether to show a progress bar while evaluating the
         design. Defaults to False. It's recommended to set this to True only if
         you are not also printing info logs to the console.
 
     Returns:
       The experiment design evaluation results.
+
+    Raises:
+      ValueError: If the experiment start date is after the latest feasible date
+      in the historical data. The latest feasible date is calculated as the
+      maximum date in the historical data minus the runtime weeks in the
+      experiment design.
     """
+    existing_aa_simulations = pd.DataFrame()
+    existing_ab_simulations = pd.DataFrame()
+    n_existing_aa_simulations = 0
+    n_existing_ab_simulations = 0
     if design.evaluation_results is not None:
-      if force_evaluation and add_to_design:
+      if overwrite_mode == "overwrite":
         logger.warning(
-            "Forcing evaluation of design %s, even though it already has"
-            " evaluation results. The existing results will be overwritten.",
-            design.design_id,
-        )
-      elif force_evaluation:
-        logger.warning(
-            "Forcing evaluation of design %s, even though it already has"
-            " evaluation results. The new results will not be added to the "
-            "design - the existing results will remain.",
+            "Design %s already has evaluation results, overwriting.",
             design.design_id,
         )
         design.evaluation_results = None
-      else:
+      elif overwrite_mode == "extend":
+        raw_evaluation_results = self.raw_simulation_results.get(
+            design.design_id
+        )
+        if raw_evaluation_results is not None:
+          logger.info(
+              "Design %s already has evaluation results. The existing"
+              " simulations will be extended with the new simulations.",
+              design.design_id,
+          )
+          existing_aa_simulations = (
+              raw_evaluation_results.aa_simulation_results.copy()
+          )
+          existing_ab_simulations = (
+              raw_evaluation_results.ab_simulation_results.copy()
+          )
+          if raw_evaluation_results.aa_simulation_results.empty:
+            n_existing_aa_simulations = 0
+          else:
+            n_existing_aa_simulations = (
+                raw_evaluation_results.aa_simulation_results[
+                    "sample_id"
+                ].nunique()
+            )
+          if raw_evaluation_results.ab_simulation_results.empty:
+            n_existing_ab_simulations = 0
+          else:
+            n_existing_ab_simulations = (
+                raw_evaluation_results.ab_simulation_results[
+                    "sample_id"
+                ].nunique()
+            )
+        else:
+          logger.warning(
+              "Design %s already has evaluation results, but the raw simulation"
+              " results are not available. Therefore, even though"
+              " overwrite_mode is set to 'extend', the existing simulations"
+              " will not be extended and instead they will be overwritten.",
+              design.design_id,
+          )
+          design.evaluation_results = None
+      elif overwrite_mode == "skip":
         logger.info(
             "Design %s already has evaluation results, skipping evaluation and"
             " returning the existing results.",
             design.design_id,
         )
         return design.evaluation_results
+      else:
+        raise ValueError(
+            f"Unknown overwrite mode: {overwrite_mode}. Supported modes are"
+            " 'overwrite', 'extend', and 'skip'."
+        )
 
     logger.info("Evaluating design %s.", design.design_id)
 
-    raw_simulation_results = self.simulate_experiment_results(
+    warnings = []
+    (
+        n_aa_simulations,
+        n_ab_simulations,
+        min_aa_simulations,
+        min_ab_simulations,
+        total_aa_simulations,
+        total_ab_simulations,
+    ) = self._prepare_simulation_counts(
         design,
-        self.simulations_per_trial,
-        exp_start_date,
-        with_progress_bar=with_progress_bar,
+        n_aa_simulations,
+        n_ab_simulations,
+        n_existing_aa_simulations,
+        n_existing_ab_simulations,
     )
+
+    sufficient_simulations_aa = total_aa_simulations >= min_aa_simulations
+    sufficient_simulations_ab = total_ab_simulations >= min_ab_simulations
+    sufficient_simulations = (
+        sufficient_simulations_aa and sufficient_simulations_ab
+    )
+
+    if not sufficient_simulations_aa:
+      warnings.append(
+          f"The number of A/A simulations ({n_aa_simulations}) is less than the"
+          " minimum required for conclusive validation checks"
+          f" ({min_aa_simulations})."
+      )
+    if not sufficient_simulations_ab:
+      warnings.append(
+          f"The number of A/B simulations ({n_ab_simulations}) is less than the"
+          " minimum required for conclusive validation checks"
+          f" ({min_ab_simulations})."
+      )
+
+    exp_start_date = self._set_exp_start_date(design, exp_start_date)
+
+    if (design.evaluation_results is not None) and (
+        design.geo_assignment is not None
+    ):
+      representativeness_scores = (
+          design.evaluation_results.representativeness_scores_per_cell
+      )
+    else:
+      representativeness_scores = self._assign_geos_if_needed(design)
+
+    if representativeness_scores is None:
+      raw_simulation_results = RawExperimentSimulationResults(
+          design=design,
+          aa_simulation_results=existing_aa_simulations,
+          ab_simulation_results=existing_ab_simulations,
+          representativeness_scores=None,
+          is_valid_design=False,
+          warnings=warnings,
+          sufficient_simulations=sufficient_simulations,
+      )
+      self.raw_simulation_results[design.design_id] = raw_simulation_results
+      evaluation_results = self._evaluate_raw_simulation_results(
+          raw_simulation_results
+      )
+      if add_to_design:
+        design.evaluation_results = evaluation_results
+      return evaluation_results
+
+    pretest_data = self._prepare_pretest_data(exp_start_date, design)
+    if pretest_data is None:
+      raw_simulation_results = RawExperimentSimulationResults(
+          design=design,
+          aa_simulation_results=existing_aa_simulations,
+          ab_simulation_results=existing_ab_simulations,
+          representativeness_scores=None,
+          is_valid_design=False,
+          warnings=warnings,
+          sufficient_simulations=sufficient_simulations,
+      )
+      self.raw_simulation_results[design.design_id] = raw_simulation_results
+      evaluation_results = self._evaluate_raw_simulation_results(
+          raw_simulation_results
+      )
+      if add_to_design:
+        design.evaluation_results = evaluation_results
+      return evaluation_results
+
+    design_with_inverted_metrics = self._invert_cost_per_metric_metrics(design)
+
+    if n_aa_simulations:
+      aa_simulation_results = self._run_simulations(
+          design=design_with_inverted_metrics,
+          n_simulations=n_aa_simulations,
+          exp_start_date=exp_start_date,
+          with_progress_bar=with_progress_bar,
+          label="A/A simulations",
+      )
+      if aa_simulation_results is None:
+        raw_simulation_results = RawExperimentSimulationResults(
+            design=design,
+            aa_simulation_results=existing_aa_simulations,
+            ab_simulation_results=existing_ab_simulations,
+            representativeness_scores=representativeness_scores,
+            is_valid_design=False,
+            warnings=warnings,
+            sufficient_simulations=sufficient_simulations,
+        )
+        self.raw_simulation_results[design.design_id] = raw_simulation_results
+        evaluation_results = self._evaluate_raw_simulation_results(
+            raw_simulation_results
+        )
+        if add_to_design:
+          design.evaluation_results = evaluation_results
+        return evaluation_results
+
+      if not aa_simulation_results.empty:
+        aa_simulation_results = pd.concat(
+            [existing_aa_simulations, aa_simulation_results]
+        )
+    else:
+      aa_simulation_results = existing_aa_simulations
+
+    raw_simulation_results = RawExperimentSimulationResults(
+        design=design,
+        aa_simulation_results=aa_simulation_results,
+        ab_simulation_results=existing_ab_simulations,
+        representativeness_scores=representativeness_scores,
+        is_valid_design=True,
+        warnings=warnings,
+        sufficient_simulations=sufficient_simulations,
+    )
+
     evaluation_results = self._evaluate_raw_simulation_results(
         raw_simulation_results
     )
 
+    if n_ab_simulations:
+      # Use absolute MDE for the simulated treatment effect sizes.
+      treatment_effect_sizes = evaluation_results.get_mde(
+          target_power=0.8,
+          relative=False,
+          aggregate_across_cells=False,
+      )[design.primary_metric.name]
+      if design.primary_metric.cost_per_metric:
+        # For this, the MDE needs to be inverted, because the actual metric is
+        # inverted for the purposes of a power calculation.
+        treatment_effect_sizes = [1 / x for x in treatment_effect_sizes]
+
+      # For the A/B test simulations we only care about the primary metric.
+      # So we remove the secondary metrics from the design to speed up the
+      # simulations.
+      primary_metric_only_design = design_with_inverted_metrics.make_variation(
+          secondary_metrics=[]
+      )
+      ab_simulation_results = self._run_simulations(
+          design=primary_metric_only_design,
+          n_simulations=n_ab_simulations,
+          exp_start_date=exp_start_date,
+          with_progress_bar=with_progress_bar,
+          treatment_effect_sizes=treatment_effect_sizes,
+          label="A/B simulations",
+      )
+      if ab_simulation_results is None:
+        ab_simulation_results = existing_ab_simulations
+      elif not ab_simulation_results.empty:
+        ab_simulation_results = pd.concat(
+            [existing_ab_simulations, ab_simulation_results]
+        )
+
+      raw_simulation_results.ab_simulation_results = ab_simulation_results
+      raw_simulation_results = RawExperimentSimulationResults.model_validate(
+          raw_simulation_results
+      )
+      evaluation_results = self._evaluate_raw_simulation_results(
+          raw_simulation_results
+      )
+
+    self.raw_simulation_results[design.design_id] = raw_simulation_results
     if add_to_design:
       design.evaluation_results = evaluation_results
 

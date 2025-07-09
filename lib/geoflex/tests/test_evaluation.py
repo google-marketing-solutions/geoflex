@@ -217,18 +217,18 @@ def test_evaluator_representativeness_scorer_is_initialized_correctly_with_metri
   assert explorer.representativeness_scorer.geos == historical_data.geos
 
 
-def test_evaluator_simulate_experiment_results_returns_correct_data(
+def test_evaluator_evaluate_design_raw_results_have_correct_data(
     historical_data, mock_design
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
-      simulations_per_trial=5,
   )
-  raw_results = evaluator.simulate_experiment_results(
-      mock_design, n_simulations=3
+  _ = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=3, n_ab_simulations=3
   )
+  raw_results = evaluator.raw_simulation_results[mock_design.design_id]
 
-  assert raw_results.design_is_valid
+  assert raw_results.is_valid_design
   assert raw_results.design == mock_design
 
   assert isinstance(raw_results.representativeness_scores, list)
@@ -236,11 +236,12 @@ def test_evaluator_simulate_experiment_results_returns_correct_data(
   assert isinstance(raw_results.representativeness_scores[0], float)
   assert isinstance(raw_results.representativeness_scores[1], float)
 
-  assert isinstance(raw_results.simulation_results, pd.DataFrame)
+  assert isinstance(raw_results.aa_simulation_results, pd.DataFrame)
+  assert isinstance(raw_results.ab_simulation_results, pd.DataFrame)
   assert (
-      len(raw_results.simulation_results) == 24
+      len(raw_results.aa_simulation_results) == 24
   )  # 4 metrics, 2 treatment arms, 3 simulations
-  assert raw_results.simulation_results.dtypes.to_dict() == {
+  assert raw_results.aa_simulation_results.dtypes.to_dict() == {
       "cell": "int64",
       "metric": "object",
       "is_primary_metric": "bool",
@@ -253,15 +254,202 @@ def test_evaluator_simulate_experiment_results_returns_correct_data(
       "p_value": "float64",
       "is_significant": "bool",
       "design_id": "object",
+      "true_point_estimate": "float64",
+      "true_point_estimate_relative": "float64",
+      "sample_id": "object",
+  }
+  assert (
+      len(raw_results.ab_simulation_results) == 6
+  )  # Only primary metric for a/b simulation), 2 treatment arms, 3 simulations
+  assert raw_results.ab_simulation_results.dtypes.to_dict() == {
+      "cell": "int64",
+      "metric": "object",
+      "is_primary_metric": "bool",
+      "point_estimate": "float64",
+      "lower_bound": "float64",
+      "upper_bound": "float64",
+      "point_estimate_relative": "float64",
+      "lower_bound_relative": "float64",
+      "upper_bound_relative": "float64",
+      "p_value": "float64",
+      "is_significant": "bool",
+      "design_id": "object",
+      "true_point_estimate": "float64",
+      "true_point_estimate_relative": "float64",
+      "sample_id": "object",
   }
 
 
-def test_evaluator_simulate_experiment_results_for_invalid_design(
+def test_evaluator_evaluate_design_raw_results_have_correct_data_if_no_ab_simulations(
     historical_data, mock_design
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
-      simulations_per_trial=5,
+  )
+  _ = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=3, n_ab_simulations=0
+  )
+  raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+
+  assert raw_results.is_valid_design
+  assert raw_results.design == mock_design
+
+  assert isinstance(raw_results.representativeness_scores, list)
+  assert len(raw_results.representativeness_scores) == 2
+  assert isinstance(raw_results.representativeness_scores[0], float)
+  assert isinstance(raw_results.representativeness_scores[1], float)
+
+  assert isinstance(raw_results.aa_simulation_results, pd.DataFrame)
+  assert isinstance(raw_results.ab_simulation_results, pd.DataFrame)
+  assert (
+      len(raw_results.aa_simulation_results) == 24
+  )  # 4 metrics, 2 treatment arms, 3 simulations
+  assert raw_results.aa_simulation_results.dtypes.to_dict() == {
+      "cell": "int64",
+      "metric": "object",
+      "is_primary_metric": "bool",
+      "point_estimate": "float64",
+      "lower_bound": "float64",
+      "upper_bound": "float64",
+      "point_estimate_relative": "object",
+      "lower_bound_relative": "object",
+      "upper_bound_relative": "object",
+      "p_value": "float64",
+      "is_significant": "bool",
+      "design_id": "object",
+      "true_point_estimate": "float64",
+      "true_point_estimate_relative": "float64",
+      "sample_id": "object",
+  }
+  assert raw_results.ab_simulation_results.empty
+
+
+def test_evaluator_evaluate_design_extends_results_correctly(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+  _ = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=3, n_ab_simulations=3
+  )
+  initial_raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+  _ = evaluator.evaluate_design(
+      mock_design,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+      overwrite_mode="extend",
+  )
+  extended_raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+
+  # Check that the new results are double the initial results, because we
+  # extended the results by 3 simulations.
+  assert (
+      len(extended_raw_results.aa_simulation_results)
+      == len(initial_raw_results.aa_simulation_results) * 2
+  )
+  assert (
+      len(extended_raw_results.ab_simulation_results)
+      == len(initial_raw_results.ab_simulation_results) * 2
+  )
+
+
+def test_evaluator_evaluate_design_skips_results_correctly(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+  _ = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=3, n_ab_simulations=3
+  )
+  initial_raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+  _ = evaluator.evaluate_design(
+      mock_design,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+      overwrite_mode="skip",
+  )
+  new_raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+
+  assert (
+      new_raw_results.aa_simulation_results
+      is initial_raw_results.aa_simulation_results
+  )  # Skipped, so no change.
+  assert (
+      new_raw_results.ab_simulation_results
+      is initial_raw_results.ab_simulation_results
+  )  # Skipped, so no change.
+
+
+def test_evaluator_overwrites_results_if_overwrite_mode_is_overwrite(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+  _ = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=3, n_ab_simulations=3
+  )
+  initial_raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+  _ = evaluator.evaluate_design(
+      mock_design,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+      overwrite_mode="overwrite",
+  )
+  overwritten_raw_results = evaluator.raw_simulation_results[
+      mock_design.design_id
+  ]
+
+  assert (
+      overwritten_raw_results.aa_simulation_results
+      is not initial_raw_results.aa_simulation_results
+  )
+  assert (
+      overwritten_raw_results.ab_simulation_results
+      is not initial_raw_results.ab_simulation_results
+  )
+  assert len(overwritten_raw_results.aa_simulation_results) == 24
+  assert len(overwritten_raw_results.ab_simulation_results) == 6
+
+
+def test_evaluator_evaluate_design_overwrites_results_if_raw_results_are_not_available(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+  )
+  _ = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=5, n_ab_simulations=5
+  )
+  # Clear the raw simulation results.
+  del evaluator.raw_simulation_results[mock_design.design_id]
+
+  evaluator.raw_simulation_results = {}
+  _ = evaluator.evaluate_design(
+      mock_design,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+      overwrite_mode="extend",
+  )
+  overwritten_raw_results = evaluator.raw_simulation_results[
+      mock_design.design_id
+  ]
+
+  # Expected results are 24 because the design has 2 treatment cells, 4 metrics,
+  # and we ran 3 simulations for each, and the results were overwritten.
+  assert len(overwritten_raw_results.aa_simulation_results) == 24
+  # A/B results should be 6 because they only exist for the primary metric, and
+  # we ran 3 simulations for 2 cells.
+  assert len(overwritten_raw_results.ab_simulation_results) == 6
+
+
+def test_evaluator_evaluate_design_for_invalid_design(
+    historical_data, mock_design
+):
+  evaluator = ExperimentDesignEvaluator(
+      historical_data=historical_data,
   )
 
   # Mock the TestingMethodology methodology to always say invalid design.
@@ -271,13 +459,16 @@ def test_evaluator_simulate_experiment_results_for_invalid_design(
       autospec=True,
   ) as mock_is_eligible_for_design_and_data:
     mock_is_eligible_for_design_and_data.return_value = False
-    raw_results = evaluator.simulate_experiment_results(
-        mock_design, n_simulations=3
+    results = evaluator.evaluate_design(
+        mock_design, n_aa_simulations=5, n_ab_simulations=5
     )
 
-  assert not raw_results.design_is_valid
-  assert raw_results.simulation_results.empty
-  assert raw_results.representativeness_scores is None
+  raw_results = evaluator.raw_simulation_results[mock_design.design_id]
+
+  assert not results.is_valid_design
+  assert results.representativeness_scores_per_cell is None
+  assert raw_results.aa_simulation_results.empty
+  assert raw_results.ab_simulation_results.empty
   assert raw_results.design == mock_design
 
 
@@ -288,9 +479,10 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_results(
   with pytest.raises(ValueError):
     geoflex.evaluation.RawExperimentSimulationResults(
         design=mock_design,
-        simulation_results=pd.DataFrame({"cell": [1]}),
+        aa_simulation_results=pd.DataFrame({"cell": [1]}),
+        ab_simulation_results=pd.DataFrame(),
         representativeness_scores=[1, 2],
-        design_is_valid=True,
+        is_valid_design=True,
         sufficient_simulations=True,
     )
 
@@ -301,9 +493,10 @@ def test_raw_experiment_simulation_results_does_not_raise_error_if_all_results_e
   # Mock design has 2 treatment cells, so we need 2 simulation results.
   geoflex.evaluation.RawExperimentSimulationResults(
       design=mock_design,
-      simulation_results=pd.DataFrame({"cell": [1, 2]}),
+      aa_simulation_results=pd.DataFrame({"cell": [1, 2]}),
+      ab_simulation_results=pd.DataFrame(),
       representativeness_scores=[1, 2],
-      design_is_valid=True,
+      is_valid_design=True,
       sufficient_simulations=True,
   )
 
@@ -315,9 +508,10 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_representativ
   with pytest.raises(ValueError):
     geoflex.evaluation.RawExperimentSimulationResults(
         design=mock_design,
-        simulation_results=pd.DataFrame({"cell": [1, 2]}),
+        aa_simulation_results=pd.DataFrame({"cell": [1, 2]}),
+        ab_simulation_results=pd.DataFrame(),
         representativeness_scores=[1],
-        design_is_valid=True,
+        is_valid_design=True,
         sufficient_simulations=True,
     )
 
@@ -330,11 +524,12 @@ def test_evaluator_evaluate_design_returns_correct_data_and_adds_results_to_desi
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
-      simulations_per_trial=5,
   )
 
   mock_design = mock_design.make_variation(methodology=methodology)
-  evaluation_results = evaluator.evaluate_design(mock_design)
+  evaluation_results = evaluator.evaluate_design(
+      mock_design, n_aa_simulations=5, n_ab_simulations=5
+  )
 
   assert isinstance(
       evaluation_results, geoflex.evaluation.ExperimentDesignEvaluationResults
@@ -394,7 +589,6 @@ def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
-      simulations_per_trial=5,
   )
   # Mock is_valid_for_design_and_data to always return False.
   with mock.patch.object(
@@ -403,7 +597,9 @@ def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
       autospec=True,
   ) as mock_is_eligible_for_design_and_data:
     mock_is_eligible_for_design_and_data.return_value = False
-    evaluation_results = evaluator.evaluate_design(mock_design)
+    evaluation_results = evaluator.evaluate_design(
+        mock_design, n_aa_simulations=5, n_ab_simulations=5
+    )
 
   assert isinstance(
       evaluation_results, geoflex.evaluation.ExperimentDesignEvaluationResults
@@ -435,7 +631,6 @@ def test_evaluator_evaluate_design_does_not_reassign_geos_for_pseudo_experiments
 ):
   evaluator = ExperimentDesignEvaluator(
       historical_data=historical_data,
-      simulations_per_trial=5,
   )
   mock_design = mock_design.make_variation(
       methodology="PseudoExperimentTestingMethodology"
@@ -450,7 +645,9 @@ def test_evaluator_evaluate_design_does_not_reassign_geos_for_pseudo_experiments
       autospec=True,
   ) as mock_assign_geos:
     mock_assign_geos.return_value = None, None
-    evaluator.evaluate_design(mock_design)
+    evaluator.evaluate_design(
+        mock_design, n_aa_simulations=5, n_ab_simulations=5
+    )
 
   mock_assign_geos.assert_not_called()
 

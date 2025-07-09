@@ -207,7 +207,7 @@ class MultivariateTimeseriesBootstrap:
       bootstrap samples.
     """
     if rng is None:
-      rng = np.random.default_rng(0)
+      rng = np.random.default_rng()
 
     if self.sampling_type == "permutation":
       sample_idx = _shuffle_columns(self.blocks_idx, n_bootstraps, rng)
