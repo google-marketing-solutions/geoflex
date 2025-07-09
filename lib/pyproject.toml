@@ -13,8 +13,6 @@ dependencies = [
   "optuna",
   "feedx",
   "statsmodels",
-  "dcor",
-  "scikit-learn",
   "pyarrow",
   "PyYAML",
   "matplotlib",

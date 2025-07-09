@@ -22,6 +22,7 @@ ExperimentDesignExplorationSpec = (
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 ExperimentDesignEvaluator = geoflex.evaluation.ExperimentDesignEvaluator
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
+EffectScope = geoflex.experiment_design.EffectScope
 assign_geos = geoflex.methodology.assign_geos
 design_is_eligible_for_data = geoflex.methodology.design_is_eligible_for_data
 get_methodology = geoflex.methodology.get_methodology
@@ -294,7 +295,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     methodology, and if the primary metric meets the validation checks.
 
     If the design is not eligible for the methodology, we will return inf for
-    the standard error, and -1.0 for the representiveness score. This will
+    the standard error, and -1.0 for the representativeness score. This will
     ensure that this design is never selected.
 
     Args:
@@ -305,12 +306,12 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     Returns:
       A tuple of the standard error of the primary metric, and the
-      representiveness score. If the relative standard error is not None for the
-      primary metric, then this will be returned, otherwise the absolute
+      representativeness score. If the relative standard error is not None for
+      the primary metric, then this will be returned, otherwise the absolute
       standard error will be returned. If the design is not eligible for the
       methodology, or if the design fails the checks and
       ignore_designs_with_failing_checks is True, then inf will be returned for
-      the standard error, and -1.0 for the representiveness score.
+      the standard error, and -1.0 for the representativeness score.
     """
     # Suggest the experiment design based on the design spec.
     design = self._suggest_experiment_design(trial)
@@ -324,7 +325,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     # If the design is not eligible for the methdology, the results will be
     # None. In this case we return inf for the standard error, and -1.0 for the
-    # representiveness score. This will ensure that this design is never
+    # representativeness score. This will ensure that this design is never
     # selected.
     if not evaluation_results.is_valid_design:
       logger.info(
@@ -335,12 +336,12 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       )
       return np.inf, -1.0
 
-    # Get the standard error and representiveness score for the design.
+    # Get the standard error and representativeness score for the design.
     primary_metric_standard_error = (
         evaluation_results.primary_metric_results.standard_error_relative_effect
         or evaluation_results.primary_metric_results.standard_error_absolute_effect
     )
-    representiveness_score = evaluation_results.representiveness_score
+    representativeness_score = evaluation_results.representativeness_score
 
     # If the design fails any checks, then log the failing checks.
     if not evaluation_results.primary_metric_results.all_checks_pass:
@@ -361,10 +362,10 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     self.explored_designs[design.design_id] = design
 
     # Finally we return the standard error of the primary metric, and the
-    # representiveness score. These will be used by optuna to optimise the
+    # representativeness score. These will be used by optuna to optimise the
     # objective. We will perform multi-objective optimisation to find the
-    # smallest standard error and highest representiveness score.
-    return primary_metric_standard_error, representiveness_score
+    # smallest standard error and highest representativeness score.
+    return primary_metric_standard_error, representativeness_score
 
   def _design_counting_objective(
       self,
@@ -501,7 +502,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
             directions=[
                 "minimize",
                 "maximize",
-            ],  # Minimise standard error, maximise representiveness
+            ],  # Minimise standard error, maximise representativeness
         )
 
     existing_trials = MaxTrialsCallback.get_n_completed_trials(self.study)
@@ -551,7 +552,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         primary metric. If None, all designs will be returned.
       pareto_front_only: Whether to only return the pareto front designs. These
         are the designs that have the smallest MDE for the primary metric, and
-        the highest representiveness score.
+        the highest representativeness score.
 
     Returns:
       The explored experiment designs.
@@ -640,6 +641,9 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     cost_per_metric_metrics = [
         metric.name for metric in all_metrics if metric.cost_per_metric
     ]
+    include_representativeness_score = (
+        self.explore_spec.effect_scope == EffectScope.ALL_GEOS
+    )
 
     designs = self.get_designs(top_n, pareto_front_only)
     return geoflex.experiment_design.compare_designs(
@@ -651,6 +655,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         drop_constant_columns=drop_constant_columns,
         style_output=style_output,
         cost_per_metric_metrics=cost_per_metric_metrics,
+        include_representativeness_score=include_representativeness_score,
     )
 
   def get_design_by_id(self, design_id: str) -> ExperimentDesign | None:

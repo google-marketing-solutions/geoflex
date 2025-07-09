@@ -477,7 +477,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
       metric for each cell.
     all_metric_results: The evaluation results of all metrics.
     primary_metric_results: The evaluation results of the primary metric.
-    representiveness_scores_per_cell: The representativeness score of each of
+    representativeness_scores_per_cell: The representativeness score of each of
       the treatment group cells. If the effect scope of the design is not
       ALL_GEOS, then this will be 0 for all cells.
     actual_cell_volumes: The cell volume actuals for the design. This will be
@@ -498,7 +498,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
   all_metric_results_per_cell: (
       dict[str, list[SingleEvaluationResult]] | None
   ) = None
-  representiveness_scores_per_cell: list[float] | None = None
+  representativeness_scores_per_cell: list[float] | None = None
   actual_cell_volumes: CellVolumeConstraint | None = None
   other_errors: list[str] = []
   is_valid_design: bool
@@ -515,11 +515,11 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     return self.all_metric_results_per_cell[self.primary_metric_name]
 
   @property
-  def representiveness_score(self) -> float | None:
+  def representativeness_score(self) -> float | None:
     """Returns the minimum representativeness score across all cells."""
-    if self.representiveness_scores_per_cell is None:
+    if self.representativeness_scores_per_cell is None:
       return None
-    return min(self.representiveness_scores_per_cell)
+    return min(self.representativeness_scores_per_cell)
 
   @property
   def all_metric_results(self) -> dict[str, SingleEvaluationResult] | None:
@@ -686,7 +686,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     output = {
         "failing_checks": self.other_errors,
         "all_checks_pass": True,
-        "representiveness_score": self.representiveness_score,
+        "representativeness_score": self.representativeness_score,
         "actual_cell_volumes": str(self.actual_cell_volumes),
     }
     for metric_name, result in self.all_metric_results.items():
@@ -1208,6 +1208,7 @@ def compare_designs(
     drop_constant_columns: bool = False,
     style_output: bool = False,
     cost_per_metric_metrics: list[str] | None = None,
+    include_representativeness_score: bool = True,
 ) -> pd.DataFrame | style.Styler:
   """Create a dataframe with the summaries of each design for each comparison.
 
@@ -1226,6 +1227,9 @@ def compare_designs(
     cost_per_metric_metrics: The cost per metric metrics. For these metrics a
       higher MDE is better, so when applying the style on the output we reverse
       the color palette.
+    include_representativeness_score: Whether to include the representativeness
+      score in the output. Should be included if the scope of the effect is
+      "all_geos".
 
   Returns:
     A dataframe with the summary of each design. The dataframe is indexed by the
@@ -1252,9 +1256,15 @@ def compare_designs(
       if "MDE" in column and "Relative MDE" not in column
   ]
 
+  if include_representativeness_score:
+    representativeness_score_columns = ["representativeness_score"]
+  else:
+    representativeness_score_columns = []
+
   required_columns = (
       rel_mde_columns
       + abs_mde_columns
+      + representativeness_score_columns
       + [
           "failing_checks",
           "all_checks_pass",
@@ -1324,6 +1334,14 @@ def compare_designs(
           subset=["Failing Checks"],
       )
   )
+
+  if include_representativeness_score:
+    styled_summary_data = styled_summary_data.background_gradient(
+        subset=["Representativeness Score"],
+        cmap="RdYlGn",
+        vmin=0.0,
+        vmax=1.0,
+    ).format("{:.2f}", subset=["Representativeness Score"])
 
   for mde_col in abs_mde_columns + rel_mde_columns:
     cmap = "RdYlGn_r"

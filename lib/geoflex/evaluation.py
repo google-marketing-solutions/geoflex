@@ -3,7 +3,6 @@
 import functools
 import logging
 from typing import Any
-import dcor
 import geoflex.bootstrap
 import geoflex.data
 import geoflex.experiment_design
@@ -14,7 +13,6 @@ import numpy as np
 import pandas as pd
 import pydantic
 from scipy import stats
-from sklearn.metrics import silhouette_score
 
 
 logger = logging.getLogger(__name__)
@@ -36,192 +34,132 @@ CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
 CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 
-class GeoAssignmentRepresentivenessScorer:
+class GeoAssignmentRepresentativenessScorer:
   """Scores the representativeness of a geo assignment.
 
   Ideally, each of the treatment groups in a geo assignment should be
-  representative ofthe entire population. This scorer uses the silhouette score,
-  in combination with distance correlation, to measure the representativeness of
-  the treatment groups.
+  representative ofthe entire population. This scorer calculated the average
+  Pearson correlation between all pairs of geos in the population. Then for a
+  given assignment, it calculates the average similarity between all of the
+  geos and the closest treatment geo.
 
-  1. The distance correlation is used to measure the "distance" between two
-    geos. It is defined as `1 - the distance correlation coefficient`. This
-    gives a distance matrix for all the geos. The distance correlation
-    coefficient is a multivariate correlation which evaluates the similarity
-    based on all numerical columns in the data. For more information see:
-    https://arxiv.org/pdf/0803.4101
-  2. The silhouette score is used to measure the "quality" of a geo assignment.
-    It is defined as the maximum silhouette score for the treatment groups in
-    the assignment. For more information see:
-    https://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_samples.html
-  3. The representiveness score is then calculated as -1 * the silhouette score.
-    This is because a lower silhouette score indicates a better assignment.
-  4. If applied, a permutation test is used to calculate a p-value to indicate
-    the likelihood of the assignment being as representative as a random
-    assignment.
-
-  A good assignment will have a low silhouette score, ideally lower than 0. A
-  high score indicates that the treatment groups are separate clusters and are
-  therefore not representative of the entire population.
+  A good assignment will have a high score, close to 1.0. A low score indicates
+  that the treatment groups are not representative of the entire population.
 
   Example usage:
   ```
-    scorer = GeoAssignmentRepresentivenessScorer(
-        historical_data=historical_data,
-        geo_column_name="geo_id",
+    scorer = GeoAssignmentRepresentativenessScorer(
+        historical_data=historical_data.pivoted_data,
         geos=geos,
-        silhouette_sample_size=100,
     )
-    assignment = np.array([-1, 0, 0, 1, 1, 2, 2])
-    # Fast calculation without a p-value.
-    score, _ = scorer(assignment)
-    # Slow calculation with a p-value.
-    score, pvalue = scorer(assignment, with_pvalue=True)
+    assignment = np.array([0,0,1,1])
+    score = scorer(assignment)
   ```
   """
 
   def __init__(
       self,
       historical_data: pd.DataFrame,
-      geo_column_name: str,
       geos: list[str],
-      silhouette_sample_size: int | None = None,
   ):
-    """Initializes the RepresentivenessScorer.
+    """Initializes the RepresentativenessScorer.
 
     Args:
-      historical_data: The data to score. Must contain the geo column and the
-        performance metrics. All numeric columns will be included in the
-        representiveness scoring.
-      geo_column_name: The column name of the geo column.
+      historical_data: The data to score, should come from the pivoted data in
+        the GeoPerformanceDataset. It will have a column for each geo and
+        metric.
       geos: The geos to be included in the assignment. If None, all geos in the
         historical data will be included. The order is important, the order of
         the assignment must match the order of the geos.
-      silhouette_sample_size: The sample size to use for the silhouette score.
-        If None, the full data is used.
     """
     self.historical_data = historical_data
-    self.geo_column_name = geo_column_name
-    self.silhouette_sample_size = silhouette_sample_size
     self.geos = geos
 
   @functools.cached_property
-  def distance_matrix(self) -> np.array:
-    """The distance matrix for the geos.
+  def similarity_matrix(self) -> np.array:
+    """The similarity matrix for the geos.
 
-    This is calculated as 1 - the distance correlation coefficient. For more
-    information see: https://arxiv.org/pdf/0803.4101
+    This is calculated as the average Pearson correlation between all pairs of
+    geos. A score of 1 indicates that the geos are identical, a score of -1
+    indicates they are perfectly opposite.
+
+    Returns:
+      The similarity matrix for the geos. Rows / columns are ordered by the
+      order of self.geos.
+
+    Raises:
+      RuntimeError: If the similarity matrix contains non-finite values. This
+        is unexpected.
     """
-    distance_matrix = np.zeros((len(self.geos), len(self.geos)))
-    for i, geo_i in enumerate(self.geos):
-      for j, geo_j in enumerate(self.geos):
-        if i < j:
-          x = (
-              self.historical_data.loc[
-                  self.historical_data[self.geo_column_name] == geo_i
-              ]
-              .select_dtypes("number")
-              .values
-          )
-          y = (
-              self.historical_data.loc[
-                  self.historical_data[self.geo_column_name] == geo_j
-              ]
-              .select_dtypes("number")
-              .values
-          )
-          x_normed = (x - x.mean(axis=0)) / (x.std(axis=0) + 1e-10)
-          y_normed = (y - y.mean(axis=0)) / (y.std(axis=0) + 1e-10)
-          corr = dcor.distance_correlation(x_normed, y_normed)
-          distance_matrix[i, j] = 1.0 - corr
-          distance_matrix[j, i] = 1.0 - corr
-    return distance_matrix
 
-  def _permutation_samples(
-      self, assignment: np.ndarray, n_samples: int
-  ) -> np.ndarray:
-    """Returns the permutation samples of the score."""
-    assignment = assignment.copy()
-    scores = np.empty(n_samples)
-    for i in range(n_samples):
-      np.random.shuffle(assignment)
-      scores[i] = self._score(assignment)
-    return scores
+    # Initialize an empty NumPy array to store the similarity scores
+    n_geos = len(self.geos)
+    similarity_matrix = np.zeros((n_geos, n_geos))
 
-  def _score(self, assignment: np.ndarray) -> float:
+    corr_matrix = self.historical_data.swaplevel(axis=1).corr()
+
+    for i, geo1 in enumerate(self.geos):
+      for j, geo2 in enumerate(self.geos[i:], start=i):
+
+        if i == j:
+          # If they are thr same geo, then they are identical, skip the
+          # computation
+          similarity_matrix[i, j] = 1.0
+          continue
+
+        avg_similarity = np.diag(corr_matrix.loc[geo1, geo2].values).mean()
+        similarity_matrix[i, j] = avg_similarity
+        similarity_matrix[j, i] = avg_similarity
+
+    if not np.all(np.isfinite(similarity_matrix)):
+      error_message = (
+          "Similarity matrix contains non-finite values, this is unexpected."
+      )
+      logger.error(error_message)
+      raise RuntimeError(error_message)
+
+    return similarity_matrix
+
+  def __call__(self, assignment: np.ndarray) -> float:
     """Calculates the representativeness score for the given assignment.
 
-    This is -1 * the maximum silhouette score for the treatment groups in the
-    assignment.
+    This is calculated as the average similarity between all of the geos and the
+    closest treatment geo. A score close to 1 indicates a representative
+    assignment, while a score close to 0 or negative indicates a
+    non-representative assignment.
 
     Args:
-      assignment: The geo assignment to score. This is assumed to be a numpy
-        array of integers, where -1 indicates an excluded geo, 0 indicates a
-        control geo and 1+ indicates a treatment geo (there can be multiple
-        treatment groups in a multi-cell test).
+      assignment: The geo assignment to score. This is an array of 0s and 1s,
+        where 0 indicates a control geo and 1 indicates a treatment geo.
 
     Returns:
       The representativeness score for the given assignment.
     """
-    max_assignment = np.max(assignment)
-    scores = []
-    for i in range(1, max_assignment + 1):
-      treatment_vs_rest_assignment = assignment == i
-      scores.append(
-          silhouette_score(
-              self.distance_matrix,
-              treatment_vs_rest_assignment,
-              metric="precomputed",
-              sample_size=self.silhouette_sample_size,
-          )
+    n_samples = self.similarity_matrix.shape[0]
+    if len(assignment) != n_samples:
+      error_message = (
+          "Assignment has length {len(assignment)}, but the similarity matrix"
+          " has length {n_samples}."
       )
-    return -1 * np.max(scores)
+      logger.error(error_message)
+      raise ValueError(error_message)
 
-  def __call__(
-      self,
-      assignment: np.ndarray,
-      with_pvalue: bool = False,
-      n_permutation_samples: int = 200,
-  ) -> tuple[float, float | None]:
-    """Scores the representativeness of the given geo assignment.
-
-    The ideal score is close to 0.0, which indicates that the treatment groups
-    are representative of the entire population. A negative score indicates that
-    the treatment groups are separate clusters and are therefore not
-    representative of the entire population. A highly positive score is usually
-    just due to random chance, but can occur if you don't have many geos.
-
-    Args:
-      assignment: The geo assignment to score. This is assumed to be a numpy
-        array of integers, where -1 indicates an excluded geo, 0 indicates a
-        control geo and 1+ indicates a treatment geo (there can be multiple
-        treatment groups in a multi-cell test).
-      with_pvalue: If True, a p-value will be calculated using permutation
-        testing. Note: this will make the scoring much slower.
-      n_permutation_samples: The number of permutation samples to use for the
-        permutation test.
-
-    Returns:
-      The score of the geo assignment and the p-value if with_pvalue is True,
-      otherwise None.
-    """
-    if len(assignment) <= 2:
-      logger.warning(
-          "Assignment has only %d geos, which is too few for a valid"
-          " representativeness score. Score is set to 0.0.",
-          len(assignment),
+    if not np.all((assignment == 1) | (assignment == 0)):
+      error_message = (
+          "Assignment contains values other than 0 or 1, this is unexpected."
       )
-      return 0.0, None
+      logger.error(error_message)
+      raise ValueError(error_message)
 
-    score = self._score(assignment)
-    if with_pvalue:
-      permutation_scores = self._permutation_samples(
-          assignment, n_permutation_samples
-      )
-      pvalue = np.mean(score > permutation_scores)
-    else:
-      pvalue = None
-    return score, pvalue
+    is_treatment = assignment == 1
+    if not np.any(is_treatment):
+      # If there are no treatment geos, then the assignment is not
+      # representative
+      return -1.0
+
+    # Find the maximum value for each geo to the best treatment geo, and take
+    # the average for the score.
+    return self.similarity_matrix[is_treatment, :].max(axis=0).mean()
 
 
 def calculate_minimum_detectable_effect_from_stats(
@@ -276,7 +214,7 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
   Attributes:
     design: The experiment design that was simulated.
     simulation_results: The simulation results for the experiment design.
-    representiveness_scores: The representativeness scores for the experiment
+    representativeness_scores: The representativeness scores for the experiment
       design, of each treatment cell.
     design_is_valid: Whether the design is valid or not. The design is not valid
       if the methodology is not eligible for the design.
@@ -284,7 +222,7 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
 
   design: ExperimentDesign
   simulation_results: ParquetDataFrame
-  representiveness_scores: list[float] | None
+  representativeness_scores: list[float] | None
   design_is_valid: bool
 
   model_config = pydantic.ConfigDict(
@@ -323,11 +261,11 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
       logger.error(error_message)
       raise ValueError(error_message)
 
-    if n_treatment_cells != len(self.representiveness_scores):
+    if n_treatment_cells != len(self.representativeness_scores):
       error_message = (
           f"The simulation results for design {self.design.design_id} do not"
           " contain representativeness scores for all cells. Expected"
-          f" {self.design.n_cells}, got {len(self.representiveness_scores)}."
+          f" {self.design.n_cells}, got {len(self.representativeness_scores)}."
       )
       logger.error(error_message)
       raise ValueError(error_message)
@@ -433,6 +371,11 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     bootstrapper_stl_params: The parameters for the STL model. Defaults to 0 for
       seasonal degree, 0 for trend degree, 0 for low pass degree, and False for
       robust.
+    representativeness_scorer_metrics: The column names of the metrics to be
+      used for the representativeness scorer. If None, all metrics in the
+      historical data will be used. The representativeness is calculated by
+      looking at the Pearson correlation across these metrics between the
+      control and treatment groups.
     validation_check_threhold: The threhold to use for the validation check.
       Defaults to 0.001, which is a 99.9% confidence level. Typically this does
       not need to be changed.
@@ -454,6 +397,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
   bootstrapper_seasonality: int = 7
   bootstrapper_sampling_type: str = "permutation"
   bootstrapper_stl_params: dict[str, Any] | None = None
+
+  representativeness_scorer_metrics: list[str] | None = None
 
   validation_check_threhold: float = 0.001
 
@@ -482,15 +427,18 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     return bootstrapper
 
   @functools.cached_property
-  def representativeness_scorer(self) -> GeoAssignmentRepresentivenessScorer:
+  def representativeness_scorer(self) -> GeoAssignmentRepresentativenessScorer:
     """The representativeness scorer for the experiment.
 
     This evaluates how representative evaluate experiment designs if the
     effect scope is "all_geos".
     """
-    return GeoAssignmentRepresentivenessScorer(
-        historical_data=self.historical_data.parsed_data,
-        geo_column_name=self.historical_data.geo_id_column,
+    data = self.historical_data.pivoted_data
+    if self.representativeness_scorer_metrics is not None:
+      data = data[self.representativeness_scorer_metrics]
+
+    return GeoAssignmentRepresentativenessScorer(
+        historical_data=data,
         geos=self.historical_data.geos,
     )
 
@@ -625,26 +573,26 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         exp_start_date.strftime("%Y-%m-%d"),
     )
 
-  def _evaluate_representiveness_if_all_geos_scope(
+  def _evaluate_representativeness_if_all_geos_scope(
       self, design: ExperimentDesign
   ) -> list[float]:
     """Evaluates representativeness if the effect scope is all geos."""
-    needs_representiveness = design.effect_scope == EffectScope.ALL_GEOS
-    if not needs_representiveness:
-      return [0.0] * (design.n_cells - 1)
+    needs_representativeness = design.effect_scope == EffectScope.ALL_GEOS
+    if not needs_representativeness:
+      return [1.0] * (design.n_cells - 1)
 
     assignment = design.geo_assignment.make_geo_assignment_array(
         self.representativeness_scorer.geos
     )
-    representiveness_scores = []
+    representativeness_scores = []
     for cell_number in range(1, design.n_cells):
       cell_assignment = (assignment == cell_number).astype(int)
-      representiveness_score = self.representativeness_scorer(
-          assignment=cell_assignment, with_pvalue=False
-      )[0]
-      representiveness_scores.append(representiveness_score)
+      representativeness_score = self.representativeness_scorer(
+          assignment=cell_assignment
+      )
+      representativeness_scores.append(representativeness_score)
 
-    return representiveness_scores
+    return representativeness_scores
 
   def simulate_experiment_results(
       self,
@@ -700,7 +648,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       results = RawExperimentSimulationResults(
           design=design,
           simulation_results=pd.DataFrame(),
-          representiveness_scores=None,
+          representativeness_scores=None,
           design_is_valid=False,
       )
       self.raw_simulation_results[design.design_id] = results
@@ -710,8 +658,8 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     if design.geo_assignment is None:
       geoflex.methodology.assign_geos(design, self.historical_data)
 
-    representiveness_scores = self._evaluate_representiveness_if_all_geos_scope(
-        design
+    representativeness_scores = (
+        self._evaluate_representativeness_if_all_geos_scope(design)
     )
 
     design_with_inverted_metrics = self._invert_cost_per_metric_metrics(design)
@@ -753,7 +701,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         results = RawExperimentSimulationResults(
             design=design,
             simulation_results=pd.DataFrame(),
-            representiveness_scores=None,
+            representativeness_scores=None,
             design_is_valid=False,
         )
         self.raw_simulation_results[design.design_id] = results
@@ -771,7 +719,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         results = RawExperimentSimulationResults(
             design=design,
             simulation_results=pd.DataFrame(),
-            representiveness_scores=None,
+            representativeness_scores=None,
             design_is_valid=False,
         )
         self.raw_simulation_results[design.design_id] = results
@@ -782,7 +730,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
     results = RawExperimentSimulationResults(
         design=design,
         simulation_results=pd.concat(results_list),
-        representiveness_scores=representiveness_scores,
+        representativeness_scores=representativeness_scores,
         design_is_valid=True,
     )
     self.raw_simulation_results[design.design_id] = results
@@ -966,7 +914,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           all_metric_results_per_cell=None,
           alpha=design.alpha,
           alternative_hypothesis=design.alternative_hypothesis,
-          representiveness_scores_per_cell=None,
+          representativeness_scores_per_cell=None,
           actual_cell_volumes=actual_cell_volumes,
           other_errors=other_errors,
           is_valid_design=False,
@@ -1018,7 +966,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         all_metric_results_per_cell=all_metric_results_per_cell,
         alpha=design.alpha,
         alternative_hypothesis=design.alternative_hypothesis,
-        representiveness_scores_per_cell=raw_simulation_results.representiveness_scores,
+        representativeness_scores_per_cell=raw_simulation_results.representativeness_scores,
         actual_cell_volumes=actual_cell_volumes,
         other_errors=other_errors,
         is_valid_design=is_valid_design,

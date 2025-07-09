@@ -114,80 +114,29 @@ def mock_historical_data_fixture():
 
 
 def test_scorer_returns_score_in_correct_range(raw_data):
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
+  raw_data_pivoted = geoflex.data.GeoPerformanceDataset(
+      data=raw_data
+  ).pivoted_data
+  scorer = geoflex.evaluation.GeoAssignmentRepresentativenessScorer(
+      historical_data=raw_data_pivoted,
       geos=["US", "UK", "AU", "NL"],
   )
-  result, _ = scorer(np.array([0, 1, 0, 1]))
+  result = scorer(np.array([0, 1, 0, 1]))
   assert result <= 1.0
   assert result >= -1.0
-
-
-def test_scorer_returns_pvalue_in_correct_range_if_requested(raw_data):
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
-      geos=["US", "UK", "AU", "NL"],
-  )
-  _, pvalue = scorer(np.array([0, 1, 0, 1]), with_pvalue=True)
-  assert pvalue <= 1.0
-  assert pvalue >= 0.0
-
-
-def test_scorer_returns_none_for_pvalue_if_not_requested(raw_data):
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
-      geos=["US", "UK", "AU", "NL"],
-  )
-  _, pvalue = scorer(np.array([0, 1, 0, 1]))
-  assert pvalue is None
 
 
 def test_scorer_returns_higher_score_for_representative_assignment(raw_data):
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
+  raw_data_pivoted = geoflex.data.GeoPerformanceDataset(
+      data=raw_data
+  ).pivoted_data
+  scorer = geoflex.evaluation.GeoAssignmentRepresentativenessScorer(
+      historical_data=raw_data_pivoted,
       geos=["US", "UK", "AU", "NL"],
   )
-  result_1, _ = scorer(np.array([0, 1, 0, 1]))
-  result_2, _ = scorer(np.array([0, 0, 1, 1]))
+  result_1 = scorer(np.array([0, 1, 0, 1]))
+  result_2 = scorer(np.array([0, 0, 1, 1]))
   assert result_1 > result_2
-
-
-def test_scorer_can_handle_assignment_with_multiple_treatment_groups(raw_data):
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
-      geos=["US", "UK", "AU", "NL"],
-  )
-  result, _ = scorer(np.array([0, 1, 1, 2]))
-  assert result <= 1.0
-  assert result >= -1.0
-
-
-def test_scorer_can_handle_assignment_with_excluded_geos(raw_data):
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
-      geos=["US", "UK", "AU", "NL"],
-  )
-  result, _ = scorer(np.array([-1, 0, 1, 1]))
-  assert result <= 1.0
-  assert result >= -1.0
-
-
-@pytest.mark.parametrize("geos_in_data", [["US"], ["US", "UK"]])
-def test_scorer_returns_0_if_le_2_geos_in_assignment(raw_data, geos_in_data):
-
-  scorer = geoflex.evaluation.GeoAssignmentRepresentivenessScorer(
-      historical_data=raw_data,
-      geo_column_name="geo_id",
-      geos=geos_in_data,
-  )
-  result, _ = scorer(np.array([0, 1][: len(geos_in_data)]))
-  assert result == 0.0
 
 
 def test_calculate_minimum_detectable_effect_from_stats_raises_error_for_invalid_alternative():
@@ -250,11 +199,20 @@ def test_evaluator_representativeness_scorer_is_initialized_correctly(
       historical_data=historical_data,
   )
   assert explorer.representativeness_scorer.historical_data.equals(
-      historical_data.parsed_data
+      historical_data.pivoted_data
   )
-  assert (
-      explorer.representativeness_scorer.geo_column_name
-      == historical_data.geo_id_column
+  assert explorer.representativeness_scorer.geos == historical_data.geos
+
+
+def test_evaluator_representativeness_scorer_is_initialized_correctly_with_metrics(
+    historical_data,
+):
+  explorer = ExperimentDesignEvaluator(
+      historical_data=historical_data,
+      representativeness_scorer_metrics=["revenue", "cost"],
+  )
+  assert explorer.representativeness_scorer.historical_data.equals(
+      historical_data.pivoted_data[["revenue", "cost"]]
   )
   assert explorer.representativeness_scorer.geos == historical_data.geos
 
@@ -272,10 +230,10 @@ def test_evaluator_simulate_experiment_results_returns_correct_data(
   assert raw_results.design_is_valid
   assert raw_results.design == mock_design
 
-  assert isinstance(raw_results.representiveness_scores, list)
-  assert len(raw_results.representiveness_scores) == 2
-  assert isinstance(raw_results.representiveness_scores[0], float)
-  assert isinstance(raw_results.representiveness_scores[1], float)
+  assert isinstance(raw_results.representativeness_scores, list)
+  assert len(raw_results.representativeness_scores) == 2
+  assert isinstance(raw_results.representativeness_scores[0], float)
+  assert isinstance(raw_results.representativeness_scores[1], float)
 
   assert isinstance(raw_results.simulation_results, pd.DataFrame)
   assert (
@@ -317,7 +275,7 @@ def test_evaluator_simulate_experiment_results_for_invalid_design(
 
   assert not raw_results.design_is_valid
   assert raw_results.simulation_results.empty
-  assert raw_results.representiveness_scores is None
+  assert raw_results.representativeness_scores is None
   assert raw_results.design == mock_design
 
 
@@ -329,7 +287,7 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_results(
     geoflex.evaluation.RawExperimentSimulationResults(
         design=mock_design,
         simulation_results=pd.DataFrame({"cell": [1]}),
-        representiveness_scores=[1, 2],
+        representativeness_scores=[1, 2],
         design_is_valid=True,
     )
 
@@ -341,20 +299,20 @@ def test_raw_experiment_simulation_results_does_not_raise_error_if_all_results_e
   geoflex.evaluation.RawExperimentSimulationResults(
       design=mock_design,
       simulation_results=pd.DataFrame({"cell": [1, 2]}),
-      representiveness_scores=[1, 2],
+      representativeness_scores=[1, 2],
       design_is_valid=True,
   )
 
 
-def test_raw_experiment_simulation_results_raises_error_if_missing_representiveness_scores(
+def test_raw_experiment_simulation_results_raises_error_if_missing_representativeness_scores(
     mock_design,
 ):
-  # Mock design has 2 treatment cells, so we need 2 representiveness scores.
+  # Mock design has 2 treatment cells, so we need 2 representativeness scores.
   with pytest.raises(ValueError):
     geoflex.evaluation.RawExperimentSimulationResults(
         design=mock_design,
         simulation_results=pd.DataFrame({"cell": [1, 2]}),
-        representiveness_scores=[1],
+        representativeness_scores=[1],
         design_is_valid=True,
     )
 
@@ -389,7 +347,7 @@ def test_evaluator_evaluate_design_returns_correct_data_and_adds_results_to_desi
   )
 
   # Check number of cells matches design.
-  assert len(evaluation_results.representiveness_scores_per_cell) == 2
+  assert len(evaluation_results.representativeness_scores_per_cell) == 2
   for metric_results in evaluation_results.all_metric_results_per_cell.values():
     assert len(metric_results) == 2
 
@@ -425,7 +383,7 @@ def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
       == mock_design.alternative_hypothesis
   )
 
-  assert evaluation_results.representiveness_scores_per_cell is None
+  assert evaluation_results.representativeness_scores_per_cell is None
 
   # Results are None because the design is invalid.
   assert evaluation_results.all_metric_results_per_cell is None

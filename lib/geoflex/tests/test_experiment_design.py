@@ -422,7 +422,7 @@ def mock_design_evaluation_results_fixture():
       primary_metric_name="revenue",
       alpha=0.1,
       alternative_hypothesis="two-sided",
-      representiveness_scores_per_cell=[1.0, 2.0],
+      representativeness_scores_per_cell=[1.0, 2.0],
       actual_cell_volumes=CellVolumeConstraint(
           constraint_type=CellVolumeConstraintType.MAX_GEOS,
           values=[5, 10, 9],
@@ -495,11 +495,11 @@ def test_experiment_design_evaluation_results_primary_metric_results_per_cell(
   )
 
 
-def test_experiment_design_evaluation_results_representiveness_score_is_least_representative(
+def test_experiment_design_evaluation_results_representativeness_score_is_least_representative(
     mock_design_evaluation_results,
 ):
-  assert mock_design_evaluation_results.representiveness_score == min(
-      mock_design_evaluation_results.representiveness_scores_per_cell
+  assert mock_design_evaluation_results.representativeness_score == min(
+      mock_design_evaluation_results.representativeness_scores_per_cell
   )
 
 
@@ -561,14 +561,14 @@ def test_invalid_experiment_design_results_has_none_for_all_properties():
       primary_metric_name="revenue",
       alpha=0.1,
       alternative_hypothesis="two-sided",
-      representiveness_scores_per_cell=None,
+      representativeness_scores_per_cell=None,
       all_metric_results_per_cell=None,
   )
 
   assert invalid_design_results.primary_metric_results is None
   assert invalid_design_results.primary_metric_results_per_cell is None
   assert invalid_design_results.all_metric_results is None
-  assert invalid_design_results.representiveness_score is None
+  assert invalid_design_results.representativeness_score is None
   assert invalid_design_results.get_mde(target_power=0.8, relative=False, aggregate_across_cells=True) == {}  # pylint: disable=g-explicit-bool-comparison
 
 
@@ -616,7 +616,7 @@ def test_get_summary_dict_returns_correct_dict(
           "something else failed",
       ],
       "all_checks_pass": False,
-      "representiveness_score": 1.0,
+      "representativeness_score": 1.0,
       "primary_metric_failing_checks": ["some error"],
       "primary_metric_all_checks_pass": True,
       "primary_metric_standard_error": 2.1,
@@ -679,7 +679,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
           "something else failed",
       ],
       "all_checks_pass": False,
-      "representiveness_score": 1.0,
+      "representativeness_score": 1.0,
       "primary_metric_failing_checks": ["some error"],
       "primary_metric_all_checks_pass": True,
       "primary_metric_standard_error": 2.1,

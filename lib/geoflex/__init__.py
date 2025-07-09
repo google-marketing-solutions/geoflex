@@ -35,7 +35,7 @@ design_is_eligible_for_data = methodology.design_is_eligible_for_data
 compare_designs = experiment_design.compare_designs
 display_analysis_results = visualization.display_analysis_results
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 logger = logging.getLogger(__name__)
 
