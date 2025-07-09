@@ -393,6 +393,31 @@ def test_get_design_summaries_returns_correct_data_pareto_front_only(
   )  # 10 designs, but 2 are dominated by the others
 
 
+@pytest.mark.parametrize("use_relative_effects_where_possible", [True, False])
+@pytest.mark.parametrize("drop_constant_columns", [True, False])
+@pytest.mark.parametrize("shorten_geo_assignments", [True, False])
+def test_get_design_summaries_returns_styler_if_style_output_is_true(
+    historical_data_lots_of_geos,
+    default_explore_spec,
+    use_relative_effects_where_possible,
+    drop_constant_columns,
+    shorten_geo_assignments,
+):
+  explorer = ExperimentDesignExplorer(
+      historical_data=historical_data_lots_of_geos,
+      explore_spec=default_explore_spec,
+      simulations_per_trial=5,
+  )
+  explorer.explore(max_trials=3, n_jobs=1)
+  design_summaries = explorer.get_design_summaries(
+      style_output=True,
+      use_relative_effects_where_possible=use_relative_effects_where_possible,
+      drop_constant_columns=drop_constant_columns,
+      shorten_geo_assignments=shorten_geo_assignments,
+  )
+  assert isinstance(design_summaries, pd.io.formats.style.Styler)
+
+
 def test_count_all_eligible_designs_returns_correct_data(
     historical_data_lots_of_geos, default_explore_spec
 ):

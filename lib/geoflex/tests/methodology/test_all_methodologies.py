@@ -9,9 +9,11 @@ import geoflex.experiment_design
 import geoflex.exploration_spec
 import geoflex.methodology
 import geoflex.metrics
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+
 
 TestingMethodology = geoflex.methodology.testing_methodology.TestingMethodology
 ExperimentDesignExplorationSpec = (
@@ -262,23 +264,49 @@ def test_assign_geos_returns_expected_data_type(
   geo_assignment = assign_geos(experiment_design, performance_data)
   assert isinstance(geo_assignment, GeoAssignment)
 
+  # experiment_design: ExperimentDesign,
+  # runtime_data: GeoPerformanceDataset,
+  # experiment_start_date: str,
+  # experiment_end_date: str | None = None,
+  # pretest_period_end_date: str | None = None,
+  # return_intermediate_data: bool = False,
+  # with_deep_dive_plots: bool = False,
 
+
+@pytest.mark.parametrize("with_deep_dive_plots", [True, False])
+@pytest.mark.parametrize("return_intermediate_data", [True, False])
 @pytest.mark.parametrize(
     "methodology,experiment_design,performance_data",
     VALID_COMBINATIONS,
     indirect=True,
 )
 def test_analyze_experiment_returns_expected_data_type(
-    methodology, experiment_design, performance_data
+    methodology,
+    experiment_design,
+    performance_data,
+    with_deep_dive_plots,
+    return_intermediate_data,
 ):
   assert experiment_design.methodology == methodology
   assign_geos(experiment_design, performance_data)
-  analysis_results = analyze_experiment(
-      experiment_design, performance_data, "2024-02-01"
+  output = analyze_experiment(
+      experiment_design,
+      performance_data,
+      "2024-02-01",
+      with_deep_dive_plots=with_deep_dive_plots,
+      return_intermediate_data=return_intermediate_data,
   )
+  if return_intermediate_data:
+    analysis_results, intermediate_data = output
+    assert isinstance(intermediate_data, dict)
+  else:
+    analysis_results = output
+
   assert isinstance(analysis_results, pd.DataFrame)
 
   # Check absolute values are not NA
   assert analysis_results["point_estimate"].notna().all()
   assert analysis_results["lower_bound"].notna().all()
   assert analysis_results["upper_bound"].notna().all()
+
+  plt.close("all")

@@ -607,6 +607,25 @@ class Methodology(abc.ABC):
 
     return raw_results, intermediate_data
 
+  def plot_analysis_results(
+      self,
+      analysis_results: pd.DataFrame,
+      intermediate_data: dict[str, Any],
+      design: ExperimentDesign,
+  ) -> None:
+    """Produces custom plots for the analysis results.
+
+    Args:
+      analysis_results: The analysis results to plot.
+      intermediate_data: The intermediate data from the analysis.
+      design: The experiment design.
+    """
+
+    del intermediate_data, design, analysis_results  # Unused
+    logger.info(
+        "Custom deep dive not implemented for %s", self.__class__.__name__
+    )
+
 
 def register_methodology(
     methodology_class: type[Methodology],
@@ -689,6 +708,7 @@ def analyze_experiment(
     experiment_end_date: str | None = None,
     pretest_period_end_date: str | None = None,
     return_intermediate_data: bool = False,
+    with_deep_dive_plots: bool = False,
 ) -> pd.DataFrame | None | tuple[pd.DataFrame, dict[str, Any]]:
   """Analyzes an experiment using the methodology set in the design.
 
@@ -724,6 +744,8 @@ def analyze_experiment(
     return_intermediate_data: Whether to return the intermediate data. This will
       be different for each methodology, and it can be used to debug the
       analysis. It is a dict with custom keys and values for each methodology.
+    with_deep_dive_plots: Whether to produce custom plots for the analysis
+      results.
 
   Returns:
     A dataframe with the analysis results, or None if the design is not valid
@@ -759,8 +781,13 @@ def analyze_experiment(
       experiment_start_date,
       experiment_end_date,
       pretest_period_end_date,
-      return_intermediate_data=return_intermediate_data,
+      return_intermediate_data=return_intermediate_data or with_deep_dive_plots,
   )
+
+  if with_deep_dive_plots:
+    methodology.plot_analysis_results(
+        results, intermediate_data, experiment_design
+    )
 
   if return_intermediate_data:
     return results, intermediate_data

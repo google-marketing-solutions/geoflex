@@ -17,6 +17,7 @@ dependencies = [
   "scikit-learn",
   "pyarrow",
   "PyYAML",
+  "matplotlib",
   "pysyncon",
 ]
 requires-python = ">=3.8"

@@ -6,7 +6,9 @@ from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
+import geoflex.metrics
 import geoflex.utils
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
@@ -390,10 +392,10 @@ class GBR(_base.Methodology):
         X["cost_differential"] = X["geo_assignment"].copy()
 
       X = sm.add_constant(X[[f"{metric.column}_pretest", "cost_differential"]])
+
       # De-mean the pretest metric
-      X[f"{metric.column}_pretest"] -= (
-          1.0 / (1.0 / X[f"{metric.column}_pretest"]).mean()
-      )
+      pretest_mean = 1.0 / (1.0 / X[f"{metric.column}_pretest"]).mean()
+      X[f"{metric.column}_pretest"] -= pretest_mean
 
       wls_results = sm.WLS(y, X, weights=w).fit()
       covariance = (
@@ -412,8 +414,10 @@ class GBR(_base.Methodology):
         X["cost_differential"] = X["geo_assignment"].copy()
 
       X = sm.add_constant(X[[f"{metric.column}_pretest", "cost_differential"]])
+
       # De-mean the pretest metric
-      X[f"{metric.column}_pretest"] -= X[f"{metric.column}_pretest"].mean()
+      pretest_mean = X[f"{metric.column}_pretest"].mean()
+      X[f"{metric.column}_pretest"] -= pretest_mean
 
       ols_results = sm.OLS(y, X).fit()
       covariance = pd.DataFrame(
@@ -429,6 +433,14 @@ class GBR(_base.Methodology):
       logger.error(error_message)
       raise RuntimeError(error_message)
 
+    # Const demean corrected is just used for plotting
+    # The regular const is used for analysis because it accurately captures the
+    # baseline metrics inside the constant. The demean corrected const is just
+    # used for plotting to make the linear regression line easy to plot with
+    # the original non-demeaned data.
+    params["const_demean_corrected"] = (
+        params["const"] - pretest_mean * params[f"{metric.column}_pretest"]
+    )
     return params, covariance, degrees_of_freedom
 
   def _get_summary_statistics(
@@ -541,9 +553,9 @@ class GBR(_base.Methodology):
     intermediate_data["geo_data"] = geo_data
 
     results = []
-    intermediate_data["params"] = []
-    intermediate_data["covariance"] = []
-    intermediate_data["degrees_of_freedom"] = []
+    intermediate_data["params"] = {}
+    intermediate_data["covariance"] = {}
+    intermediate_data["degrees_of_freedom"] = {}
     for cell in range(1, experiment_design.n_cells):
       # Create the data for the current treatment cell, containing only that
       # cell and the control group.
@@ -563,9 +575,12 @@ class GBR(_base.Methodology):
             metric,
             adjusted_linear_model_type,
         )
-        intermediate_data["params"].append(params)
-        intermediate_data["covariance"].append(covariance)
-        intermediate_data["degrees_of_freedom"].append(degrees_of_freedom)
+
+        key = f"{metric.name}__cell_{cell}"
+
+        intermediate_data["params"][key] = params
+        intermediate_data["covariance"][key] = covariance
+        intermediate_data["degrees_of_freedom"][key] = degrees_of_freedom
 
         results_i = self._get_summary_statistics(
             metric,
@@ -580,3 +595,122 @@ class GBR(_base.Methodology):
         results.append(results_i)
 
     return pd.DataFrame(results), intermediate_data
+
+  def plot_analysis_results(
+      self,
+      analysis_results: pd.DataFrame,
+      intermediate_data: dict[str, Any],
+      design: ExperimentDesign,
+  ) -> None:
+    """Produces custom plots for the analysis results.
+
+    Args:
+      analysis_results: The analysis results to plot.
+      intermediate_data: The intermediate data from the analysis.
+      design: The experiment design.
+    """
+
+    del analysis_results  # Unused
+    for cell in range(1, design.n_cells):
+      for metric in [design.primary_metric] + design.secondary_metrics:
+        _plot_gbr_plot(
+            intermediate_data=intermediate_data,
+            metric=metric,
+            treatment_cell=cell,
+        )
+
+
+def _plot_gbr_plot(
+    intermediate_data: dict[str, Any],
+    metric: Metric,
+    treatment_cell: int = 1,
+) -> np.ndarray:
+  """Plots the GBR plot for a given metric and treatment cell."""
+  fig, ax = plt.subplots(ncols=2, figsize=(12, 4), constrained_layout=True)
+
+  if metric.cost_column:
+    metric_name = f"{metric.column} (metric = {metric.name})"
+  else:
+    metric_name = metric.name
+
+  params = intermediate_data["params"][f"{metric.name}__cell_{treatment_cell}"]
+  geo_data = intermediate_data["geo_data"].sort_values(
+      metric.column + "_pretest"
+  )
+
+  is_treated = geo_data["geo_assignment"] == 1
+
+  treated_x = geo_data.loc[is_treated, metric.column + "_pretest"]
+  treated_y = geo_data.loc[is_treated, metric.column + "_runtime"]
+  control_x = geo_data.loc[~is_treated, metric.column + "_pretest"]
+  control_y = geo_data.loc[~is_treated, metric.column + "_runtime"]
+
+  if metric.cost_column:
+    treated_cost_diff = geo_data.loc[
+        is_treated, metric.cost_column + "_cost_differential"
+    ]
+  else:
+    treated_cost_diff = np.ones_like(treated_x)
+
+  control_y_fit = (
+      params["const_demean_corrected"]
+      + params[metric.column + "_pretest"] * control_x
+  )
+  treated_y_fit_baseline = (
+      params["const_demean_corrected"]
+      + params[metric.column + "_pretest"] * treated_x
+  )
+  treated_y_fit = (
+      treated_y_fit_baseline + params["cost_differential"] * treated_cost_diff
+  )
+
+  control_residual = control_y - control_y_fit
+  treated_residual = treated_y - treated_y_fit_baseline
+
+  ax[0].plot(
+      control_x, control_y, label="Control Geos", marker=".", lw=0, color="C0"
+  )
+  ax[0].plot(
+      treated_x, treated_y, label="Treated Geos", marker=".", lw=0, color="C1"
+  )
+  ax[0].plot(control_x, control_y_fit, lw=1, color="C0")
+  ax[0].plot(treated_x, treated_y_fit, lw=1, color="C1")
+
+  ax[0].set_xlabel("Pretest Value")
+  ax[0].set_ylabel("Experiment Value")
+  ax[0].set_title("Experiment vs Pre-test")
+
+  ax[0].legend()
+
+  ax[1].plot(
+      control_x,
+      control_residual,
+      label="Control Geos",
+      marker=".",
+      lw=0,
+      color="C0",
+  )
+  ax[1].plot(
+      treated_x,
+      treated_residual,
+      label="Treated Geos",
+      marker=".",
+      lw=0,
+      color="C1",
+  )
+  ax[1].axhline(0.0, lw=1, color="C0")
+  ax[1].plot(
+      treated_x,
+      params["cost_differential"] * treated_cost_diff,
+      lw=1,
+      color="C1",
+  )
+
+  ax[1].set_xlabel("Pretest Value")
+  ax[1].set_ylabel("Experiment Value - Expected Value")
+  ax[1].set_title("Residuals vs Pre-test")
+  ax[1].legend()
+
+  fig.suptitle(f"GBR Plot | {metric_name} | Cell {treatment_cell}")
+
+  return ax

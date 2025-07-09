@@ -595,7 +595,9 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
       target_primary_metric_mde: float | None = None,
       use_relative_effects_where_possible: bool = True,
       drop_constant_columns: bool = False,
-  ) -> pd.DataFrame:
+      shorten_geo_assignments: bool = True,
+      style_output: bool = False,
+  ) -> pd.DataFrame | pd.io.formats.style.Styler:
     """Returns the summaries of the explored experiment designs.
 
     If the experiment is a multi-cell experiment, then the performance metrics
@@ -624,30 +626,32 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         dataframe. These are the columns that are the same for all designs. It
         can make it easier to compare the designs side-by-side by looking at
         only the differences.
+      shorten_geo_assignments: Shorten the columns containing the geo
+        assignments to make them more readable.
+      style_output: Whether to return the dataframe as a Styler object with
+        formatting.
 
     Returns:
       A dataframe containing the experiment design summaries.
     """
+    all_metrics = [
+        self.explore_spec.primary_metric
+    ] + self.explore_spec.secondary_metrics
+    cost_per_metric_metrics = [
+        metric.name for metric in all_metrics if metric.cost_per_metric
+    ]
+
     designs = self.get_designs(top_n, pareto_front_only)
-    summaries = geoflex.experiment_design.compare_designs(
-        designs,
+    return geoflex.experiment_design.compare_designs(
+        designs=designs,
         target_power=target_power,
         target_primary_metric_mde=target_primary_metric_mde,
         use_relative_effects_where_possible=use_relative_effects_where_possible,
+        shorten_geo_assignments=shorten_geo_assignments,
+        drop_constant_columns=drop_constant_columns,
+        style_output=style_output,
+        cost_per_metric_metrics=cost_per_metric_metrics,
     )
-
-    if drop_constant_columns:
-      for c in summaries.columns:
-        if summaries[c].astype(str).nunique() == 1:
-          logger.info(
-              "Dropping column %s from summary frame as it is constant across"
-              " all designs, value: %s.",
-              c,
-              summaries[c].iloc[0],
-          )
-          summaries.drop(c, axis=1, inplace=True)
-
-    return summaries
 
   def get_design_by_id(self, design_id: str) -> ExperimentDesign | None:
     """Returns the experiment design with the given ID, or None if not found.

@@ -7,8 +7,10 @@ import logging
 from typing import Annotated, Any
 import uuid
 import geoflex.metrics
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
+from pandas.io.formats import style
 import pydantic
 import yaml
 
@@ -1166,12 +1168,47 @@ class ExperimentDesign(pydantic.BaseModel):
     return variation
 
 
+def _format_check_column(value: bool | None) -> str:
+  if value is None:
+    return ""
+  return (
+      "background-color:lightgreen"
+      if value == "None"
+      else "background-color:darkred;color:white"
+  )
+
+
+def _clean_column_names(summary_data: pd.DataFrame) -> pd.DataFrame:
+  summary_data.columns = [
+      column.replace("_", " ").title() if "MDE" not in column else column
+      for column in summary_data.columns
+  ]  # The MDE columns are already clean
+
+  return summary_data
+
+
+def _shorten_geo_assignments(geo_assignment_col: str | None) -> str:
+  if not isinstance(geo_assignment_col, str):
+    return ""
+
+  max_char = 15
+  if len(geo_assignment_col) <= max_char:
+    return geo_assignment_col
+
+  n_geos = len(geo_assignment_col.split(","))
+  return geo_assignment_col[:max_char] + f"... ({n_geos} geos)"
+
+
 def compare_designs(
     designs: list[ExperimentDesign],
     target_power: float = 0.8,
     target_primary_metric_mde: float | None = None,
     use_relative_effects_where_possible: bool = True,
-) -> pd.DataFrame:
+    shorten_geo_assignments: bool = True,
+    drop_constant_columns: bool = False,
+    style_output: bool = False,
+    cost_per_metric_metrics: list[str] | None = None,
+) -> pd.DataFrame | style.Styler:
   """Create a dataframe with the summaries of each design for each comparison.
 
   Args:
@@ -1180,12 +1217,24 @@ def compare_designs(
     target_primary_metric_mde: The target MDE for the primary metric.
     use_relative_effects_where_possible: Whether to use relative effects where
       possible.
+    shorten_geo_assignments: Shorten the columns containing the geo assignments
+      to make them more readable.
+    drop_constant_columns: Drop the columns that are constant across all
+      designs.
+    style_output: Whether to return the dataframe as a Styler object with
+      formatting.
+    cost_per_metric_metrics: The cost per metric metrics. For these metrics a
+      higher MDE is better, so when applying the style on the output we reverse
+      the color palette.
 
   Returns:
     A dataframe with the summary of each design. The dataframe is indexed by the
-    design id.
+    design id. If style_output is True, then the dataframe is returned as a
+    Styler object.
   """
-  return pd.DataFrame([
+  cost_per_metric_metrics = cost_per_metric_metrics or []
+
+  summary_data = pd.DataFrame([
       design.get_summary_dict(
           target_power=target_power,
           target_primary_metric_mde=target_primary_metric_mde,
@@ -1193,3 +1242,101 @@ def compare_designs(
       )
       for design in designs
   ]).set_index("design_id")
+
+  rel_mde_columns = [
+      column for column in summary_data.columns if "Relative MDE" in column
+  ]
+  abs_mde_columns = [
+      column
+      for column in summary_data.columns
+      if "MDE" in column and "Relative MDE" not in column
+  ]
+
+  required_columns = (
+      rel_mde_columns
+      + abs_mde_columns
+      + [
+          "failing_checks",
+          "all_checks_pass",
+      ]
+  )
+
+  other_columns = [
+      column
+      for column in summary_data.columns
+      if column not in required_columns
+  ]
+  column_order = other_columns + required_columns
+  summary_data = summary_data[column_order]
+
+  if drop_constant_columns:
+    for c in summary_data.columns:
+      if (
+          summary_data[c].astype(str).nunique() == 1
+          and c not in required_columns
+      ):
+        logger.info(
+            "Dropping column %s from summary table as it is constant across"
+            " all designs, value: %s.",
+            c,
+            summary_data[c].iloc[0],
+        )
+        summary_data.drop(c, axis=1, inplace=True)
+
+  if not style_output:
+    return summary_data
+
+  drop_columns = [
+      "primary_metric_standard_error",
+      "primary_metric_failing_checks",
+      "primary_metric_all_checks_pass",
+  ]
+  summary_data = summary_data[
+      [col for col in summary_data.columns if col not in drop_columns]
+  ]
+  summary_data = _clean_column_names(summary_data)
+
+  if shorten_geo_assignments:
+    geo_assignment_columns = [
+        column
+        for column in summary_data.columns
+        if column.startswith("Geo Assignment")
+        or column.startswith("Geo Eligibility")
+    ]
+    summary_data[geo_assignment_columns] = summary_data[
+        geo_assignment_columns
+    ].map(_shorten_geo_assignments)
+
+  summary_data["Failing Checks"] = summary_data["Failing Checks"].apply(
+      ", ".join
+  )
+  summary_data.loc[summary_data["All Checks Pass"], "Failing Checks"] = "None"
+  summary_data.drop(columns=["All Checks Pass"], inplace=True)
+
+  styled_summary_data = (
+      summary_data.style.format(
+          "{:.2%}",
+          subset=rel_mde_columns,
+      )
+      .highlight_null(props="opacity:0%")
+      .map(
+          _format_check_column,
+          subset=["Failing Checks"],
+      )
+  )
+
+  for mde_col in abs_mde_columns + rel_mde_columns:
+    cmap = "RdYlGn_r"
+    for reverse_metric in cost_per_metric_metrics:
+      if reverse_metric in mde_col:
+        cmap = "RdYlGn"
+        break
+
+    styled_summary_data = styled_summary_data.background_gradient(
+        subset=[mde_col],
+        cmap=mpl.colormaps[cmap],
+        low=0.1,
+        high=0.1,
+    )
+
+  return styled_summary_data

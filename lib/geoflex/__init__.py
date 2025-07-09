@@ -8,6 +8,7 @@ from geoflex import exploration_spec
 from geoflex import explore
 from geoflex import methodology
 from geoflex import metrics
+from geoflex import visualization
 import optuna as op
 
 ExperimentDesignExplorationSpec = (
@@ -32,6 +33,7 @@ assign_geos = methodology.assign_geos
 analyze_experiment = methodology.analyze_experiment
 design_is_eligible_for_data = methodology.design_is_eligible_for_data
 compare_designs = experiment_design.compare_designs
+display_analysis_results = visualization.display_analysis_results
 
 __version__ = "0.2.0"
 
