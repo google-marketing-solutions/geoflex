@@ -5,10 +5,10 @@ import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
 import geoflex.utils
-import numpy as np
 import pandas as pd
 from pysyncon import Dataprep
 from pysyncon import Synth
+
 
 # pylint:disable=protected-access
 
@@ -37,136 +37,10 @@ class SyntheticControls(_base.Methodology):
   """
 
   default_methodology_parameter_candidates = {
-      "min_treatment_geos": [1],
       "num_iterations": [10],
   }
 
-  def _randomly_assign_geos(
-      self,
-      experiment_design: ExperimentDesign,
-      historical_data: GeoPerformanceDataset,
-      rng: np.random.Generator,
-  ) -> tuple[list[str], list[str]] | None:
-    """This function randomly assigns geos.
-
-    Assign treatment and control groups.
-    Assign treatment and control groups.
-
-    Args:
-      experiment_design: The design parameters for the experiment.
-      historical_data: Historical geo performance data.
-      rng: Random number generator for reproducible sampling.
-
-    Returns:
-      A tuple (treatment_geos, control_geos) or None if constraints unmet.
-    """
-
-    # Params
-    params = experiment_design.methodology_parameters
-    min_treatment_geos = params["min_treatment_geos"]
-
-    treatment_list = experiment_design.geo_eligibility.treatment
-    force_test = treatment_list[0] if treatment_list else []
-    force_control = experiment_design.geo_eligibility.control or []
-    exclude = experiment_design.geo_eligibility.exclude or []
-    all_geos = historical_data.geos
-
-    num_forced_control = len(set(force_control) - set(force_test))
-    required_controls = max(1, num_forced_control)
-    max_treatment_geos = len(all_geos) - required_controls
-    if (
-        experiment_design.cell_volume_constraint.constraint_type
-        == geoflex.CellVolumeConstraintType.MAX_GEOS
-    ):
-      max_treatment_geos = experiment_design.cell_volume_constraint.values[1]
-
-    # Sample Geos
-    return self._sample_geos(
-        all_geos,
-        force_test,
-        force_control,
-        exclude,
-        min_treatment_geos,
-        max_treatment_geos,
-        rng
-    )
-
-  def _aggregate_and_fit(
-      self,
-      experiment_design: ExperimentDesign,
-      historical_data: GeoPerformanceDataset,
-      sample: tuple[list[str], list[str]]
-  ) -> tuple[GeoAssignment, dict[str, Any]] | None:
-    """Aggregates treatment geos and fits a synthetic control model.
-
-    This method takes a sample of treatment and control geos, aggregates the
-    treatment group into a single unit, and then fits a synthetic control
-    model to the historical data.
-
-    Args:
-      experiment_design: The design parameters for the experiment.
-      historical_data: Historical geo performance data.
-      sample: A tuple containing two lists: the treatment geos and the
-        control geos for this iteration.
-
-    Returns:
-      A tuple containing the GeoAssignment object for the sample and a
-      dictionary of model results, or None if the process fails.
-    """
-
-    test_geos, control_geos = sample
-    exclude = experiment_design.geo_eligibility.exclude or []
-
-    # Get Data
-    df = historical_data.parsed_data
-    dep = experiment_design.primary_metric.column
-    exclude = experiment_design.geo_eligibility.exclude or []
-
-    # Get Data
-    df = historical_data.parsed_data
-    dep = experiment_design.primary_metric.column
-
-    # Aggregate
-    df_agg = self.aggregate_treatment(
-        df,
-        test_geos,
-        control_geos,
-        historical_data.geo_id_column,
-        historical_data.date_column,
-        dep
-        )
-    if df_agg.empty:
-      return None
-
-    # Fit Model
-    mr = self._fit_model(
-        df_agg,
-        historical_data.geo_id_column,
-        historical_data.date_column,
-        dep,
-        control_geos=control_geos,
-        test_geo="Aggregated_Treatment",
-        treatment_geos=test_geos,
-        train_start_date=df[historical_data.date_column].min(),
-        train_end_date=None,
-        predictor_start_date=df[historical_data.date_column].min(),
-        predictor_end_date=df[historical_data.date_column].max(),
-        )
-
-    # Build the GeoAssignment
-    treat = [set(test_geos)]
-    ctrl = set(control_geos)
-    excl = set(exclude)
-
-    geo_assignment = GeoAssignment(
-        treatment=treat,
-        control=ctrl,
-        exclude=excl
-        )
-
-    return geo_assignment, mr
-
-  def aggregate_treatment(
+  def _aggregate_treatment(
       self,
       df: pd.DataFrame,
       treatment_geos: list[str],
@@ -201,59 +75,6 @@ class SyntheticControls(_base.Methodology):
     test_geos_df[geo_var] = ["Aggregated_Treatment"]*len(test_geos_df)
 
     return pd.concat([test_geos_df, control_geos_df])
-
-  def _sample_geos(
-      self,
-      all_geos: list[str],
-      force_test: list[str],
-      force_control: list[str],
-      exclude: list[str],
-      min_treatment_geos: int,
-      max_treatment_geos: int,
-      rng: np.random.Generator,
-  ) -> tuple[list[str], list[str]] | None:
-    """Randomly sample treatment and control geos given constraints.
-
-    Args:
-      all_geos: List of all candidate geo identifiers.
-      force_test: Geos that must be included in treatment.
-      force_control: Geos that must be included in control.
-      exclude: Geos to exclude entirely.
-      min_treatment_geos: Minimum number of treatment geos.
-      max_treatment_geos: Maximum number of treatment geos.
-      rng: Random number generator for reproducible sampling.
-
-    Returns:
-      A tuple (treatment_geos, control_geos) or None if constraints unmet.
-    """
-
-    pool = set(all_geos) - set(exclude)
-    f_test = set(force_test)
-    f_control = set(force_control) - f_test
-
-    available = list(pool - f_test - f_control)
-    need_min = max(0, min_treatment_geos - len(f_test))
-    if max_treatment_geos is None:
-      max_extra = len(available)
-    else:
-      max_extra = max(0, max_treatment_geos - len(f_test))
-
-    if len(available) < need_min:
-      return None
-
-    extra = int(rng.integers(need_min, min(max_extra, len(available)) + 1))
-    new_test = (
-        list(rng.choice(available, size=extra, replace=False))
-        if extra else []
-    )
-
-    test_geos = list(f_test | set(new_test))
-    control_geos = list(f_control | (set(available) - set(new_test)))
-
-    if not test_geos or not control_geos:
-      return None
-
-    return test_geos, control_geos
 
   def _fit_model(
       self,
@@ -464,59 +285,103 @@ class SyntheticControls(_base.Methodology):
       treatment groups, and optionally a list of geos that should be ignored.
     """
     num_iters = experiment_design.methodology_parameters["num_iterations"]
-    exclude = experiment_design.geo_eligibility.exclude or []
-
-    # Run all iterations
-    best_iter = None
-    best_validation = float("-inf")
+    exclude = set(experiment_design.geo_eligibility.exclude or [])
     rng = experiment_design.get_rng()
+    n_cells = experiment_design.n_cells
+
+    best_partition = None
+    max_min_r2 = -float("inf")
+
+    eligible_geos = list(set(historical_data.geos) - exclude)
+
+    # Check if there are enough geos to pre-assign one to each cell
+    if len(eligible_geos) < n_cells:
+      raise ValueError(
+          f"Not enough eligible geos ({len(eligible_geos)}) to assign "
+          f"at least one to each of the {n_cells} cells."
+      )
 
     for _ in range(num_iters):
-      sample = self._randomly_assign_geos(
-          experiment_design,
-          historical_data,
-          rng
+      # 1. Shuffle the geos to ensure the pre-assignment is random each time.
+      rng.shuffle(eligible_geos)
+
+      # 2. Select one "anchor" geo for each cell to pre-assign.
+      anchor_geos = eligible_geos[:n_cells]
+      pre_assigned = {geo: i for i, geo in enumerate(anchor_geos)}
+
+      # 3. Call the utility function with the pre_assigned parameter.
+      # This guarantees that no group will be empty.
+      assignments, _ = geoflex.utils.assign_geos_randomly(
+          geo_ids=eligible_geos,
+          n_groups=n_cells,
+          rng=rng,
+          pre_assigned_geos=pre_assigned,
       )
-      if not sample:
+
+      current_partition = {
+          "control": assignments[0],
+          "treatment": assignments[1:],
+      }
+
+      # Step 2b: Evaluate the Partition
+      r2_scores_for_this_partition = []
+      for treatment_cell in current_partition["treatment"]:
+        if not treatment_cell:
+          continue
+
+        df_agg = self._aggregate_treatment(
+            historical_data.parsed_data,
+            treatment_geos=treatment_cell,
+            control_geos=current_partition["control"],
+            geo_var=historical_data.geo_id_column,
+            time_var=historical_data.date_column,
+            dependent=experiment_design.primary_metric.column,
+        )
+        if df_agg.empty:
+          continue
+
+        model_result = self._fit_model(
+            df_agg,
+            historical_data.geo_id_column,
+            historical_data.date_column,
+            experiment_design.primary_metric.column,
+            control_geos=current_partition["control"],
+            test_geo="Aggregated_Treatment",
+            treatment_geos=treatment_cell,
+            train_start_date=historical_data.parsed_data[
+                historical_data.date_column
+            ].min(),
+            train_end_date=None,
+            predictor_start_date=historical_data.parsed_data[
+                historical_data.date_column
+            ].min(),
+            predictor_end_date=historical_data.parsed_data[
+                historical_data.date_column
+            ].max(),
+        )
+
+        if model_result and model_result.get("validation_r2") is not None:
+          r2_scores_for_this_partition.append(model_result["validation_r2"])
+
+      if not r2_scores_for_this_partition:
         continue
 
-      iter_output = self._aggregate_and_fit(
-          experiment_design,
-          historical_data,
-          sample
-      )
-      if not sample:
-        continue
+      current_min_r2 = min(r2_scores_for_this_partition)
 
-      iter_output = self._aggregate_and_fit(
-          experiment_design,
-          historical_data,
-          sample
-      )
-      if not iter_output:
-        continue
+      # Step 2c: Update the Best Result
+      if current_min_r2 > max_min_r2:
+        max_min_r2 = current_min_r2
+        best_partition = current_partition
 
-      _, result = iter_output
-      # Pull out the validation R²; skip if missing
-      val_r2 = result.get("validation_r2")
-      if val_r2 is None:
-        continue
-
-      # Keep the iteration with highest validation_r2
-      if val_r2 > best_validation:
-        best_validation = val_r2
-        best_iter = result
-
-    # Build the GeoAssignment from the best iteration
-    treat = [set(best_iter["treatment_geos"])]
-    ctrl = set(best_iter["control_geos"])
-    excl = set(exclude)
-
-    return GeoAssignment(
-        treatment=treat,
-        control=ctrl,
-        exclude=excl,
-    ), {}
+    # Finalization
+    return (
+        GeoAssignment(
+            control=set(best_partition["control"]),
+            treatment=[set(cell) for cell in best_partition["treatment"]],
+            exclude=exclude,
+        ),
+        {},
+    )
 
   def _methodology_analyze_experiment(
       self,
@@ -555,86 +420,94 @@ class SyntheticControls(_base.Methodology):
     """
     intermediate_data = {}
     results = []
-
-    treatment_geos = list(experiment_design.geo_assignment.treatment[0])
     control_geos = list(experiment_design.geo_assignment.control)
 
-    for metric in [
-        experiment_design.primary_metric] + experiment_design.secondary_metrics:
-      df_agg = self.aggregate_treatment(
-          runtime_data.parsed_data,
-          treatment_geos,
-          control_geos,
-          runtime_data.geo_id_column,
-          runtime_data.date_column,
-          metric.column
-      )
-      if df_agg.empty:
+    for cell_index, treatment_geos_set in enumerate(
+        experiment_design.geo_assignment.treatment
+    ):
+      treatment_geos = list(treatment_geos_set)
+      if not treatment_geos:
         continue
 
-      model_results = self._fit_model(
-          df_agg,
-          runtime_data.geo_id_column,
-          runtime_data.date_column,
-          metric.column,
-          control_geos=control_geos,
-          test_geo="Aggregated_Treatment",
-          treatment_geos=treatment_geos,
-          train_start_date=runtime_data.parsed_data[
-              runtime_data.date_column].min(),
-          train_end_date=pretest_period_end_date,
-          predictor_start_date=runtime_data.parsed_data[
-              runtime_data.date_column].min(),
-          predictor_end_date=experiment_end_date,
-          is_analysis_phase=True,
-      )
+      for metric in (
+          [experiment_design.primary_metric]
+          + experiment_design.secondary_metrics
+      ):
+        df_agg = self._aggregate_treatment(
+            runtime_data.parsed_data,
+            treatment_geos,
+            control_geos,
+            runtime_data.geo_id_column,
+            runtime_data.date_column,
+            metric.column,
+        )
+        if df_agg.empty:
+          continue
 
-      synth_model = model_results.get("synth_model")
-      if not synth_model:
-        continue
+        model_results = self._fit_model(
+            df_agg,
+            runtime_data.geo_id_column,
+            runtime_data.date_column,
+            metric.column,
+            control_geos=control_geos,
+            test_geo="Aggregated_Treatment",
+            treatment_geos=treatment_geos,
+            train_start_date=runtime_data.parsed_data[
+                runtime_data.date_column
+            ].min(),
+            train_end_date=pretest_period_end_date,
+            predictor_start_date=runtime_data.parsed_data[
+                runtime_data.date_column
+            ].min(),
+            predictor_end_date=experiment_end_date,
+            is_analysis_phase=True,
+        )
 
-      # Define the experiment time period
-      time_period = pd.date_range(
-          start=experiment_start_date, end=experiment_end_date)
+        synth_model = model_results.get("synth_model")
+        if not synth_model:
+          continue
 
-      # Calculate the ATT and its standard error
-      att_results = synth_model.att(time_period=time_period)
+        time_period = pd.date_range(
+            start=experiment_start_date, end=experiment_end_date
+        )
+        att_results = synth_model.att(time_period=time_period)
 
-      # 1. Get control data (Z0) to calculate the baseline
-      exp_data_controls = df_agg[
-          (df_agg[runtime_data.date_column].isin(time_period)) &
-          (df_agg[runtime_data.geo_id_column].isin(control_geos))
-      ]
-      z0_exp = exp_data_controls.pivot_table(
-          index=runtime_data.date_column,
-          columns=runtime_data.geo_id_column,
-          values=metric.column
-      )
+        # 1. Get control data (Z0) to calculate the baseline
+        exp_data_controls = df_agg[
+            (df_agg[runtime_data.date_column].isin(time_period)) &
+            (df_agg[runtime_data.geo_id_column].isin(control_geos))
+        ]
+        z0_exp = exp_data_controls.pivot_table(
+            index=runtime_data.date_column,
+            columns=runtime_data.geo_id_column,
+            values=metric.column
+        )
 
-      # 2. Calculate the baseline estimate (the counterfactual)
-      baseline_ts = synth_model._synthetic(Z0=z0_exp)
-      baseline_estimate = baseline_ts.mean()
+        # 2. Calculate the baseline estimate (the counterfactual)
+        baseline_ts = synth_model._synthetic(Z0=z0_exp)
+        baseline_estimate = baseline_ts.mean()
 
-      # 3. Estimate baseline_standard_error from pre-treatment residuals
-      z_zero_pre, z_one_pre = synth_model.dataprep.make_outcome_mats(
-          time_period=synth_model.dataprep.time_optimize_ssr
-      )
-      pre_treatment_gaps = synth_model._gaps(Z0=z_zero_pre, Z1=z_one_pre)
-      baseline_standard_error = pre_treatment_gaps.std()
+        # 3. Estimate baseline_standard_error from pre-treatment residuals
+        z_zero_pre, z_one_pre = synth_model.dataprep.make_outcome_mats(
+            time_period=synth_model.dataprep.time_optimize_ssr
+        )
+        pre_treatment_gaps = synth_model._gaps(Z0=z_zero_pre, Z1=z_one_pre)
+        baseline_standard_error = pre_treatment_gaps.std()
 
-      # 4. Get summary statistics, now including baseline estimates
-      st = geoflex.utils.get_summary_statistics_from_standard_errors(
-          impact_estimate=att_results["att"],
-          impact_standard_error=att_results["se"],
-          baseline_estimate=baseline_estimate,
-          baseline_standard_error=baseline_standard_error,
-          impact_baseline_corr=0,
-          degrees_of_freedom=len(time_period) - 1,
-          alternative_hypothesis=experiment_design.alternative_hypothesis,
-          alpha=experiment_design.alpha,
-          invert_result=metric.cost_per_metric,
-      )
-      st["metric"] = metric.name
-      results.append(st)
+        # 4. Get summary statistics, now including baseline estimates
+        st = geoflex.utils.get_summary_statistics_from_standard_errors(
+            impact_estimate=att_results["att"],
+            impact_standard_error=att_results["se"],
+            baseline_estimate=baseline_estimate,
+            baseline_standard_error=baseline_standard_error,
+            impact_baseline_corr=0,
+            degrees_of_freedom=len(time_period) - 1,
+            alternative_hypothesis=experiment_design.alternative_hypothesis,
+            alpha=experiment_design.alpha,
+            invert_result=metric.cost_per_metric,
+        )
+        st["metric"] = metric.name
+        st["cell"] = cell_index + 1
+        results.append(st)
 
     return pd.DataFrame(results), intermediate_data

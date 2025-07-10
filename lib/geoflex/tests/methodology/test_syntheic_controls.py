@@ -6,7 +6,6 @@ from geoflex.experiment_design import ExperimentDesign
 from geoflex.experiment_design import GeoAssignment
 from geoflex.methodology.synthetic_controls import SyntheticControls
 from geoflex.metrics import Metric
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -47,7 +46,8 @@ def setup_fixtures_data() -> dict[str, Any]:
           primary_metric=Metric(name='sales'),
           methodology='SyntheticControls',
           runtime_weeks=4,
-          methodology_parameters={'min_treatment_geos': 2, 'num_iterations': 5}
+          n_cells=2,
+          methodology_parameters={'min_treatment_geos': 2, 'num_iterations': 5},
       )
     }
   return fixtures
@@ -60,7 +60,7 @@ def fixtures_fixture() -> dict[str, Any]:
 
 def setup_aggregated_df(fixtures: dict[str, Any]):
   """Sets up the aggregated dataframe."""
-  return fixtures['sc_method'].aggregate_treatment(
+  return fixtures['sc_method']._aggregate_treatment(
       df=fixtures['historical_data'].parsed_data,
       treatment_geos=['G1', 'G2'],
       control_geos=['G3', 'G4', 'G5'],
@@ -107,43 +107,6 @@ def test_aggregate_treatment(aggregated_df):
   assert 'G1' not in aggregated_df['geo_id'].unique()
 
 
-def test_sample_geos(fixtures: dict[str, Any]):
-  """Tests the geo sampling logic, both with and without constraints."""
-
-  # Test 1: Basic sampling
-  rng = np.random.default_rng(seed=42)
-  sample_result = fixtures['sc_method']._sample_geos(
-      all_geos=fixtures['historical_data'].geos,
-      force_test=[], force_control=[], exclude=[],
-      min_treatment_geos=2, max_treatment_geos=3, rng=rng
-    )
-  assert len(sample_result[0]) >= 2 and len(sample_result[0]) <= 3
-
-  # Test 2: Sampling with constraints
-  rng_constrained = np.random.default_rng(seed=99)
-  constrained_sample = fixtures['sc_method']._sample_geos(
-      all_geos=fixtures['historical_data'].geos,
-      force_test=['G1'], force_control=['G5'], exclude=['G3'],
-      min_treatment_geos=2, max_treatment_geos=2, rng=rng_constrained
-  )
-  assert 'G1' in constrained_sample[0]
-  assert 'G5' in constrained_sample[1]
-  assert 'G3' not in (constrained_sample[0] + constrained_sample[1])
-
-
-def test_randomly_assign_geos(fixtures: dict[str, Any]):
-  """Tests the wrapper function for random assignment."""
-  rng = np.random.default_rng(seed=123)
-  result = fixtures['sc_method']._randomly_assign_geos(
-      experiment_design=fixtures['experiment_design'],
-      historical_data=fixtures['historical_data'], rng=rng
-  )
-  assert isinstance(result, tuple) and len(result) == 2
-  min_geos = fixtures[
-      'experiment_design'].methodology_parameters['min_treatment_geos']
-  assert len(result[0]) >= min_geos
-
-
 def test_fit_model(fit_results_and_validation_df):
   """Tests the core model fitting logic and returns results for other tests."""
   fit_results, _ = fit_results_and_validation_df
@@ -165,19 +128,25 @@ def test_calculate_r2(fixtures: dict[str, Any], fit_results_and_validation_df):
   assert isinstance(r2_score, float) and r2_score <= 1.0
 
 
-def test_aggregate_and_fit(fixtures: dict[str, Any]):
-  """Tests the function that combines aggregation and model fitting."""
-  fixed_sample = (['G1', 'G2'], ['G3', 'G4', 'G5'])
-  geo_assignment, model_results = fixtures['sc_method']._aggregate_and_fit(
-      experiment_design=fixtures['experiment_design'],
-      historical_data=fixtures['historical_data'], sample=fixed_sample
-  )
-  assert isinstance(geo_assignment, GeoAssignment)
-  assert isinstance(model_results, dict)
-
-
 def test_methodology_assign_geos(fixtures: dict[str, Any]):
   """Tests the main orchestrator for the entire assignment process."""
+  final_assignment, _ = fixtures['sc_method']._methodology_assign_geos(
+      experiment_design=fixtures['experiment_design'],
+      historical_data=fixtures['historical_data']
+  )
+  assert isinstance(final_assignment, GeoAssignment)
+
+  assigned_geos = (
+      set().union(*final_assignment.treatment)
+      | final_assignment.control
+      | final_assignment.exclude
+  )
+  assert assigned_geos == set(fixtures['historical_data'].geos)
+
+
+def test_methodology_assign_geos_multicell(fixtures: dict[str, Any]):
+  """Tests the main orchestrator for the entire assignment process."""
+  fixtures['experiment_design'].n_cells = 3
   final_assignment, _ = fixtures['sc_method']._methodology_assign_geos(
       experiment_design=fixtures['experiment_design'],
       historical_data=fixtures['historical_data']
@@ -226,8 +195,6 @@ if __name__ == '__main__':
   aggregated_data = setup_aggregated_df(fixtures_data)
 
   test_aggregate_treatment(aggregated_data)
-  test_sample_geos(fixtures_data)
-  test_randomly_assign_geos(fixtures_data)
 
   fit_results, validation_df = setup_fit_results_and_validation_df(
       fixtures_data, aggregated_data
@@ -235,6 +202,6 @@ if __name__ == '__main__':
   test_fit_model((fit_results, validation_df))
   test_calculate_r2(fixtures_data, (fit_results, validation_df))
 
-  test_aggregate_and_fit(fixtures_data)
   test_methodology_assign_geos(fixtures_data)
+  test_methodology_assign_geos_multicell(fixtures_data)
   test_methodology_analyze_experiment(fixtures_data)
