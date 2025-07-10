@@ -154,10 +154,11 @@ def test_explorer_explore_suggests_designs_within_spec(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data,
       explore_spec=default_explore_spec,
-      simulations_per_trial=3,
   )
   explorer._experiment_design_evaluator = mock.MagicMock()  # pylint: disable=protected-access
-  explorer.explore(max_trials=20)
+  explorer.explore(
+      max_trials=20, aa_simulations_per_trial=3, ab_simulations_per_trial=3
+  )
 
   for suggested_design in explorer.get_designs():
     assert isinstance(suggested_design, ExperimentDesign)
@@ -204,10 +205,11 @@ def test_explorer_explore_uses_default_methodology_parameter_candidates_if_not_s
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data,
       explore_spec=default_explore_spec,
-      simulations_per_trial=3,
   )
   explorer._experiment_design_evaluator = mock.MagicMock()  # pylint: disable=protected-access
-  explorer.explore(max_trials=20)
+  explorer.explore(
+      max_trials=20, aa_simulations_per_trial=3, ab_simulations_per_trial=3
+  )
 
   unique_methodology_parameters = {}
   for suggested_design in explorer.get_designs():
@@ -240,10 +242,11 @@ def test_explorer_explore_uses_spec_methodology_parameter_candidates_if_set(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data,
       explore_spec=explore_spec,
-      simulations_per_trial=3,
   )
   explorer._experiment_design_evaluator = mock.MagicMock()  # pylint: disable=protected-access
-  explorer.explore(max_trials=20)
+  explorer.explore(
+      max_trials=20, aa_simulations_per_trial=3, ab_simulations_per_trial=3
+  )
 
   unique_methodology_parameters = {}
   for suggested_design in explorer.get_designs():
@@ -268,10 +271,14 @@ def test_explorer_explore_assigns_geos_and_evaluates_designs(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data,
       explore_spec=default_explore_spec,
-      simulations_per_trial=3,
   )
 
-  explorer.explore(max_trials=2, n_jobs=1)
+  explorer.explore(
+      max_trials=2,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
   for design in explorer.get_designs():
     assert isinstance(
         design.evaluation_results,
@@ -282,15 +289,132 @@ def test_explorer_explore_assigns_geos_and_evaluates_designs(
     )
 
 
+def test_explorer_extend_top_n_designs_extends_designs_correctly(
+    historical_data, default_explore_spec
+):
+  explorer = ExperimentDesignExplorer(
+      historical_data=historical_data,
+      explore_spec=default_explore_spec,
+  )
+
+  explorer.explore(
+      max_trials=4,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
+
+  summary_results_1 = explorer.get_design_summaries()
+
+  explorer.extend_top_n_designs(
+      top_n=2,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+  )
+  summary_results_2 = explorer.get_design_summaries()
+
+  # Top designs are changed
+  assert not summary_results_1.iloc[:2].equals(summary_results_2.iloc[:2])
+  # Bottom designs are unchanged
+  assert summary_results_1.iloc[2:].equals(summary_results_2.iloc[2:])
+
+
+def test_explorer_extend_designs_by_ids_correctly(
+    historical_data, default_explore_spec
+):
+  explorer = ExperimentDesignExplorer(
+      historical_data=historical_data,
+      explore_spec=default_explore_spec,
+  )
+
+  explorer.explore(
+      max_trials=4,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
+
+  summary_results_1 = explorer.get_design_summaries()
+
+  design_ids_to_extend = [
+      explorer.get_designs()[1].design_id,
+      explorer.get_designs()[3].design_id,
+  ]
+  other_design_ids = [
+      design_id
+      for design_id in summary_results_1.index
+      if design_id not in design_ids_to_extend
+  ]
+  explorer.extend_design_by_id(
+      design_ids_to_extend,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+  )
+  summary_results_2 = explorer.get_design_summaries()
+
+  # Selected designs are changed
+  assert not summary_results_1.loc[design_ids_to_extend].equals(
+      summary_results_2.loc[design_ids_to_extend]
+  )
+  # Other designs are unchanged
+  assert summary_results_1.loc[other_design_ids].equals(
+      summary_results_2.loc[other_design_ids]
+  )
+
+
+def test_explorer_extend_designs_by_ids_correctly_single_design(
+    historical_data, default_explore_spec
+):
+  explorer = ExperimentDesignExplorer(
+      historical_data=historical_data,
+      explore_spec=default_explore_spec,
+  )
+
+  explorer.explore(
+      max_trials=4,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
+
+  summary_results_1 = explorer.get_design_summaries()
+
+  design_id_to_extend = explorer.get_designs()[1].design_id
+  other_design_ids = [
+      design_id
+      for design_id in summary_results_1.index
+      if design_id != design_id_to_extend
+  ]
+  explorer.extend_design_by_id(
+      design_id_to_extend,
+      n_aa_simulations=3,
+      n_ab_simulations=3,
+  )
+  summary_results_2 = explorer.get_design_summaries()
+
+  # Selected designs are changed
+  assert not summary_results_1.loc[design_id_to_extend].equals(
+      summary_results_2.loc[design_id_to_extend]
+  )
+  # Other designs are unchanged
+  assert summary_results_1.loc[other_design_ids].equals(
+      summary_results_2.loc[other_design_ids]
+  )
+
+
 def test_get_design_summaries_returns_correct_data_relative_effects(
     historical_data_lots_of_geos, default_explore_spec
 ):
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data_lots_of_geos,
       explore_spec=default_explore_spec,
-      simulations_per_trial=5,
   )
-  explorer.explore(max_trials=3, n_jobs=1)
+  explorer.explore(
+      max_trials=3,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
   design_summaries = explorer.get_design_summaries(
       use_relative_effects_where_possible=True,
   )
@@ -336,9 +460,13 @@ def test_get_design_summaries_returns_correct_data_absolute_effects(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data_lots_of_geos,
       explore_spec=default_explore_spec,
-      simulations_per_trial=5,
   )
-  explorer.explore(max_trials=3, n_jobs=1)
+  explorer.explore(
+      max_trials=3,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
   design_summaries = explorer.get_design_summaries(
       use_relative_effects_where_possible=False,
   )
@@ -384,17 +512,21 @@ def test_get_design_summaries_returns_correct_data_pareto_front_only(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data_lots_of_geos,
       explore_spec=default_explore_spec,
-      simulations_per_trial=5,
   )
-  explorer.explore(max_trials=10, n_jobs=1)
+  explorer.explore(
+      max_trials=10,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
   design_summaries = explorer.get_design_summaries(
       pareto_front_only=True,
   )
 
   assert isinstance(design_summaries, pd.DataFrame)
   assert (
-      len(design_summaries) == 8
-  )  # 10 designs, but 2 are dominated by the others
+      len(design_summaries) == 1
+  )  # 10 designs, but 9 are dominated by the others
 
 
 @pytest.mark.parametrize("use_relative_effects_where_possible", [True, False])
@@ -410,9 +542,13 @@ def test_get_design_summaries_returns_styler_if_style_output_is_true(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data_lots_of_geos,
       explore_spec=default_explore_spec,
-      simulations_per_trial=5,
   )
-  explorer.explore(max_trials=3, n_jobs=1)
+  explorer.explore(
+      max_trials=3,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
   design_summaries = explorer.get_design_summaries(
       style_output=True,
       use_relative_effects_where_possible=use_relative_effects_where_possible,
@@ -439,9 +575,13 @@ def test_can_write_explorer_to_json(
   explorer = ExperimentDesignExplorer(
       historical_data=historical_data_lots_of_geos,
       explore_spec=default_explore_spec,
-      simulations_per_trial=5,
   )
-  explorer.explore(max_trials=3, n_jobs=1)
+  explorer.explore(
+      max_trials=3,
+      n_jobs=1,
+      aa_simulations_per_trial=3,
+      ab_simulations_per_trial=3,
+  )
   json_string = explorer.model_dump_json()
 
   new_explorer = ExperimentDesignExplorer.model_validate_json(json_string)

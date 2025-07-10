@@ -394,7 +394,7 @@ class GBR(_base.Methodology):
       X = sm.add_constant(X[[f"{metric.column}_pretest", "cost_differential"]])
 
       # De-mean the pretest metric
-      pretest_mean = 1.0 / (1.0 / X[f"{metric.column}_pretest"]).mean()
+      pretest_mean = X[f"{metric.column}_pretest"].mean()
       X[f"{metric.column}_pretest"] -= pretest_mean
 
       wls_results = sm.WLS(y, X, weights=w).fit()
@@ -446,6 +446,7 @@ class GBR(_base.Methodology):
   def _get_summary_statistics(
       self,
       metric: Metric,
+      n_treatment_geos: int,
       params: pd.Series,
       covariance: pd.DataFrame,
       degrees_of_freedom: int,
@@ -454,6 +455,11 @@ class GBR(_base.Methodology):
   ) -> dict[str, float]:
     """Calculates the summary statistics from the result of the linear model."""
 
+    impact_estimate = params["cost_differential"]
+    impact_standard_error = np.sqrt(
+        covariance.loc["cost_differential", "cost_differential"]
+    )
+
     if metric.cost_per_metric or metric.metric_per_cost:
       # Don't calculate the relative effect for cost per metric or metric per
       # cost. The relative effect is not meaningful for these metrics.
@@ -461,6 +467,8 @@ class GBR(_base.Methodology):
       baseline_standard_error = None
       impact_baseline_corr = None
     else:
+      # If not cost per metric or metric per cost, then calculate the relative
+      # effect.
       baseline_estimate = params["const"]
       baseline_standard_error = np.sqrt(covariance.loc["const", "const"])
       impact_baseline_corr = covariance.loc[
@@ -470,12 +478,18 @@ class GBR(_base.Methodology):
           * covariance.loc["cost_differential", "cost_differential"]
       )
 
+      # If not cost per metric or metric per cost, then the absolute impact
+      # is the impact per geo. We need the total so multiply by the number of
+      # geos.
+      impact_estimate *= n_treatment_geos
+      impact_standard_error *= n_treatment_geos
+      baseline_estimate *= n_treatment_geos
+      baseline_standard_error *= n_treatment_geos
+
     summary_statistics = (
         geoflex.utils.get_summary_statistics_from_standard_errors(
-            impact_estimate=params["cost_differential"],
-            impact_standard_error=np.sqrt(
-                covariance.loc["cost_differential", "cost_differential"]
-            ),
+            impact_estimate=impact_estimate,
+            impact_standard_error=impact_standard_error,
             degrees_of_freedom=degrees_of_freedom,
             alternative_hypothesis=alternative_hypothesis,
             alpha=alpha,
@@ -583,12 +597,13 @@ class GBR(_base.Methodology):
         intermediate_data["degrees_of_freedom"][key] = degrees_of_freedom
 
         results_i = self._get_summary_statistics(
-            metric,
-            params,
-            covariance,
-            degrees_of_freedom,
-            experiment_design.alternative_hypothesis,
-            experiment_design.alpha,
+            metric=metric,
+            n_treatment_geos=cell_data["geo_assignment"].sum(),
+            params=params,
+            covariance=covariance,
+            degrees_of_freedom=degrees_of_freedom,
+            alternative_hypothesis=experiment_design.alternative_hypothesis,
+            alpha=experiment_design.alpha,
         )
 
         results_i["cell"] = cell

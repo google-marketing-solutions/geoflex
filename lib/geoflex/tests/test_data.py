@@ -367,16 +367,154 @@ def big_raw_data_fixture_zero_costs(big_raw_data):
   return big_raw_data_zero_cost
 
 
-def test_simulate_experiment_raises_error_for_non_zero_treatment_effect(
+def test_simulate_experiment_returns_correct_data_with_treatment_effect_iroas(
     big_raw_data, default_design, experiment_start_date
 ):
   geo_dataset = GeoPerformanceDataset(data=big_raw_data)
-  with pytest.raises(NotImplementedError):
-    geo_dataset.simulate_experiment(
-        experiment_start_date=experiment_start_date,
-        design=default_design,
-        treatment_effect_size=0.1,
-    )
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=default_design,
+      treatment_effect_sizes=[1.5, 0.5],  # iROAS
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=default_design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA"]) & is_experiment_date,
+      "revenue",
+  ] += (
+      expected_data.loc[
+          expected_data.geo_id.isin(["US", "CA"]) & is_experiment_date,
+          "cost",
+      ].values
+      * 0.1
+      * 1.5
+  )
+  expected_data.loc[
+      expected_data.geo_id.isin(["DE", "FR"]) & is_experiment_date,
+      "revenue",
+  ] += (
+      expected_data.loc[
+          expected_data.geo_id.isin(["DE", "FR"]) & is_experiment_date,
+          "cost",
+      ].values
+      * 0.1
+      * 0.5
+  )
+
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA", "DE", "FR"]) & is_experiment_date,
+      ["cost", "campaign_cost"],
+  ] *= 1.1
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, expected_data, check_like=True
+  )
+
+
+def test_simulate_experiment_returns_correct_data_with_treatment_effect_cpia(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.make_variation(
+      primary_metric=geoflex.metrics.CPiA(conversions_column="revenue"),
+  )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_sizes=[1.5, 0.5],
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA"]) & is_experiment_date,
+      "revenue",
+  ] += (
+      expected_data.loc[
+          expected_data.geo_id.isin(["US", "CA"]) & is_experiment_date,
+          "cost",
+      ].values
+      * 0.1
+      / 1.5
+  )
+  expected_data.loc[
+      expected_data.geo_id.isin(["DE", "FR"]) & is_experiment_date,
+      "revenue",
+  ] += (
+      expected_data.loc[
+          expected_data.geo_id.isin(["DE", "FR"]) & is_experiment_date,
+          "cost",
+      ].values
+      * 0.1
+      / 0.5
+  )
+
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA", "DE", "FR"]) & is_experiment_date,
+      ["cost", "campaign_cost"],
+  ] *= 1.1
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, expected_data, check_like=True
+  )
+
+
+def test_simulate_experiment_returns_correct_data_with_treatment_effect_regular_metric(
+    big_raw_data, default_design, experiment_start_date
+):
+  geo_dataset = GeoPerformanceDataset(data=big_raw_data)
+  design = default_design.make_variation(
+      primary_metric="revenue",
+  )
+  design.geo_assignment = default_design.geo_assignment.model_copy()
+  simulated_dataset = geo_dataset.simulate_experiment(
+      experiment_start_date=experiment_start_date,
+      design=design,
+      treatment_effect_sizes=[1.5, 0.5],
+  )
+
+  experiment_end_date = experiment_start_date + dt.timedelta(
+      weeks=design.runtime_weeks
+  )
+  is_experiment_date = (
+      geo_dataset.parsed_data["date"] >= experiment_start_date
+  ) & (geo_dataset.parsed_data["date"] < experiment_end_date)
+  expected_data = geo_dataset.parsed_data.copy()
+
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA"]) & is_experiment_date,
+      "revenue",
+  ] += 1.5 / (
+      2 * design.runtime_weeks * 7
+  )  # Absolute effect shared over geos and dates
+  expected_data.loc[
+      expected_data.geo_id.isin(["DE", "FR"]) & is_experiment_date,
+      "revenue",
+  ] += 0.5 / (
+      2 * design.runtime_weeks * 7
+  )  # Absolute effect shared over geos and dates
+  expected_data.loc[
+      expected_data.geo_id.isin(["US", "CA", "DE", "FR"]) & is_experiment_date,
+      ["campaign_cost"],
+  ] *= 1.1
+
+  pd.testing.assert_frame_equal(
+      simulated_dataset.parsed_data, expected_data, check_like=True
+  )
 
 
 def test_simulate_experiment_raises_error_for_percentage_change_zero_historical_cost(
@@ -387,7 +525,7 @@ def test_simulate_experiment_raises_error_for_percentage_change_zero_historical_
     geo_dataset.simulate_experiment(
         experiment_start_date=experiment_start_date,
         design=default_design,
-        treatment_effect_size=0.0,
+        treatment_effect_sizes=None,
     )
 
 
@@ -407,7 +545,7 @@ def test_simulate_experiment_returns_correct_data_with_different_budgets_per_cel
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(
@@ -438,7 +576,7 @@ def test_simulate_experiment_returns_correct_data_for_heavy_up_percentage_change
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=default_design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(
@@ -473,7 +611,7 @@ def test_simulate_experiment_returns_correct_data_for_heavy_up_total_budget(
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(
@@ -536,7 +674,7 @@ def test_simulate_experiment_returns_correct_data_for_heavy_up_daily_budget(
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(
@@ -607,7 +745,7 @@ def test_simulate_experiment_returns_unchanged_data_if_no_cost_metrics(
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   pd.testing.assert_frame_equal(
@@ -630,7 +768,7 @@ def test_simulate_experiment_returns_correct_data_for_go_dark(
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(
@@ -665,7 +803,7 @@ def test_simulate_experiment_returns_correct_data_for_hold_back_total_budget(
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(
@@ -728,7 +866,7 @@ def test_simulate_experiment_returns_correct_data_for_hold_back_daily_budget(
   simulated_dataset = geo_dataset.simulate_experiment(
       experiment_start_date=experiment_start_date,
       design=design,
-      treatment_effect_size=0.0,
+      treatment_effect_sizes=None,
   )
 
   experiment_end_date = experiment_start_date + dt.timedelta(

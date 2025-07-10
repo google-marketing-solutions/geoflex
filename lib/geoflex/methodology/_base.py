@@ -354,7 +354,9 @@ class Methodology(abc.ABC):
 
     - metric: The metric name.
     - cell: The cell number.
-    - point_estimate: The point estimate of the treatment effect.
+    - point_estimate: The point estimate of the treatment effect. This is
+      calculated as the total across the whole experiment period and across all
+      treatment geos in the cell.
     - lower_bound: The lower bound of the confidence interval.
     - upper_bound: The upper bound of the confidence interval.
     - point_estimate_relative: The relative effect size of the treatment. This
@@ -405,7 +407,9 @@ class Methodology(abc.ABC):
     - metric: The metric name.
     - is_primary_metric: Whether the metric is a primary metric.
     - cell: The cell number.
-    - point_estimate: The point estimate of the treatment effect.
+    - point_estimate: The point estimate of the treatment effect. This is
+      calculated as the total across the whole experiment period and across all
+      treatment geos in the cell.
     - lower_bound: The lower bound of the confidence interval.
     - upper_bound: The upper bound of the confidence interval.
     - point_estimate_relative: The relative effect size of the treatment.
