@@ -348,6 +348,7 @@ class GBR(_base.Methodology):
       geo_data[f"{cost_column}_cost_differential"] = geo_data[
           f"{cost_column}_runtime"
       ].copy()
+      return geo_data
 
     is_control = geo_data["geo_assignment"] == 0
     is_treatment = ~is_control
@@ -363,7 +364,13 @@ class GBR(_base.Methodology):
       logger.error(error_message)
       raise RuntimeError(error_message)
 
-    coefs = np.polyfit(x, y, deg=1, w=w)
+    x_is_constant = np.all(x == x[0])
+    if x_is_constant:
+      y_mean = (y * w).sum() / w.sum()
+      coefs = [0.0, y_mean]
+    else:
+      coefs = np.polyfit(x, y, deg=1, w=w)
+
     geo_data[f"{cost_column}_cost_differential"] = 0.0
     geo_data.loc[is_treatment, f"{cost_column}_cost_differential"] = (
         geo_data.loc[is_treatment, f"{cost_column}_runtime"]
