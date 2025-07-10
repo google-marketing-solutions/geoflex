@@ -36,6 +36,28 @@ CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
 CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 
 
+def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
+  """Calculates the Pearson correlation between two arrays.
+
+  If both arrays are constant, then the correlation is 1.0.
+
+  Args:
+    x: The first array.
+    y: The second array.
+
+  Returns:
+    The Pearson correlation.
+  """
+  x_is_constant = np.all(x == x[0])
+  y_is_constant = np.all(y == y[0])
+  if x_is_constant and y_is_constant:
+    return 1.0
+  elif x_is_constant or y_is_constant:
+    return 0.0
+  else:
+    return np.corrcoef(x, y)[0, 1]
+
+
 class GeoAssignmentRepresentativenessScorer:
   """Scores the representativeness of a geo assignment.
 
@@ -98,13 +120,13 @@ class GeoAssignmentRepresentativenessScorer:
     n_geos = len(self.geos)
     similarity_matrix = np.zeros((n_geos, n_geos))
 
-    corr_matrix = self.historical_data.swaplevel(axis=1).corr()
+    corr_matrix = self.historical_data.swaplevel(axis=1).corr(method=_safe_corr)
 
     for i, geo1 in enumerate(self.geos):
       for j, geo2 in enumerate(self.geos[i:], start=i):
 
         if i == j:
-          # If they are thr same geo, then they are identical, skip the
+          # If they are the same geo, then they are identical, skip the
           # computation
           similarity_matrix[i, j] = 1.0
           continue
