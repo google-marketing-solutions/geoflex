@@ -4,10 +4,13 @@ from typing import Any
 import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
+import geoflex.utils
 import numpy as np
 import pandas as pd
-import pysyncon
+from pysyncon import Dataprep
+from pysyncon import Synth
 
+# pylint:disable=protected-access
 
 ExperimentDesign = geoflex.experiment_design.ExperimentDesign
 GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
@@ -46,6 +49,7 @@ class SyntheticControls(_base.Methodology):
   ) -> tuple[list[str], list[str]] | None:
     """This function randomly assigns geos.
 
+    Assign treatment and control groups.
     Assign treatment and control groups.
 
     Args:
@@ -111,6 +115,11 @@ class SyntheticControls(_base.Methodology):
     """
 
     test_geos, control_geos = sample
+    exclude = experiment_design.geo_eligibility.exclude or []
+
+    # Get Data
+    df = historical_data.parsed_data
+    dep = experiment_design.primary_metric.column
     exclude = experiment_design.geo_eligibility.exclude or []
 
     # Get Data
@@ -224,7 +233,10 @@ class SyntheticControls(_base.Methodology):
 
     available = list(pool - f_test - f_control)
     need_min = max(0, min_treatment_geos - len(f_test))
-    max_extra = max(0, max_treatment_geos - len(f_test))
+    if max_treatment_geos is None:
+      max_extra = len(available)
+    else:
+      max_extra = max(0, max_treatment_geos - len(f_test))
 
     if len(available) < need_min:
       return None
@@ -256,7 +268,8 @@ class SyntheticControls(_base.Methodology):
       train_end_date: str,
       predictor_start_date: str,
       predictor_end_date: str,
-      train_fraction: float = 0.75
+      train_fraction: float = 0.75,
+      is_analysis_phase: bool = False
   ) -> dict[str, Any]:
     """Fits a synthetic control model and evaluates its predictive power.
 
@@ -280,6 +293,7 @@ class SyntheticControls(_base.Methodology):
       predictor_end_date: The end date for the predictors to use.
       train_fraction: The proportion of data to use for training if
         `train_end_date` is not specified.
+      is_analysis_phase: Is analysis or assignment phase.
 
     Returns:
       A dictionary containing the results of the model fit, including:
@@ -333,11 +347,14 @@ class SyntheticControls(_base.Methodology):
     # Slice data
     train_dates = pd.date_range(start=train_start, end=train_end)
     predictor_dates = pd.date_range(start=predictor_start, end=predictor_end)
-    train_df = df_agg[df_agg[time_var].isin(train_dates)]
+
+    foo_data = df_agg if is_analysis_phase else df_agg[
+        df_agg[time_var].isin(train_dates)
+    ]
 
     # Build & fit synthetic control
-    dataprep = pysyncon.Dataprep(
-        foo=train_df,
+    dataprep = Dataprep(
+        foo=foo_data,
         predictors=[],
         dependent=dependent,
         unit_variable=geo_var,
@@ -349,7 +366,7 @@ class SyntheticControls(_base.Methodology):
         time_optimize_ssr=list(train_dates),
         predictors_op="mean",
     )
-    synth = pysyncon.Synth()
+    synth = Synth()
     synth.fit(dataprep)
     ssr = synth.loss_V
 
@@ -387,7 +404,7 @@ class SyntheticControls(_base.Methodology):
 
   @staticmethod
   def _calculate_r2(
-      synth_model: pysyncon.Synth,
+      synth_model: Synth,
       df: pd.DataFrame,
       unit_var: str,
       time_var: str,
@@ -468,6 +485,14 @@ class SyntheticControls(_base.Methodology):
           historical_data,
           sample
       )
+      if not sample:
+        continue
+
+      iter_output = self._aggregate_and_fit(
+          experiment_design,
+          historical_data,
+          sample
+      )
       if not iter_output:
         continue
 
@@ -481,6 +506,7 @@ class SyntheticControls(_base.Methodology):
       if val_r2 > best_validation:
         best_validation = val_r2
         best_iter = result
+
     # Build the GeoAssignment from the best iteration
     treat = [set(best_iter["treatment_geos"])]
     ctrl = set(best_iter["control_geos"])
@@ -492,13 +518,15 @@ class SyntheticControls(_base.Methodology):
         exclude=excl,
     ), {}
 
-  def analyze_experiment(
+  def _methodology_analyze_experiment(
       self,
       runtime_data: GeoPerformanceDataset,
       experiment_design: ExperimentDesign,
-      experiment_start_date: str,
-  ) -> pd.DataFrame:
-    """Analyzes a Synthetic Control experiment.
+      experiment_start_date: pd.Timestamp,
+      experiment_end_date: pd.Timestamp,
+      pretest_period_end_date: pd.Timestamp,
+  ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Analyzes the experiment with SyntheticControls.
 
     Returns a dataframe with the analysis results. Each row represents each
     metric provided in the experiment data. The columns are the following:
@@ -519,11 +547,94 @@ class SyntheticControls(_base.Methodology):
       runtime_data: The runtime data for the experiment.
       experiment_design: The design of the experiment being analyzed.
       experiment_start_date: The start date of the experiment.
+      experiment_end_date: The end date of the experiment.
+      pretest_period_end_date: The end date of the pretest period.
 
     Returns:
       A dataframe with the analysis results.
     """
-    pass
+    intermediate_data = {}
+    results = []
 
-  def _methodology_analyze_experiment(self):
-    pass
+    treatment_geos = list(experiment_design.geo_assignment.treatment[0])
+    control_geos = list(experiment_design.geo_assignment.control)
+
+    for metric in [
+        experiment_design.primary_metric] + experiment_design.secondary_metrics:
+      df_agg = self.aggregate_treatment(
+          runtime_data.parsed_data,
+          treatment_geos,
+          control_geos,
+          runtime_data.geo_id_column,
+          runtime_data.date_column,
+          metric.column
+      )
+      if df_agg.empty:
+        continue
+
+      model_results = self._fit_model(
+          df_agg,
+          runtime_data.geo_id_column,
+          runtime_data.date_column,
+          metric.column,
+          control_geos=control_geos,
+          test_geo="Aggregated_Treatment",
+          treatment_geos=treatment_geos,
+          train_start_date=runtime_data.parsed_data[
+              runtime_data.date_column].min(),
+          train_end_date=pretest_period_end_date,
+          predictor_start_date=runtime_data.parsed_data[
+              runtime_data.date_column].min(),
+          predictor_end_date=experiment_end_date,
+          is_analysis_phase=True,
+      )
+
+      synth_model = model_results.get("synth_model")
+      if not synth_model:
+        continue
+
+      # Define the experiment time period
+      time_period = pd.date_range(
+          start=experiment_start_date, end=experiment_end_date)
+
+      # Calculate the ATT and its standard error
+      att_results = synth_model.att(time_period=time_period)
+
+      # 1. Get control data (Z0) to calculate the baseline
+      exp_data_controls = df_agg[
+          (df_agg[runtime_data.date_column].isin(time_period)) &
+          (df_agg[runtime_data.geo_id_column].isin(control_geos))
+      ]
+      z0_exp = exp_data_controls.pivot_table(
+          index=runtime_data.date_column,
+          columns=runtime_data.geo_id_column,
+          values=metric.column
+      )
+
+      # 2. Calculate the baseline estimate (the counterfactual)
+      baseline_ts = synth_model._synthetic(Z0=z0_exp)
+      baseline_estimate = baseline_ts.mean()
+
+      # 3. Estimate baseline_standard_error from pre-treatment residuals
+      z_zero_pre, z_one_pre = synth_model.dataprep.make_outcome_mats(
+          time_period=synth_model.dataprep.time_optimize_ssr
+      )
+      pre_treatment_gaps = synth_model._gaps(Z0=z_zero_pre, Z1=z_one_pre)
+      baseline_standard_error = pre_treatment_gaps.std()
+
+      # 4. Get summary statistics, now including baseline estimates
+      st = geoflex.utils.get_summary_statistics_from_standard_errors(
+          impact_estimate=att_results["att"],
+          impact_standard_error=att_results["se"],
+          baseline_estimate=baseline_estimate,
+          baseline_standard_error=baseline_standard_error,
+          impact_baseline_corr=0,
+          degrees_of_freedom=len(time_period) - 1,
+          alternative_hypothesis=experiment_design.alternative_hypothesis,
+          alpha=experiment_design.alpha,
+          invert_result=metric.cost_per_metric,
+      )
+      st["metric"] = metric.name
+      results.append(st)
+
+    return pd.DataFrame(results), intermediate_data
