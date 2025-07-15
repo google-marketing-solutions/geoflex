@@ -16,4 +16,4 @@ smart_open
 smart_open[gcs]
 pyyaml
 python-dotenv
-./vendor/geoflex-0.0.1-py3-none-any.whl
+./vendor/geoflex-0.0.2-py3-none-any.whl

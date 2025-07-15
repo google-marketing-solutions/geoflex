@@ -1,14 +1,3 @@
-<!-- <template>
-  <q-page padding>
-    <div class="q-pb-md flex justify-between items-center">
-      <div>
-        <h1 class="text-h4 q-my-none">Experiments</h1>
-        <p class="text-body1 q-my-sm">Explore designs for your geo experiments.</p>
-      </div>
-    </div>
-  </q-page>
-</template>
-<script setup lang="ts"></script> -->
 <template>
   <q-page padding>
     <div class="q-pa-md">
@@ -599,6 +588,75 @@
                       />
                     </div>
 
+                    <!-- Cell Volume Constraints -->
+                    <div>
+                      <div class="row items-center">
+                        <div class="col">
+                          <div class="text-body2 q-mb-xs">Cell Volume Constraints</div>
+                        </div>
+                      </div>
+                      <q-card flat bordered class="q-pa-md">
+                        <q-toggle
+                          v-model="parameters.cellVolumeConstraint.enabled"
+                          label="Enable Constraints"
+                        />
+
+                        <div
+                          v-if="parameters.cellVolumeConstraint.enabled"
+                          class="q-gutter-y-md q-mt-sm"
+                        >
+                          <q-select
+                            v-model="parameters.cellVolumeConstraint.type"
+                            :options="cellVolumeConstraintTypeOptions"
+                            label="Constraint Type"
+                            outlined
+                            dense
+                            emit-value
+                            map-options
+                          />
+
+                          <q-select
+                            v-if="
+                              parameters.cellVolumeConstraint.type === 'max_percentage_of_metric'
+                            "
+                            v-model="parameters.cellVolumeConstraint.metric_column"
+                            :options="selectedDataSource.columns.metricColumns"
+                            label="Metric Column"
+                            outlined
+                            dense
+                            hint="Select metric to use for the constraint"
+                          />
+
+                          <div class="text-subtitle2 q-mt-md">Constraint Values per Cell</div>
+                          <div
+                            v-for="(label, index) in cellLabels"
+                            :key="index"
+                            class="row items-center q-col-gutter-sm"
+                          >
+                            <div class="col-4">
+                              <span class="text-body2">{{ label }}</span>
+                            </div>
+                            <div class="col-8">
+                              <q-input
+                                v-model.number="parameters.cellVolumeConstraint.values[index]"
+                                type="number"
+                                :label="`Max value for ${label}`"
+                                outlined
+                                dense
+                                clearable
+                                :hint="
+                                  parameters.cellVolumeConstraint.type ===
+                                  'max_percentage_of_metric'
+                                    ? 'As a percentage (e.g., 0.1 for 10%)'
+                                    : 'As a number of geos'
+                                "
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </q-card>
+                    </div>
+
                     <!-- Simulation Per Trial  -->
                     <div>
                       <q-card>
@@ -606,20 +664,6 @@
                           <div class="text-subtitle2">Exploration advanced parameters</div>
                         </q-card-section>
                         <q-card-section class="">
-                          <div class="row">
-                            <div class="col-6">
-                              <q-input
-                                v-model.number="parameters.simulationsPerTrial"
-                                label="Simulation per trial"
-                                type="number"
-                                outlined
-                                dense
-                                min="1"
-                                step="1"
-                                hint="The number of simulations to run (leave empty for default)"
-                              />
-                            </div>
-                          </div>
                           <div class="row q-my-sm">
                             <div class="col-6">
                               <q-input
@@ -1287,7 +1331,7 @@ const budgetOptionsDetailed = [
 ];
 */
 
-const DEFAULT_PARAMETERS = {
+const getDefaultParameters = () => ({
   // Core parameters
   methodology: [] as string[], // Empty array means "explore all methodologies"
   structure: 'single-cell',
@@ -1307,13 +1351,21 @@ const DEFAULT_PARAMETERS = {
   budget: [] as string[], // Array of budget values (as strings from input)
   budgetType: 'percentage_change', // 'percentage_change', 'daily_budget', 'total_budget'
 
+  // Cell volume constraints
+  cellVolumeConstraint: {
+    enabled: false,
+    type: 'max_geos',
+    values: [null, null],
+    metric_column: null,
+  },
+
   simulationsPerTrial: undefined,
   maxTrials: undefined,
   nDesigns: undefined,
-};
+});
 
 // Initialize parameters with default values
-const parameters = reactive({ ...DEFAULT_PARAMETERS });
+const parameters = reactive(getDefaultParameters());
 
 // Watch for changes in testGroups count
 watch(
@@ -1364,7 +1416,7 @@ watch(
 
 const resetParameters = () => {
   // Reset parameters to default values
-  Object.assign(parameters, DEFAULT_PARAMETERS);
+  Object.assign(parameters, getDefaultParameters());
 };
 
 const sortOptions = [
@@ -1372,7 +1424,29 @@ const sortOptions = [
   { label: 'Shortest Duration', value: 'duration' },
 ];
 
+const cellVolumeConstraintTypeOptions = [
+  { label: 'Max Geos per Cell', value: 'max_geos' },
+  { label: 'Max % of Metric per Cell', value: 'max_percentage_of_metric' },
+];
+
 // --- Computed properties for UI logic and validation (Order Matters) ---
+
+const nCells = computed(() => {
+  return parameters.structure === 'multi-cell' ? parameters.testGroups + 1 : 2;
+});
+
+const cellLabels = computed(() => {
+  const labels = ['Control'];
+  if (parameters.structure === 'single-cell') {
+    labels.push('Test');
+  } else {
+    // For multi-cell
+    for (let i = 0; i < parameters.testGroups; i++) {
+      labels.push(`Test Group ${i + 1}`);
+    }
+  }
+  return labels;
+});
 
 const fullWeekCount = computed(() => {
   if (!selectedDataSource.value?.data?.uniqueDates?.length) return 0;
@@ -1468,6 +1542,19 @@ const explorationValidationIssues = computed(() => {
 
 // --- Watchers for dynamic parameter adjustments ---
 
+watch(nCells, (newSize, oldSize) => {
+  if (newSize === oldSize) return;
+
+  const currentValues = parameters.cellVolumeConstraint.values;
+  const newValues = Array(newSize).fill(null);
+
+  // Copy existing values
+  for (let i = 0; i < Math.min(newSize, oldSize); i++) {
+    newValues[i] = currentValues[i];
+  }
+  parameters.cellVolumeConstraint.values = newValues;
+});
+
 // This watch needs to be present and after maxAllowedDurationMax
 watch(maxAllowedDurationMax, (newMax) => {
   if (parameters.durationMax > newMax) {
@@ -1506,6 +1593,16 @@ const budgetValidationRule = (val: string[]) => {
 };
 
 async function runExploration() {
+  let cell_volume_constraint;
+  if (parameters.cellVolumeConstraint.enabled) {
+    const { type, values, metric_column } = parameters.cellVolumeConstraint;
+    cell_volume_constraint = {
+      constraint_type: type,
+      values: values.map((v) => (v === null || v === '' ? null : Number(v))),
+      metric_column: type === 'max_percentage_of_metric' ? metric_column : null,
+    };
+  }
+
   const request = {
     // Datasource ID from the selected datasource
     datasource_id: selectedDataSource.value?.id,
@@ -1517,7 +1614,7 @@ async function runExploration() {
     budgets: parseBudget(parameters),
 
     // Test parameters
-    n_cells: parameters.structure === 'multi-cell' ? parameters.testGroups + 1 : 2,
+    n_cells: nCells.value,
     alpha: parameters.alpha,
     alternative_hypothesis: parameters.hypothesisType,
 
@@ -1533,10 +1630,9 @@ async function runExploration() {
     // Geo assignments from user selections
     fixed_geos: getGeoAssignments(geoUnits.value),
 
+    cell_volume_constraint: cell_volume_constraint,
+
     effect_scope: parameters.effectScope,
-    simulations_per_trial: Number.isFinite(Number(parameters.simulationsPerTrial))
-      ? Number(parameters.simulationsPerTrial)
-      : undefined,
     max_trials: Number.isFinite(Number(parameters.maxTrials))
       ? Number(parameters.maxTrials)
       : undefined,
@@ -1636,7 +1732,7 @@ function getGeoAssignments(geoUnits) {
   return assignments;
 }
 
-function parseBudget(parameters: typeof DEFAULT_PARAMETERS) {
+function parseBudget(parameters: ReturnType<typeof getDefaultParameters>) {
   const budgetValues = parameters.budget;
   // Handle A/B test case (empty budget array) -> return single budget item with value 0
   if (!budgetValues || budgetValues.length === 0) {
