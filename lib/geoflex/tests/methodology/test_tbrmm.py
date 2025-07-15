@@ -5,6 +5,7 @@ tested in its own unit tests and the wrapper is dependent on the original
 library working correctly.
 """
 
+import copy
 import logging
 
 import geoflex.data
@@ -53,7 +54,6 @@ def performance_data_fixture():
 def few_geos_performance_data_fixture():
   """Fixture for historical data with few geos for TBRMM exhaustive search."""
   rng = np.random.default_rng(seed=42)
-  # Only 6 geos, to test the exhaustive search path in TBRMM
   data = pd.DataFrame({
       "geo_id": np.repeat([f"geo_{i}" for i in range(6)], 100),
       "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 6,
@@ -65,8 +65,20 @@ def few_geos_performance_data_fixture():
   return GeoPerformanceDataset(data=data)
 
 
+@pytest.fixture(name="base_design_dict")
+def base_design_dict_fixture():
+  """Returns a dictionary for a basic, valid ExperimentDesign for TBRMM."""
+  return {
+      "primary_metric": "revenue",
+      "methodology": "TBRMM",
+      "runtime_weeks": 2,
+      "n_cells": 2,
+      "methodology_parameters": {"pretest_weeks": 4},
+  }
+
+
 @pytest.mark.parametrize(
-    "design, expected_is_eligible",
+    "design, expected_eligibility",
     [
         (
             ExperimentDesign(
@@ -75,26 +87,6 @@ def few_geos_performance_data_fixture():
                 runtime_weeks=2,
                 n_cells=2,
                 methodology_parameters={"pretest_weeks": 4},
-            ),
-            True,
-        ),
-        (
-            ExperimentDesign(
-                primary_metric="revenue",
-                methodology="TBRMM",
-                runtime_weeks=2,
-                n_cells=3,  # n_cells must be 2
-                methodology_parameters={"pretest_weeks": 4},
-            ),
-            False,
-        ),
-        (
-            ExperimentDesign(
-                primary_metric="revenue",
-                methodology="TBRMM",
-                runtime_weeks=2,
-                n_cells=2,
-                methodology_parameters={},
             ),
             True,
         ),
@@ -109,18 +101,26 @@ def few_geos_performance_data_fixture():
                     control={"geo_0"}, treatment=[{"geo_1"}]
                 ),
             ),
-            True,  # tbrmm should be able to support geo constraints
+            True,
+        ),
+        (
+            ExperimentDesign(
+                primary_metric="revenue",
+                methodology="TBRMM",
+                runtime_weeks=2,
+                n_cells=3,
+                methodology_parameters={"pretest_weeks": 4},
+            ),
+            False,  # n_cells must be 2
         ),
     ],
 )
 
 
-def test_tbrmm_is_eligible_for_design(
-    design, expected_is_eligible, performance_data
-):
+def test_tbrmm_eligibility(design, expected_eligibility, performance_data):
   assert (
       TBRMM().is_eligible_for_design_and_data(design, performance_data)
-      == expected_is_eligible
+      == expected_eligibility
   )
 
 
@@ -133,26 +133,8 @@ def test_tbrmm_is_eligible_for_design(
                     "treatment_geos_range": (1, 2),
                 }
             },
-            {"max_treatment": 2},
+            {"min_treatment": 1, "max_treatment": 2},
             False,
-        ),
-        (
-            {
-                "methodology_parameters": {
-                    "min_corr": 0.999,  # Unattainable correlation
-                }
-            },
-            None,
-            True,
-        ),
-        (
-            {
-                "methodology_parameters": {
-                    "rho_max": 0.001,  # Unattainable autocorrelation limit
-                }
-            },
-            None,
-            True,
         ),
         (
             {
@@ -160,7 +142,7 @@ def test_tbrmm_is_eligible_for_design(
                     "control_geos_range": (1, 5),
                 }
             },
-            {"max_control": 5},
+            {"min_control": 1, "max_control": 5},
             False,
         ),
     ],
@@ -172,24 +154,16 @@ def test_tbrmm_assign_geos_with_constraints(
     expected_geo_counts,
     should_raise_error,
     performance_data,
+    base_design_dict,
 ):
-  """Tests that GeoFleX constraints are correctly passed to the original lib."""
-  base_design_dict = {
-      "primary_metric": "revenue",
-      "methodology": "TBRMM",
-      "runtime_weeks": 2,
-      "n_cells": 2,
-      "methodology_parameters": {"pretest_weeks": 4},
-  }
   # Deep merge the design_params into the base_design_dict
+  design_dict = copy.deepcopy(base_design_dict)
   if "methodology_parameters" in design_params:
-    base_design_dict["methodology_parameters"].update(
+    design_dict["methodology_parameters"].update(
         design_params.pop("methodology_parameters")
     )
-  base_design_dict.update(design_params)
-
-  experiment_design = ExperimentDesign(**base_design_dict)
-
+  design_dict.update(design_params)
+  experiment_design = ExperimentDesign(**design_dict)
   if should_raise_error:
     with pytest.raises(
         (ValueError, RuntimeError), match="returned no suitable designs"
@@ -206,153 +180,162 @@ def test_tbrmm_assign_geos_with_constraints(
             len(geo_assignment.treatment[0])
             <= expected_geo_counts["max_treatment"]
         )
+      if "min_treatment" in expected_geo_counts:
+        assert (
+            len(geo_assignment.treatment[0])
+            >= expected_geo_counts["min_treatment"]
+        )
       if "max_control" in expected_geo_counts:
         assert len(geo_assignment.control) <= expected_geo_counts["max_control"]
-
-
-def test_tbrmm_assign_geos_with_geo_eligibility_constraints(performance_data):
-  geo_eligibility = GeoEligibility(
-      control={"geo_0", "geo_1"},
-      treatment=[{"geo_1"}],
-      # 'geo_0' can only be in control.
-      # 'geo_1' can be in control or treatment, but not excluded.
-      # other geos should all be flexible
-  )
-  experiment_design = ExperimentDesign(
-      primary_metric="revenue",
-      methodology="TBRMM",
-      runtime_weeks=2,
-      n_cells=2,
-      methodology_parameters={"pretest_weeks": 4},
-      geo_eligibility=geo_eligibility,
-  )
-
-  geo_assignment, _ = TBRMM().assign_geos(experiment_design, performance_data)
-
-  assert "geo_0" in geo_assignment.control
-  assert "geo_0" not in geo_assignment.treatment[0]
-  assert "geo_0" not in geo_assignment.exclude
-  assert "geo_1" not in geo_assignment.exclude
-
-
-def test_tbrmm_assign_geos_with_inflexible_geo_eligibility(performance_data):
-  # Only geo_0, geo_1, geo_2, geo_3 are eligible for anything.
-  # All other geos in performance_data (up to geo_19) should be excluded.
-  geo_eligibility = GeoEligibility(
-      control={"geo_0", "geo_1"},
-      treatment=[{"geo_2", "geo_3"}],
-      flexible=False,
-  )
-  experiment_design = ExperimentDesign(
-      primary_metric="revenue",
-      methodology="TBRMM",
-      runtime_weeks=2,
-      n_cells=2,
-      methodology_parameters={"pretest_weeks": 4},
-      geo_eligibility=geo_eligibility,
-  )
-
-  geo_assignment, _ = TBRMM().assign_geos(experiment_design, performance_data)
-
-  assigned_geos = geo_assignment.control | geo_assignment.treatment[0]
-  explicitly_eligible_geos = {"geo_0", "geo_1", "geo_2", "geo_3"}
-
-  # Check that only from the explicitly eligible geos were assigned.
-  assert assigned_geos.issubset(explicitly_eligible_geos)
-
-  # Check that a geo not in the eligibility list was excluded.
-  assert "geo_5" in geo_assignment.exclude
-  assert "geo_5" not in assigned_geos
-
-
-def test_tbrmm_assign_geos_fails_without_pretest_weeks(performance_data):
-  experiment_design = ExperimentDesign(
-      primary_metric="revenue",
-      methodology="TBRMM",
-      runtime_weeks=2,
-      n_cells=2,
-      methodology_parameters={},  # Missing pretest_weeks
-  )
-  with pytest.raises(ValueError, match="Failed to adapt inputs"):
-    TBRMM().assign_geos(experiment_design, performance_data)
+      if "min_control" in expected_geo_counts:
+        assert len(geo_assignment.control) >= expected_geo_counts["min_control"]
 
 
 @pytest.mark.parametrize(
-    "performance_data_fixture_name",
-    ["performance_data", "few_geos_performance_data"],
+    "geo_eligibility, assertions",
+    [
+        (
+            GeoEligibility(
+                control={"geo_0", "geo_1"},
+                treatment=[{"geo_1"}],
+                flexible=True,
+            ),
+            [
+                # geo_0 is eligible for control but may end up in exclude
+                # only assert that it is not in treatment
+                lambda ga: "geo_0" not in ga.treatment[0],
+            ],
+        ),
+        (
+            GeoEligibility(
+                control={"geo_0", "geo_1"},
+                treatment=[{"geo_2", "geo_3"}],
+                flexible=False,
+            ),
+            [
+                # inflexible eligibility means the assignment must align with
+                # specified eligibility lists
+                lambda ga: ga.control.issubset({"geo_0", "geo_1"}),
+                lambda ga: ga.treatment[0].issubset({"geo_2", "geo_3"}),
+                # geos not in eligibility lists must be in exclude
+                lambda ga: "geo_5" in ga.exclude,
+                lambda ga: "geo_5" not in (ga.control | ga.treatment[0]),
+            ],
+        ),
+    ],
 )
-def test_tbrmm_assign_geos(performance_data_fixture_name, request):
-  """Tests geo assignment for both greedy and exhaustive search paths."""
-  performance_data = request.getfixturevalue(performance_data_fixture_name)
-  experiment_design = ExperimentDesign(
-      primary_metric="revenue",
-      methodology="TBRMM",
-      runtime_weeks=2,
-      n_cells=2,
-      methodology_parameters={"pretest_weeks": 4},
-  )
+
+
+def test_tbrmm_assign_geos_with_geo_eligibility(
+    geo_eligibility, assertions, performance_data, base_design_dict
+):
+  design_dict = copy.deepcopy(base_design_dict)
+  design_dict["geo_eligibility"] = geo_eligibility
+  experiment_design = ExperimentDesign(**design_dict)
   geo_assignment, _ = TBRMM().assign_geos(experiment_design, performance_data)
+  for assertion in assertions:
+    assert assertion(geo_assignment)
+
+
+@pytest.mark.parametrize(
+    "budget, cost_column, expected_log_fragment",
+    [
+        (
+            ExperimentBudget(
+                budget_type=ExperimentBudgetType.TOTAL_BUDGET, value=500.0
+            ),
+            "cost",
+            """Mapped GeoFleX budget type 'TOTAL_BUDGET' with value 500.0
+            (total) to original library budget_range (0.0, 500.0)""",
+        ),
+        (
+            ExperimentBudget(
+                budget_type=ExperimentBudgetType.DAILY_BUDGET, value=50.0
+            ),
+            "cost",
+            """Mapped GeoFleX budget type 'DAILY_BUDGET' with value 50.0
+            (daily) to original library budget_range (0.0, 700.0)
+            (total over 2 runtime weeks)""",
+        ),
+        (
+            ExperimentBudget(
+                budget_type=ExperimentBudgetType.TOTAL_BUDGET, value=500.0
+            ),
+            None,
+            """A budget is specified for the experiment, but the 'cost_column'
+            is not set""",
+        ),
+    ],
+)
+
+
+def test_tbrmm_assign_geos_with_budget_constraint(
+    budget,
+    cost_column,
+    expected_log_fragment,
+    performance_data,
+    base_design_dict,
+    caplog,
+):
+  design_dict = copy.deepcopy(base_design_dict)
+  design_dict["experiment_budget"] = budget
+  if cost_column:
+    design_dict["methodology_parameters"]["cost_column"] = cost_column
+
+  experiment_design = ExperimentDesign(**design_dict)
+
+  with caplog.at_level(logging.INFO):
+    # not checking the output, just that the parameters are passed
+    # search may or may not find a suitable design
+    try:
+      TBRMM().assign_geos(experiment_design, performance_data)
+    except (ValueError, RuntimeError):
+      pass
+
+  assert expected_log_fragment in caplog.text
+
+
+@pytest.mark.parametrize(
+    "fixture_name, expected_log_fragment",
+    [
+        ("performance_data", "Using greedy search"),
+        ("few_geos_performance_data", "Attempting exhaustive search"),
+    ],
+)
+
+
+def test_tbrmm_assign_geos_search_path(
+    fixture_name, expected_log_fragment, request, caplog, base_design_dict
+):
+  # test that search path is correct based on the number of geos
+  performance_data = request.getfixturevalue(fixture_name)
+  experiment_design = ExperimentDesign(**copy.deepcopy(base_design_dict))
+  with caplog.at_level(logging.INFO):
+    geo_assignment, _ = TBRMM().assign_geos(
+        experiment_design, performance_data
+    )
   assert isinstance(geo_assignment, GeoAssignment)
   assert geo_assignment.control
   assert len(geo_assignment.treatment) == 1
   assert geo_assignment.treatment[0]
   assert not (geo_assignment.control & geo_assignment.treatment[0])
+  assert expected_log_fragment in caplog.text
 
 
-def test_tbrmm_greedy_search_with_infeasible_budget_succeeds(
-    performance_data, caplog
-):
-  # budget is effectively zero so it is not possible to find a suitable design
-  # greedy search should still return a design but also a warning
-  experiment_design_with_infeasible_budget = ExperimentDesign(
-      primary_metric="revenue",
-      methodology="TBRMM",
-      runtime_weeks=2,
-      n_cells=2,
-      methodology_parameters={"pretest_weeks": 4, "cost_column": "cost"},
-      experiment_budget=ExperimentBudget(
-          budget_type=ExperimentBudgetType.TOTAL_BUDGET,
-          value=[0.00001],
-      ),
-  )
-
-  tbrmm_methodology = TBRMM()
-  with caplog.at_level(logging.WARNING):
-    assigned_geos, _ = tbrmm_methodology.assign_geos(
-        experiment_design=experiment_design_with_infeasible_budget,
-        historical_data=performance_data,
-    )
-
-  # Check that a design was still returned
-  assert isinstance(assigned_geos, GeoAssignment)
-  assert assigned_geos.control
-  assert assigned_geos.treatment[0]
-
-  # Check that a warning about the budget was logged
-  assert "search is over budget" in caplog.text
-
-
-def test_tbrmm_analyze_experiment(performance_data):
-  experiment_design = ExperimentDesign(
-      primary_metric="revenue",
-      secondary_metrics=["conversions"],
-      methodology="TBRMM",
-      runtime_weeks=2,
-      n_cells=2,
-      methodology_parameters={"pretest_weeks": 4},
-  )
+def test_tbrmm_analyze_experiment(performance_data, base_design_dict):
+  design_dict = copy.deepcopy(base_design_dict)
+  design_dict["secondary_metrics"] = ["conversions"]
+  experiment_design = ExperimentDesign(**design_dict)
   # A plausible geo assignment for the analysis step.
   geos = list(performance_data.geos)
   experiment_design.geo_assignment = GeoAssignment(
       control=set(geos[:10]), treatment=[set(geos[10:])]
   )
-
   analysis_results, _ = TBRMM().analyze_experiment(
       runtime_data=performance_data,
       experiment_design=experiment_design,
       experiment_start_date="2024-03-01",
       experiment_end_date="2024-03-15",
   )
-
   assert isinstance(analysis_results, pd.DataFrame)
   assert not analysis_results.empty

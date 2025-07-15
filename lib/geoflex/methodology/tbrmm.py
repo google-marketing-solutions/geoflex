@@ -113,6 +113,7 @@ class TBRMM(_base.Methodology):
   """
   is_pseudo_experiment = True  # enforced to True for TBRMM
   default_methodology_parameter_candidates: dict[str, list[Any]] = {
+      # default pretest_weeks is 4 weeks if user does not specify
       "pretest_weeks": [4, 8, 12, 16, 26, 52],
       "min_corr": [0.8, 0.85, 0.9, 0.95],
       "rho_max": [None, 0.995],
@@ -137,6 +138,16 @@ class TBRMM(_base.Methodology):
           "TBRMM methodology only supports n_cells=2. Got %s.", design.n_cells
       )
       return False
+
+    try:
+      TBRMMParameters.model_validate(design.methodology_parameters)
+
+    except pydantic.ValidationError as e:
+      logger.error(
+          "TBRMM methodology parameters are invalid: %s", e, exc_info=True
+      )
+      return False
+
     return True
 
   def _methodology_assign_geos(
@@ -150,10 +161,9 @@ class TBRMM(_base.Methodology):
     search first, falling back to greedy search if exhaustive fails or finds
     no designs. Otherwise, greedy search is used.
 
-    Budget constraint is strict in exhaustive search but not in greedy search.
-    Budget could be a reason fallback for greedy search is triggered. It is
-    possible for both to return no design if geo constraints are overly
-    restrictive or data does not align well with TBR model.
+    Budget constraint is strict in exhaustive search but less so in greedy
+    search. It is possible for both to return no design if geo constraints are
+    overly restrictive or data does not align well with TBR model.
 
     Args:
       experiment_design: The experiment design to assign geos for.
@@ -198,7 +208,6 @@ class TBRMM(_base.Methodology):
               )
       )
     except (
-        TypeError,
         TypeError,
         ValueError,
         KeyError,
@@ -441,8 +450,7 @@ class TBRMM(_base.Methodology):
       raise ValueError(
           f"Invalid {method_name} parameters for analysis: %s") from e
 
-    # Use the geo assignment provided in the experiment_design object.
-    # The evaluator ensures this is the correct assignment (fixed or re-run).
+    # Use the geo assignment provided in the experiment_design object
     assignment_to_use = experiment_design.geo_assignment
 
     # Ensure the assignment has control and treatment geos
@@ -659,24 +667,17 @@ class TBRMM(_base.Methodology):
       missing_from_elig_df = geos_from_dataset - geos_in_elig_df
 
       if missing_from_elig_df:
-        added_rows_df: pd.DataFrame
-        if geoflex_eligibility.flexible:
-          new_rows_data = []
-          for geo in missing_from_elig_df:
-            new_rows_data.append(
-                {"geo": geo, "control": 1, "treatment": 1, "exclude": 1}
-                )
-          added_rows_df = pd.DataFrame(new_rows_data).set_index("geo")
-        # if geoflex_eligibility.flexible is False
-        else:
-          # geos in the dataset but not defined due to inflexible arg
-          # must be marked as excluded
-          new_rows_data = []
-          for geo in missing_from_elig_df:
-            new_rows_data.append(
-                {"geo": geo, "control": 0, "treatment": 0, "exclude": 1}
-            )
-          added_rows_df = pd.DataFrame(new_rows_data).set_index("geo")
+        # flexible means missing geos are eligible for all groups.
+        # inflexible means they must be excluded
+        default_values = (
+            {"control": 1, "treatment": 1, "exclude": 1}
+            if geoflex_eligibility.flexible
+            else {"control": 0, "treatment": 0, "exclude": 1}
+        )
+        new_rows_data = [
+            {"geo": geo, **default_values} for geo in missing_from_elig_df
+        ]
+        added_rows_df = pd.DataFrame(new_rows_data).set_index("geo")
 
         geoflex_eligibility_df = pd.concat(
             [geoflex_eligibility_df, added_rows_df]
@@ -750,6 +751,7 @@ class TBRMM(_base.Methodology):
         "response_column": "response",
         "geo_eligibility": original_gelig_obj,
     })
+
     return original_tbrmmdata.TBRMMData(**tbrmm_data_kwargs)
 
   def _adapt_geoflex_design_to_original_params(
@@ -878,53 +880,55 @@ class TBRMM(_base.Methodology):
             "is not set in TBRMMParameters. The budget constraint will be "
             "ignored by the original library's search algorithm."
         )
-      # for 2 cell budget.value is either a float or a list of 1 float
-      treatment_budget_value = (
-          budget.value[0] if isinstance(budget.value, list) else budget.value
-      )
+      else:
+        # for 2 cell budget.value is either a float or a list of 1 float
+        treatment_budget_value = (
+            budget.value[0] if isinstance(budget.value, list) else budget.value
+            )
 
-      if (budget.budget_type ==
-          geoflex.experiment_design.ExperimentBudgetType.DAILY_BUDGET):
-        # calculate total budget change by multiplying daily budget by runtime
-        total_budget_change = (
-            treatment_budget_value *
-            geoflex_design_obj.runtime_weeks * 7)
-        original_params_kwargs["budget_range"] = (
-            0.0,
-            abs(total_budget_change),
-        )
-        logger.info(
-            "Mapped GeoFleX budget type '%s' with value %s (daily) to original"
-            " library budget_range (0.0, %s) (total over %s runtime weeks).",
-            budget.budget_type.value,
-            treatment_budget_value,
-            abs(total_budget_change),
-            geoflex_design_obj.runtime_weeks,
-        )
-      elif (budget.budget_type ==
-            geoflex.experiment_design.ExperimentBudgetType.TOTAL_BUDGET):
-        # assume total_budget is total allowable change
-        original_params_kwargs["budget_range"] = (
-            0.0,
-            abs(treatment_budget_value),
-        )
-        logger.info(
-            "Mapped GeoFleX budget type '%s' with value %s (total) to original"
-            " library budget_range (0.0, %s).",
-            budget.budget_type.value,
-            treatment_budget_value,
-            abs(treatment_budget_value),
-        )
-      elif (
-          budget.budget_type
-          == geoflex.experiment_design.ExperimentBudgetType.PERCENTAGE_CHANGE
-      ):
-        logger.info(
-            "GeoFleX budget type '%s' cannot be mapped to original library's"
-            " absolute budget_range without BAU spend. budget_range will not"
-            " be passed.",
-            budget.budget_type.value,
-        )
+        if (budget.budget_type ==
+            geoflex.experiment_design.ExperimentBudgetType.DAILY_BUDGET):
+          # calculate total budget change by multiplying daily budget by runtime
+          total_budget_change = (
+              treatment_budget_value *
+              geoflex_design_obj.runtime_weeks * 7)
+          original_params_kwargs["budget_range"] = (
+              0.0,
+              abs(total_budget_change),
+          )
+          logger.info(
+              "Mapped GeoFleX budget type '%s' with value %s (daily) to"
+              " original library budget_range (0.0, %s)"
+              " (total over %s runtime weeks).",
+              budget.budget_type.name,
+              treatment_budget_value,
+              abs(total_budget_change),
+              geoflex_design_obj.runtime_weeks,
+          )
+        elif (budget.budget_type ==
+              geoflex.experiment_design.ExperimentBudgetType.TOTAL_BUDGET):
+          # assume total_budget is total allowable change
+          original_params_kwargs["budget_range"] = (
+              0.0,
+              abs(treatment_budget_value),
+          )
+          logger.info(
+              "Mapped GeoFleX budget type '%s' with value %s (total) to"
+              " original library budget_range (0.0, %s).",
+              budget.budget_type.name,
+              treatment_budget_value,
+              abs(treatment_budget_value),
+          )
+        elif (
+            budget.budget_type
+            == geoflex.experiment_design.ExperimentBudgetType.PERCENTAGE_CHANGE
+        ):
+          logger.info(
+              "GeoFleX budget type '%s' cannot be mapped to original library's"
+              " absolute budget_range without BAU spend. budget_range will not"
+              " be passed.",
+              budget.budget_type.value,
+          )
     else:
       logger.info(
           "No GeoFleX experiment budget specified. budget_range will not be"
