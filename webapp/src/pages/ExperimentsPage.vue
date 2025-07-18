@@ -102,14 +102,18 @@
                       />
                     </div>
                     <div class="col-12 col-md-3">
-                      <q-select
-                        v-model="selectedMetric"
-                        :options="selectedDataSource.columns.metricColumns"
-                        label="Conversion Metric"
-                        outlined
-                        dense
-                        hint="Select metric to use for balancing"
-                      />
+                      <q-list dense bordered :separator="true">
+                        <q-item>
+                          <q-item-section>
+                            <q-item-label>Metric columns:</q-item-label>
+                          </q-item-section>
+                        </q-item>
+                        <q-item v-for="key in selectedDataSource.columns.metricColumns" :key="key">
+                          <q-item-section>
+                            <q-item-label>{{ key }}</q-item-label>
+                          </q-item-section>
+                        </q-item>
+                      </q-list>
                     </div>
                     <div class="col-12 col-md-3">
                       <q-input
@@ -122,6 +126,49 @@
                       />
                     </div>
                   </div>
+                </div>
+
+                <q-separator />
+                <div class="">
+                  <div class="text-subtitle2 q-mb-sm">Primary Metric</div>
+                  <metric-builder
+                    v-model="selectedMetric"
+                    :metric-columns="selectedDataSource.columns.metricColumns"
+                    :cost-column="selectedDataSource.columns.costColumn"
+                  />
+                </div>
+
+                <div>
+                  <div class="text-subtitle2 q-mb-sm">Secondary Metrics</div>
+                  <div v-for="(metric, index) in secondaryMetrics" :key="index" class="q-mb-md">
+                    <div class="row items-center q-col-gutter-sm">
+                      <div class="col">
+                        <metric-builder
+                          :model-value="metric"
+                          @update:model-value="(val) => (secondaryMetrics[index] = val)"
+                          :metric-columns="selectedDataSource.columns.metricColumns"
+                          :cost-column="selectedDataSource.columns.costColumn"
+                        />
+                      </div>
+                      <div class="col-auto">
+                        <q-btn
+                          flat
+                          round
+                          dense
+                          icon="delete"
+                          color="negative"
+                          @click="removeSecondaryMetric(index)"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <q-btn
+                    outline
+                    color="primary"
+                    icon="add"
+                    label="Add Secondary Metric"
+                    @click="addSecondaryMetric"
+                  />
                 </div>
 
                 <q-separator />
@@ -154,7 +201,7 @@
                     </div>
                     <div class="col-12 col-md-4">
                       <q-card class="q-pa-sm">
-                        <div class="text-subtitle2">{{ selectedMetric }}</div>
+                        <div class="text-subtitle2">{{ getMetricName(selectedMetric) }}</div>
                         <div class="text-h5">{{ metricRange }}</div>
                       </q-card>
                     </div>
@@ -825,7 +872,8 @@
                               <q-item-section>
                                 <q-item-label caption
                                   >MDE ({{
-                                    design.parameters.primary_metric?.name || 'Primary Metric'
+                                    getMetricName(design.parameters.primary_metric) ||
+                                    'Primary Metric'
                                   }})</q-item-label
                                 >
                                 <q-item-label class="text-primary text-weight-bold">{{
@@ -944,7 +992,13 @@
                   <q-item v-for="(value, key) in selectedDesign.parameters" :key="key">
                     <q-item-section>
                       <q-item-label caption>{{ formatKey(key) }}</q-item-label>
-                      <q-item-label>{{ value }}</q-item-label>
+                      <q-item-label
+                        v-if="typeof value === 'object' && value !== null"
+                        class="text-caption"
+                      >
+                        <pre>{{ JSON.stringify(value, null, 2) }}</pre>
+                      </q-item-label>
+                      <q-item-label v-else>{{ value }}</q-item-label>
                     </q-item-section>
                   </q-item>
                 </q-list>
@@ -957,7 +1011,11 @@
                 <div class="text-subtitle1">Statistical Properties</div>
                 <div class="row q-col-gutter-md">
                   <div class="col-6 col-md-3">
-                    <div class="text-caption">MDE</div>
+                    <div class="text-caption">
+                      MDE ({{
+                        getMetricName(selectedDesign.parameters.primary_metric) || 'Primary Metric'
+                      }})
+                    </div>
                     <div class="text-h5">
                       {{ selectedDesign.mde ? selectedDesign.mde.toFixed(1) + '%' : 'N/A' }}
                     </div>
@@ -967,6 +1025,20 @@
                     <div class="text-h5">{{ selectedDesign.runtime_weeks }} wks</div>
                   </div>
                 </div>
+                <!-- <q-list dense>
+                  <q-item v-for="(value, key) in selectedDesign.evaluation_results?.all_metric_results_per_cell" :key="key">
+                    <q-item-section>
+                      <q-item-label caption>{{ formatKey(key) }}</q-item-label>
+                      <q-item-label
+                        v-if="typeof value === 'object' && value !== null"
+                        class="text-caption"
+                      >
+                        <pre>{{ JSON.stringify(value, null, 2) }}</pre>
+                      </q-item-label>
+                      <q-item-label v-else>{{ value }}</q-item-label>
+                    </q-item-section>
+                  </q-item>
+                </q-list> -->
               </q-card>
 
               <!-- Power charts -->
@@ -1059,7 +1131,8 @@ import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
 import type { QTableColumn } from 'quasar';
 import { useQuasar, exportFile } from 'quasar';
 import { postApiUi } from 'src/boot/axios';
-import type { ExperimentDesign, ExperimentExploreResponse } from 'src/components/models';
+import MetricBuilder from 'src/components/MetricBuilder.vue';
+import type { AnyMetric, ExperimentDesign, ExperimentExploreResponse } from 'src/components/models';
 
 const dataSourcesStore = useDataSourcesStore();
 const $q = useQuasar();
@@ -1070,13 +1143,8 @@ const activeTab = ref('datasource');
 // Data source state
 const selectedDataSource = ref<DataSource | null>(null);
 const dataSourceLoaded = ref(false);
-const selectedMetric = ref('');
-
-watch(selectedMetric, (newValue) => {
-  if (geoUnitsColumns.length > 1) {
-    geoUnitsColumns[1].label = `Avg. ${newValue || 'Conversions'}`;
-  }
-});
+const selectedMetric = ref<AnyMetric>('');
+const secondaryMetrics = ref<AnyMetric[]>([]);
 
 // Derived data source properties
 const dataSourceOptions = computed(() => dataSourcesStore.datasources);
@@ -1106,6 +1174,7 @@ const handleDataSourceChange = async (dataSource) => {
     if (dataSource.columns.metricColumns.length > 0) {
       selectedMetric.value = dataSource.columns.metricColumns[0];
     }
+    secondaryMetrics.value = []; // Reset secondary metrics
 
     // Populate geo units
     if (dataSource.data && dataSource.data.geoUnits) {
@@ -1140,7 +1209,10 @@ const datePeriod = computed(() => {
 const metricRange = computed(() => {
   if (!selectedDataSource.value?.data?.metrics || !selectedMetric.value) return 'N/A';
 
-  const metric = selectedDataSource.value.data.metrics.find((m) => m.name === selectedMetric.value);
+  const metricName = getMetricName(selectedMetric.value);
+  if (!metricName) return 'N/A';
+
+  const metric = selectedDataSource.value.data.metrics.find((m) => m.name === metricName);
   if (!metric) return 'N/A';
 
   return `${formatNumber(metric.min)} - ${formatNumber(metric.max)}`;
@@ -1250,25 +1322,30 @@ function formatGroupLabel(group) {
 }
 
 const methodologyOptionsDetailed = [
-  {
-    label: 'Time Based Regression with Matched Markets (TBR-MM)',
-    value: 'TBR-MM',
-    desc: 'Regression-based methodology that uses time series data with matched markets',
-  },
-  {
-    label: 'Time Based Regression with Random Assignment (TBR)',
-    value: 'TBR',
-    desc: 'Regression-based methodology that uses time series data with random geo assignment',
-  },
-  {
-    label: 'Trimmed Match (TM)',
-    value: 'TM',
-    desc: 'Matches geo units based on similarity and trims outliers',
-  },
+  // {
+  //   label: 'Time Based Regression with Matched Markets (TBR-MM)',
+  //   value: 'TBR-MM',
+  //   desc: 'Regression-based methodology that uses time series data with matched markets',
+  // },
+  // {
+  //   label: 'Time Based Regression with Random Assignment (TBR)',
+  //   value: 'TBR',
+  //   desc: 'Regression-based methodology that uses time series data with random geo assignment',
+  // },
+  // {
+  //   label: 'Trimmed Match (TM)',
+  //   value: 'TM',
+  //   desc: 'Matches geo units based on similarity and trims outliers',
+  // },
   {
     label: 'Geo Based Regression (GBR)',
     value: 'GBR',
     desc: 'The original and simplest geo experiment methodology',
+  },
+  {
+    label: 'Synthetic Control',
+    value: 'SyntheticControls',
+    desc: '',
   },
 ];
 
@@ -1532,7 +1609,63 @@ function isExplorationParamsValid(): string[] {
     issues.push('Budget cannot be specified as the selected data source has no cost column.');
   }
 
+  // Metric Validations
+  const primaryMetricId = getMetricIdentifier(selectedMetric.value);
+  const secondaryMetricIds = secondaryMetrics.value.map(getMetricIdentifier);
+
+  if (secondaryMetricIds.includes(primaryMetricId)) {
+    issues.push('The primary metric cannot also be a secondary metric.');
+  }
+
+  const uniqueSecondaryMetrics = new Set(secondaryMetricIds);
+  if (uniqueSecondaryMetrics.size !== secondaryMetricIds.length) {
+    issues.push('Secondary metrics must be unique.');
+  }
+  console.log(selectedMetric.value);
+  validateMetric(selectedMetric.value, issues);
+  secondaryMetrics.value.forEach((metric) => {
+    validateMetric(metric, issues);
+  });
   return issues;
+}
+
+function validateMetric(metric: string | AnyMetric, issues: string[]) {
+  let columnName;
+  if (typeof metric === 'string') {
+    columnName = metric;
+  } else {
+    if (metric.type === 'cpia') {
+      if (!metric.conversions_column) {
+        issues.push(`Conversion column must be specified for CPiA metric`);
+      }
+      if (!metric.cost_column) {
+        issues.push('Cost column must be specified for CPiA metric');
+      }
+      return;
+    } else if (metric.type === 'iroas') {
+      if (!metric.return_column) {
+        issues.push(`Return column must be specified for iROAS metric`);
+      }
+      if (!metric.cost_column) {
+        issues.push('Cost column must be specified for iROAS metric');
+      }
+      return;
+    } else if (metric.type === 'custom') {
+      if ((metric.cost_per_metric || metric.metric_per_cost) === !!metric.cost_column) {
+        issues.push(
+          `Metric ${metric.name} has either set cost_per_metric or metric_per_cost flag but no cost column or cost column without one of the flags`,
+        );
+      }
+    }
+    columnName = metric.column || metric.name;
+  }
+  if (columnName) {
+    if (!selectedDataSource.value.columns.metricColumns?.includes(columnName)) {
+      issues.push('Metric references unknown data source column ' + columnName);
+    }
+  } else {
+    issues.push('Metric has no name or column specified');
+  }
 }
 
 const explorationValidationIssues = computed(() => {
@@ -1609,7 +1742,7 @@ async function runExploration() {
 
     // Core parameters
     primary_metric: selectedMetric.value,
-    // TODO: secondary_metrics: [],
+    secondary_metrics: secondaryMetrics.value,
 
     budgets: parseBudget(parameters),
 
@@ -1663,6 +1796,7 @@ async function runExploration() {
       groups: {
         Control: designResp.geo_assignment?.control || [],
       },
+      evaluation_results: designResp.evaluation_results,
       parameters: {
         n_cells: designResp.n_cells,
         primary_metric: designResp.primary_metric,
@@ -1796,7 +1930,7 @@ function downloadDesign(design) {
   const exportData = {
     name: `Geo Test Design ${new Date().toISOString().split('T')[0]}`,
     source: selectedDataSource.value?.name,
-    metric: selectedMetric.value,
+    metric: getMetricName(selectedMetric.value),
     parameters: design.parameters,
     statistics: {
       mde: design.mde,
@@ -1900,5 +2034,49 @@ function exportDesignGroupToCsv(design: ExperimentDesign, groupName: string) {
       icon: 'check_circle',
     });
   }
+}
+
+function getMetricName(metric: AnyMetric | undefined): string {
+  if (!metric) return '';
+  if (typeof metric === 'string') {
+    return metric;
+  }
+  return metric.name;
+}
+
+// Gets a unique identifier for a metric to be used for validation
+function getMetricIdentifier(metric: AnyMetric | undefined): string {
+  if (!metric) return '';
+  if (typeof metric === 'string') {
+    return metric;
+  }
+  if (metric.type === 'custom') {
+    return metric.column || metric.name;
+  }
+  return metric.type;
+}
+
+function addSecondaryMetric() {
+  if (selectedDataSource.value?.columns?.metricColumns?.length) {
+    // Find a metric that is not already in use
+    const availableMetrics = selectedDataSource.value.columns.metricColumns.filter(
+      (m) =>
+        getMetricIdentifier(selectedMetric.value) !== m &&
+        !secondaryMetrics.value.map(getMetricIdentifier).includes(m),
+    );
+    if (availableMetrics.length > 0) {
+      secondaryMetrics.value.push(availableMetrics[0]);
+    } else {
+      $q.notify({
+        color: 'warning',
+        message: 'No more unique metrics available to add.',
+        icon: 'warning',
+      });
+    }
+  }
+}
+
+function removeSecondaryMetric(index: number) {
+  secondaryMetrics.value.splice(index, 1);
 }
 </script>

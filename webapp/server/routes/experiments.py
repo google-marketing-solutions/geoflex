@@ -15,13 +15,13 @@
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import math
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 import geoflex
 import pandas as pd
 import pydantic
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from geoflex.methodology import list_methodologies
-from geoflex.metrics import Metric
+from geoflex.metrics import CPiA, Metric, iROAS
 from logger import logger
 from services.datasources import DataSourceService
 
@@ -37,6 +37,41 @@ class ExperimentBudget(pydantic.BaseModel):
   budget_type: geoflex.ExperimentBudgetType
 
 
+# --- Metric Models ---
+
+
+class CustomMetric(pydantic.BaseModel):
+  type: Literal['custom'] = 'custom'
+  name: Optional[str] = None
+  column: Optional[str] = None
+  cost_column: Optional[str] = None
+  metric_per_cost: bool = False
+  cost_per_metric: bool = False
+
+
+class IROASMetric(pydantic.BaseModel):
+  type: Literal['iroas'] = 'iroas'
+  #name: str = 'iROAS'
+  return_column: Optional[str] = None
+  cost_column: Optional[str] = None
+
+
+class CPIAMetric(pydantic.BaseModel):
+  type: Literal['cpia'] = 'cpia'
+  #name: str = 'CPiA'
+  conversions_column: Optional[str] = None
+  cost_column: Optional[str] = None
+
+
+AnyMetric = Union[str, CustomMetric, IROASMetric, CPIAMetric]
+
+
+class FixedGeos(pydantic.BaseModel):
+  control: List[str] = []
+  treatment: List[List[str]] = []
+  exclude: List[str] = []
+
+
 class ExplorationRequest(pydantic.BaseModel):
   """Request model for experiment design exploration."""
 
@@ -44,7 +79,8 @@ class ExplorationRequest(pydantic.BaseModel):
   datasource_id: str
 
   # Core parameters
-  primary_metric: str
+  primary_metric: AnyMetric
+  secondary_metrics: List[AnyMetric] = []
 
   # Test parameters
   n_cells: int = 2
@@ -61,7 +97,7 @@ class ExplorationRequest(pydantic.BaseModel):
   methodologies: List[str] = []
 
   # Geo constraints
-  fixed_geos: Optional[dict[str, list[str] | list[list[str]]]] = None
+  fixed_geos: Optional[FixedGeos] = None
 
   target_power: float | None = None
 
@@ -99,6 +135,44 @@ async def get_datasource_service(request: Request) -> DataSourceService:
   return request.app.state.datasource_service
 
 
+def _parse_metric(metric_request: AnyMetric) -> Metric:
+  """Parses a metric request model into a geoflex.metrics.Metric object."""
+  if isinstance(metric_request, str):
+    return Metric(name=metric_request)
+  elif isinstance(metric_request, CustomMetric):
+    metric_args = {
+        'name': metric_request.name,
+        'column': metric_request.column,
+        'metric_per_cost': metric_request.metric_per_cost,
+        'cost_per_metric': metric_request.cost_per_metric,
+    }
+    if not metric_request.name:
+      raise ValueError('Metric has no name specified')
+    if metric_request.cost_column:
+      metric_args['cost_column'] = metric_request.cost_column
+    return Metric(**metric_args)
+  elif isinstance(metric_request, IROASMetric):
+    if not metric_request.return_column:
+      raise ValueError('Metric iROAS has no return_column specified')
+    if not metric_request.cost_column:
+      raise ValueError('Metric iROAS has no cost_column specified')
+    return iROAS(
+        return_column=metric_request.return_column,
+        cost_column=metric_request.cost_column,
+    )
+  elif isinstance(metric_request, CPIAMetric):
+    if not metric_request.conversions_column:
+      raise ValueError('Metric CPiA has no conversions_column specified')
+    if not metric_request.cost_column:
+      raise ValueError('Metric CPiA has no cost_column specified')
+    return CPiA(
+        conversions_column=metric_request.conversions_column,
+        cost_column=metric_request.cost_column,
+    )
+  # This will not be called as Pydantic validates the input
+  raise ValueError('Unknown metric type')
+
+
 @router.post('/explore', response_model=ExplorationResponse)
 async def explore_experiment_designs(
     request: ExplorationRequest,
@@ -113,6 +187,11 @@ async def explore_experiment_designs(
   logger.debug(request.model_dump())
   # Get datasource
   datasource = await ds_service.get_datasource_by_id(request.datasource_id)
+  if not datasource or not datasource.id:
+    raise HTTPException(
+        status_code=404,
+        detail=f'Datasource with id {request.datasource_id} not found or is invalid',
+    )
   datasource_data = await ds_service.load_datasource_data(datasource.id)
 
   datasource_pd = pd.DataFrame(datasource_data)
@@ -123,23 +202,23 @@ async def explore_experiment_designs(
   )
 
   # Handle fixed geo assignments if provided
-  excluded_geos = []
-  fixed_control_geos = []
+  excluded_geos = set()
+  fixed_control_geos = set()
   fixed_test_geos = []
 
   if request.fixed_geos:
-    excluded_geos = request.fixed_geos.get('exclude', [])
-    fixed_control_geos = request.fixed_geos.get('control', [])
-    fixed_test_geos = request.fixed_geos.get('treatment', [])
+    excluded_geos = set(request.fixed_geos.exclude)
+    fixed_control_geos = set(request.fixed_geos.control)
+    fixed_test_geos = [set(geos) for geos in request.fixed_geos.treatment]
 
   # TODO: remove TestingMethodology
   methodologies_to_explore = (
       request.methodologies or list_methodologies() or ['TestingMethodology'])
 
-  primary_metric = Metric(name=request.primary_metric)
-  # secondary_metrics = [
-  #     Metric(name=metric) for metric in request.secondary_metrics
-  # ]
+  primary_metric = _parse_metric(request.primary_metric)
+  secondary_metrics = [
+      _parse_metric(metric) for metric in request.secondary_metrics
+  ]
   experiment_budget_candidates = []
   if request.budgets:
     for budget in request.budgets:
@@ -150,14 +229,7 @@ async def explore_experiment_designs(
       primary_metric=primary_metric,
       alternative_hypothesis='greater' if request.alternative_hypothesis
       == 'one-sided' else request.alternative_hypothesis,
-      # secondary_metrics=[
-      #     "conversions",
-      #     "revenue",
-      #     geoflex.metrics.CPA(
-      #         conversions_column="conversions",
-      #         cost_column="cost"
-      #     ),
-      # ],
+      secondary_metrics=secondary_metrics,
       alpha=request.alpha,
       experiment_budget_candidates=experiment_budget_candidates,
       eligible_methodologies=methodologies_to_explore,
@@ -173,8 +245,9 @@ async def explore_experiment_designs(
           ),
       ],
       effect_scope=request.effect_scope,
-      cell_volume_constraint_candidates=[request.cell_volume_constraint]
-      if request.cell_volume_constraint else [],
+      # TODO: failing with []
+      # cell_volume_constraint_candidates=[request.cell_volume_constraint]
+      # if request.cell_volume_constraint else [None],
   )
   logger.debug(exploration_spec.model_dump())
   design_explorer = geoflex.ExperimentDesignExplorer(
@@ -191,16 +264,23 @@ async def explore_experiment_designs(
   # library's response doesn't have MDE needed on the client,
   # we have to fetch and return them separately
   for design in top_designs:
-    mdes = design.evaluation_results.get_mde(
-        target_power=target_power, relative=True, aggregate_across_cells=True)
+    mde = None
+    if design.evaluation_results:
+      mdes = design.evaluation_results.get_mde(
+          target_power=target_power, relative=True, aggregate_across_cells=True)
+      if mdes and primary_metric.name in mdes:
+        mde_value = mdes[primary_metric.name]
+        if isinstance(mde_value, list):
+          mde = [
+              v * 100 if v is not None and math.isfinite(v) else None
+              for v in mde_value
+          ]
+        elif mde_value is not None and math.isfinite(mde_value):
+          mde = mde_value * 100
+
     logger.debug(design.get_summary_dict())
     # wrap library's ExperimentDesign into our class with mde
-    mde = mdes[primary_metric.name]
-    if isinstance(mde, list):
-      mde = [v if math.isfinite(v) else None for v in mde]
-    design = DesignSummary(
-        **design.model_dump(),
-        mde=mde if mde is not None and math.isfinite(mde) else None)
-    designs.append(design)
+    design_summary = DesignSummary(**design.model_dump(), mde=mde)
+    designs.append(design_summary)
 
   return ExplorationResponse(designs=designs)
