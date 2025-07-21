@@ -139,6 +139,19 @@ def test_scorer_returns_higher_score_for_representative_assignment(raw_data):
   assert result_1 > result_2
 
 
+def test_scorer_can_handle_constant_column(raw_data):
+  raw_data["revenue"] = 0.0
+  raw_data_pivoted = geoflex.data.GeoPerformanceDataset(
+      data=raw_data
+  ).pivoted_data
+  scorer = geoflex.evaluation.GeoAssignmentRepresentativenessScorer(
+      historical_data=raw_data_pivoted,
+      geos=["US", "UK", "AU", "NL"],
+  )
+  result = scorer(np.array([0, 1, 0, 1]))
+  assert isinstance(result, float)
+
+
 def test_calculate_minimum_detectable_effect_from_stats_raises_error_for_invalid_alternative():
   with pytest.raises(ValueError):
     geoflex.evaluation.calculate_minimum_detectable_effect_from_stats(
