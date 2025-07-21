@@ -3,6 +3,7 @@
 from geoflex.methodology import _base
 from geoflex.methodology import gbr
 from geoflex.methodology import synthetic_controls
+from geoflex.methodology import tbrmm
 from geoflex.methodology import testing_methodology
 
 Methodology = _base.Methodology

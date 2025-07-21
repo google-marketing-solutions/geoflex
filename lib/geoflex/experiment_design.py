@@ -521,7 +521,15 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     """Returns the evaluation result of the primary metric for each cell."""
     if self.all_metric_results is None:
       return None
-    return self.all_metric_results_per_cell[self.primary_metric_name]
+
+    try:
+      return self.all_metric_results_per_cell[self.primary_metric_name]
+    except KeyError:
+      # If the primary metric is inverted, then the metric name will be
+      # suffixed with " __INVERTED__". So we check for that and use that if it
+      # exists.
+      inverted_metric_name = self.primary_metric_name + " __INVERTED__"
+      return self.all_metric_results_per_cell[inverted_metric_name]
 
   @property
   def representativeness_score(self) -> float | None:
@@ -593,7 +601,15 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     """Returns the evaluation result of the primary metric."""
     if self.all_metric_results is None:
       return None
-    return self.all_metric_results[self.primary_metric_name]
+
+    try:
+      return self.all_metric_results[self.primary_metric_name]
+    except KeyError:
+      # If the primary metric is inverted, then the metric name will be
+      # suffixed with " __INVERTED__". So we check for that and use that if it
+      # exists.
+      inverted_metric_name = self.primary_metric_name + " __INVERTED__"
+      return self.all_metric_results[inverted_metric_name]
 
   def get_mde(
       self,

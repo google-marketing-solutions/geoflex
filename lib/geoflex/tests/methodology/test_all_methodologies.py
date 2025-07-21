@@ -83,6 +83,16 @@ def performance_data_fixture(request):
     })
     data["date"] = data["date"].dt.strftime("%Y-%m-%d")
     return GeoPerformanceDataset(data=data)
+  if request.param == "zero_cost_data":
+    data = pd.DataFrame({
+        "geo_id": [f"geo_{i}" for i in range(20) for _ in range(100)],  # pylint: disable=g-complex-comprehension
+        "date": pd.date_range(start="2024-01-01", periods=100).tolist() * 20,
+        "revenue": rng.random(size=2000) + 5,
+        "cost": [0.0] * 2000,
+        "conversions": rng.random(size=2000) + 5,
+    })
+    data["date"] = data["date"].dt.strftime("%Y-%m-%d")
+    return GeoPerformanceDataset(data=data)
   else:
     raise ValueError(f"Unknown performance data: {request.param}")
 
@@ -159,6 +169,18 @@ def experiment_design_fixture(request, methodology):
         runtime_weeks=2,
         n_cells=2,
     )
+  elif request.param == "holdback_test":
+    return ExperimentDesign(
+        primary_metric=geoflex.metrics.iROAS(),  # Cost-based metric
+        secondary_metrics=[geoflex.metrics.CPiA()],  # Cost-based metric
+        experiment_budget=ExperimentBudget(
+            budget_type=ExperimentBudgetType.DAILY_BUDGET,
+            value=100,
+        ),
+        methodology=methodology,
+        runtime_weeks=2,
+        n_cells=2,
+    )
   elif request.param == "max_geos_constraint_test":
     return ExperimentDesign(
         primary_metric="revenue",
@@ -198,6 +220,7 @@ VALID_COMBINATIONS = [
     ("GBR", "cost_metrics_test", "basic_data"),
     ("GBR", "max_geos_constraint_test", "basic_data"),
     ("GBR", "max_revenue_pct_constraint_test", "basic_data"),
+    ("GBR", "holdback_test", "zero_cost_data"),
     ("TBRMM", "unconstrained_ab_test", "basic_data"),
     ("TBRMM", "ab_test_with_excluded_geos", "basic_data"),
     ("TBRMM", "max_geos_constraint_test", "basic_data"),
@@ -272,14 +295,6 @@ def test_assign_geos_returns_expected_data_type(
   geo_assignment = assign_geos(experiment_design, performance_data)
   assert isinstance(geo_assignment, GeoAssignment)
 
-  # experiment_design: ExperimentDesign,
-  # runtime_data: GeoPerformanceDataset,
-  # experiment_start_date: str,
-  # experiment_end_date: str | None = None,
-  # pretest_period_end_date: str | None = None,
-  # return_intermediate_data: bool = False,
-  # with_deep_dive_plots: bool = False,
-
 
 @pytest.mark.parametrize("with_deep_dive_plots", [True, False])
 @pytest.mark.parametrize("return_intermediate_data", [True, False])
@@ -297,9 +312,15 @@ def test_analyze_experiment_returns_expected_data_type(
 ):
   assert experiment_design.methodology == methodology
   assign_geos(experiment_design, performance_data)
+
+  experiment_data = performance_data.simulate_experiment(
+      experiment_start_date=pd.to_datetime("2024-02-01"),
+      design=experiment_design,
+  )
+
   output = analyze_experiment(
       experiment_design,
-      performance_data,
+      experiment_data,
       "2024-02-01",
       with_deep_dive_plots=with_deep_dive_plots,
       return_intermediate_data=return_intermediate_data,

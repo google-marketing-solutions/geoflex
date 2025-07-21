@@ -18,6 +18,7 @@ dependencies = [
   "matplotlib",
   "tqdm",
   "pysyncon",
+  "matched_markets@git+https://github.com/google/matched_markets"
 ]
 requires-python = ">=3.8"
 authors = [
