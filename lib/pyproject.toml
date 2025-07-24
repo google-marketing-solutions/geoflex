@@ -11,14 +11,14 @@ dependencies = [
   "pandas",
   "pydantic",
   "optuna",
-  "feedx",
+  "feedx>=0.0.1",
   "statsmodels",
   "pyarrow",
   "PyYAML",
   "matplotlib",
   "tqdm",
   "pysyncon",
-  "matched_markets@git+https://github.com/google/matched_markets"
+  "matched_markets@git+https://github.com/sam-bailey/matched_markets"
 ]
 requires-python = ">=3.8"
 authors = [
