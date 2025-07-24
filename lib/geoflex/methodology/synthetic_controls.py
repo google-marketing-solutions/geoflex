@@ -333,7 +333,6 @@ class SyntheticControls(_base.Methodology):
         geo_to_seed = temp_eligible_geos.pop()
         temp_pre_assigned[geo_to_seed] = cell_idx
 
-      # 5. Call the utility function with the now-guaranteed-to-work pre-assignments.
       assignments, _ = geoflex.utils.assign_geos_randomly(
           geo_ids=list(all_geos - exclude),
           n_groups=n_cells,
