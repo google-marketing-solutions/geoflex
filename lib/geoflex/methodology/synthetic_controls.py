@@ -285,37 +285,60 @@ class SyntheticControls(_base.Methodology):
       treatment groups, and optionally a list of geos that should be ignored.
     """
     num_iters = experiment_design.methodology_parameters["num_iterations"]
-    exclude = set(experiment_design.geo_eligibility.exclude or [])
+    geo_eligibility = experiment_design.geo_eligibility
+    exclude = set(geo_eligibility.exclude or [])
     rng = experiment_design.get_rng()
     n_cells = experiment_design.n_cells
 
     best_partition = None
     max_min_r2 = -float("inf")
 
-    eligible_geos = list(set(historical_data.geos) - exclude)
+    # Handle pre-assigned geos from GeoEligibility
+    pre_assigned = {geo: 0 for geo in (geo_eligibility.control or [])}
+    for i, treatment_geos in enumerate(geo_eligibility.treatment or []):
+      for geo in treatment_geos:
+        pre_assigned[geo] = i + 1
 
-    # Check if there are enough geos to pre-assign one to each cell
-    if len(eligible_geos) < n_cells:
+    all_geos = set(historical_data.geos)
+    assigned_geos = set(pre_assigned.keys())
+    eligible_geos_for_random = list(all_geos - exclude - assigned_geos)
+
+    # Check if there are enough geos to assign at least one to each cell
+    if len(all_geos - exclude) < n_cells:
       raise ValueError(
-          f"Not enough eligible geos ({len(eligible_geos)}) to assign "
+          f"Not enough eligible geos ({len(all_geos - exclude)}) to assign "
           f"at least one to each of the {n_cells} cells."
       )
 
     for _ in range(num_iters):
-      # 1. Shuffle the geos to ensure the pre-assignment is random each time.
-      rng.shuffle(eligible_geos)
+      # 1. Create a temporary pre-assignment map for this iteration to ensure
+      #    every cell gets at least one geo.
+      temp_pre_assigned = pre_assigned.copy()
 
-      # 2. Select one "anchor" geo for each cell to pre-assign.
-      anchor_geos = eligible_geos[:n_cells]
-      pre_assigned = {geo: i for i, geo in enumerate(anchor_geos)}
+      # 2. Shuffle the available geos for random seeding.
+      temp_eligible_geos = eligible_geos_for_random.copy()
+      rng.shuffle(temp_eligible_geos)
 
-      # 3. Call the utility function with the pre_assigned parameter.
-      # This guarantees that no group will be empty.
+      # 3. Find which cells are currently empty.
+      assigned_cells = set(temp_pre_assigned.values())
+      empty_cells = set(range(n_cells)) - assigned_cells
+
+      # 4. "Seed" each empty cell with one geo from the eligible pool.
+      #    This guarantees that the assign_geos_randomly function won't fail.
+      for cell_idx in empty_cells:
+        if not temp_eligible_geos:
+          raise ValueError(
+              f"Cannot find an eligible geo to assign to empty cell {cell_idx}"
+          )
+        geo_to_seed = temp_eligible_geos.pop()
+        temp_pre_assigned[geo_to_seed] = cell_idx
+
+      # 5. Call the utility function with the now-guaranteed-to-work pre-assignments.
       assignments, _ = geoflex.utils.assign_geos_randomly(
-          geo_ids=eligible_geos,
+          geo_ids=list(all_geos - exclude),
           n_groups=n_cells,
           rng=rng,
-          pre_assigned_geos=pre_assigned,
+          pre_assigned_geos=temp_pre_assigned,
       )
 
       current_partition = {
@@ -323,7 +346,6 @@ class SyntheticControls(_base.Methodology):
           "treatment": assignments[1:],
       }
 
-      # Step 2b: Evaluate the Partition
       r2_scores_for_this_partition = []
       for treatment_cell in current_partition["treatment"]:
         if not treatment_cell:
