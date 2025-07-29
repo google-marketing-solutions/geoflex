@@ -313,9 +313,6 @@
             <div class="text-h6 q-mb-md">Constraints & Parameters</div>
 
             <q-card class="q-pa-md">
-              <div class="text-subtitle1">Test Parameters and Exploration Axes</div>
-              <q-separator class="q-my-md" />
-
               <div class="row q-mb-md">
                 <div class="col">
                   <q-banner rounded class="q-mb-md">
@@ -474,6 +471,9 @@
                               >
                             </q-icon>
                           </div>
+                        </div>
+                        <div class="col-auto">
+                          <q-badge color="purple" label="Exploration Axis" />
                         </div>
                       </div>
                       <div class="row q-col-gutter-sm items-start">
@@ -641,6 +641,9 @@
                         <div class="col">
                           <div class="text-body2 q-mb-xs">Cell Volume Constraints</div>
                         </div>
+                        <div class="col-auto">
+                          <q-badge color="purple" label="Exploration Axis" />
+                        </div>
                       </div>
                       <q-card flat bordered class="q-pa-md">
                         <q-toggle
@@ -707,11 +710,11 @@
                     <!-- Simulation Per Trial  -->
                     <div>
                       <q-card>
-                        <q-card-section class="q-py-sm1">
+                        <q-card-section class="q-py-sm">
                           <div class="text-subtitle2">Exploration advanced parameters</div>
                         </q-card-section>
                         <q-card-section class="">
-                          <div class="row q-my-sm">
+                          <div class="row q-my-sm q-col-gutter-sm">
                             <div class="col-6">
                               <q-input
                                 v-model.number="parameters.maxTrials"
@@ -724,8 +727,6 @@
                                 hint="The maximum number of valid trials to run (leave empty for default)"
                               />
                             </div>
-                          </div>
-                          <div class="row q-my-sm">
                             <div class="col-6">
                               <q-input
                                 v-model.number="parameters.nDesigns"
@@ -810,331 +811,47 @@
           <!-- Test Designs Tab -->
           <q-tab-panel name="designs">
             <div class="text-h6 q-mb-md">Test Designs</div>
-
-            <q-card class="q-pa-md">
-              <div class="row items-center q-mb-md">
-                <div class="col">
-                  <div class="text-subtitle1">Found {{ testDesigns.length }} designs</div>
-                </div>
-                <div class="col-auto">
-                  <q-select
-                    v-model="sortBy"
-                    :options="sortOptions"
-                    label="Sort by"
-                    outlined
-                    dense
-                    style="min-width: 200px"
-                  />
-                </div>
-              </div>
-
-              <div v-for="(design, index) in sortedDesigns" :key="index" class="q-mb-lg">
-                <q-card bordered>
-                  <q-card-section>
-                    <div class="row items-center">
-                      <div class="col">
-                        <div class="text-h6">Design #{{ index + 1 }}</div>
-                        <div class="text-caption">Methodology: {{ design.methodology }}</div>
-                        <div class="text-caption">Duration: {{ design.runtime_weeks }} weeks</div>
-                      </div>
-                      <div class="col-auto">
-                        <q-btn-group flat>
-                          <q-btn color="primary" icon="visibility" @click="viewDesign(design)" />
-                          <q-btn color="positive" icon="download" @click="downloadDesign(design)" />
-                        </q-btn-group>
-                      </div>
-                    </div>
-                  </q-card-section>
-
-                  <q-separator />
-
-                  <q-card-section>
-                    <div class="row q-col-gutter-md">
-                      <!-- Parameters Summary -->
-                      <!-- <div class="col-12 col-md-6">
-                        <div class="text-subtitle2">Parameters</div>
-                        <q-list dense>
-                          <q-item v-for="(value, key) in design.parameters" :key="key">
-                            <q-item-section>
-                              <q-item-label caption>{{ formatKey(key) }}</q-item-label>
-                              <q-item-label>{{ value }}</q-item-label>
-                            </q-item-section>
-                          </q-item>
-                        </q-list>
-                      </div> -->
-
-                      <!-- Statistical Properties -->
-                      <div class="col-12 col-md-6">
-                        <div class="text-subtitle2">Statistical Properties</div>
-                        <div class="row q-col-gutter-md">
-                          <div class="col-6">
-                            <q-item dense>
-                              <q-item-section>
-                                <q-item-label caption
-                                  >MDE ({{
-                                    getMetricName(design.parameters.primary_metric) ||
-                                    'Primary Metric'
-                                  }})</q-item-label
-                                >
-                                <q-item-label class="text-primary text-weight-bold">{{
-                                  design.mde ? design.mde.toFixed(2) + '%' : 'N/A'
-                                }}</q-item-label>
-                              </q-item-section>
-                            </q-item>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Groups Summary -->
-                    <div class="q-mt-md">
-                      <div class="text-subtitle2">Groups</div>
-                      <div class="row q-col-gutter-md">
-                        <div
-                          v-for="(geos, groupName) in design.groups"
-                          :key="groupName as string"
-                          class="col-12 col-md-4"
-                        >
-                          <q-card flat bordered>
-                            <q-card-section class="q-py-sm bg-primary text-white row items-center">
-                              <div class="text-subtitle2 col">
-                                {{ groupName }} ({{ geos.length }} geos)
-                              </div>
-                              <div class="col-auto">
-                                <q-btn
-                                  flat
-                                  dense
-                                  round
-                                  icon="file_download"
-                                  color="white"
-                                  @click="exportDesignGroupToCsv(design, groupName as string)"
-                                >
-                                  <q-tooltip>Export {{ groupName }} geos as CSV</q-tooltip>
-                                </q-btn>
-                              </div>
-                            </q-card-section>
-                            <q-card-section class="q-pa-sm">
-                              <div
-                                class="geo-chips-container"
-                                style="max-height: 200px; overflow-y: auto"
-                              >
-                                <q-chip
-                                  v-for="geo in geos"
-                                  :key="geo"
-                                  :color="
-                                    isFixedGeo(geo, groupName as string) ? 'orange' : 'primary'
-                                  "
-                                  text-color="white"
-                                  size="sm"
-                                  class="q-ma-xs"
-                                >
-                                  {{ geo }}
-                                </q-chip>
-                              </div>
-                            </q-card-section>
-                          </q-card>
-                        </div>
-                      </div>
-                    </div>
-                  </q-card-section>
-
-                  <!-- Expandable section with charts -->
-                  <!--
-                  <q-expansion-item
-                    icon="analytics"
-                    label="View metrics"
-                    caption="Pre-test metrics comparison"
-                  >
-                    <q-card-section>
-                      <div class="row q-col-gutter-md">
-                        <div class="col-12 col-md-6">
-                          !-- Placeholder for chart component --
-                          <div class="bg-grey-3 flex flex-center" style="height: 200px">
-                            Group Balance Chart
-                          </div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                          !-- Placeholder for chart component --
-                          <div class="bg-grey-3 flex flex-center" style="height: 200px">
-                            Time Series Comparison
-                          </div>
-                        </div>
-                      </div>
-                    </q-card-section>
-                  </q-expansion-item>
-                  -->
-                </q-card>
-              </div>
-            </q-card>
+            <div v-if="explorationDuration" class="text-caption text-grey-7 q-mb-sm">
+              Exploration took: {{ explorationDuration.toFixed(2) }} seconds
+            </div>
+            <design-list
+              :designs="testDesigns"
+              :fixed-geos="lastRequest?.fixed_geos"
+              show-upload
+              @upload="uploadDesign"
+            />
+            <log-viewer :logs="explorationLogs" class="q-mt-md" />
           </q-tab-panel>
         </q-tab-panels>
       </q-card>
     </div>
-
-    <!-- Design Detail Dialog -->
-    <q-dialog v-model="designDetailDialog" maximized persistent>
-      <q-card>
-        <q-card-section class="row items-center">
-          <div class="text-h6">Design Details</div>
-          <q-space />
-          <q-btn icon="close" flat round dense v-close-popup />
-        </q-card-section>
-
-        <q-separator />
-
-        <q-card-section v-if="selectedDesign" class="q-pa-md">
-          <div class="row q-col-gutter-md">
-            <!-- Design metadata -->
-            <div class="col-12 col-md-4">
-              <q-card class="q-pa-md">
-                <div class="text-subtitle1">Design Summary</div>
-                <q-list dense>
-                  <q-item v-for="(value, key) in selectedDesign.parameters" :key="key">
-                    <q-item-section>
-                      <q-item-label caption>{{ formatKey(key) }}</q-item-label>
-                      <q-item-label
-                        v-if="typeof value === 'object' && value !== null"
-                        class="text-caption"
-                      >
-                        <pre>{{ JSON.stringify(value, null, 2) }}</pre>
-                      </q-item-label>
-                      <q-item-label v-else>{{ value }}</q-item-label>
-                    </q-item-section>
-                  </q-item>
-                </q-list>
-              </q-card>
-            </div>
-
-            <!-- Statistics -->
-            <div class="col-12 col-md-8">
-              <q-card class="q-pa-md">
-                <div class="text-subtitle1">Statistical Properties</div>
-                <div class="row q-col-gutter-md">
-                  <div class="col-6 col-md-3">
-                    <div class="text-caption">
-                      MDE ({{
-                        getMetricName(selectedDesign.parameters.primary_metric) || 'Primary Metric'
-                      }})
-                    </div>
-                    <div class="text-h5">
-                      {{ selectedDesign.mde ? selectedDesign.mde.toFixed(1) + '%' : 'N/A' }}
-                    </div>
-                  </div>
-                  <div class="col-6 col-md-4">
-                    <div class="text-caption">Duration</div>
-                    <div class="text-h5">{{ selectedDesign.runtime_weeks }} wks</div>
-                  </div>
-                </div>
-                <!-- <q-list dense>
-                  <q-item v-for="(value, key) in selectedDesign.evaluation_results?.all_metric_results_per_cell" :key="key">
-                    <q-item-section>
-                      <q-item-label caption>{{ formatKey(key) }}</q-item-label>
-                      <q-item-label
-                        v-if="typeof value === 'object' && value !== null"
-                        class="text-caption"
-                      >
-                        <pre>{{ JSON.stringify(value, null, 2) }}</pre>
-                      </q-item-label>
-                      <q-item-label v-else>{{ value }}</q-item-label>
-                    </q-item-section>
-                  </q-item>
-                </q-list> -->
-              </q-card>
-
-              <!-- Power charts -->
-              <q-card class="q-pa-md q-mt-md">
-                <div class="text-subtitle1">Power Analysis</div>
-                <div class="bg-grey-3 flex flex-center q-mt-sm" style="height: 200px">
-                  Power Analysis Chart
-                </div>
-              </q-card>
-            </div>
-
-            <!-- Group details -->
-            <div class="col-12">
-              <q-tabs
-                v-model="groupTab"
-                class="text-primary"
-                active-color="primary"
-                indicator-color="primary"
-                align="justify"
-              >
-                <q-tab
-                  v-for="(group, groupName) in selectedDesign.groups"
-                  :key="groupName"
-                  :name="groupName"
-                  :label="groupName"
-                />
-              </q-tabs>
-
-              <q-separator />
-
-              <q-tab-panels v-model="groupTab" animated>
-                <q-tab-panel
-                  v-for="(group, groupName) in selectedDesign.groups"
-                  :key="groupName"
-                  :name="groupName"
-                >
-                  <div class="row q-col-gutter-md">
-                    <div class="col-12 col-md-4">
-                      <q-card class="q-pa-md">
-                        <div class="text-subtitle1">{{ groupName }} Summary</div>
-                        <q-list dense>
-                          <q-item>
-                            <q-item-section>
-                              <q-item-label caption>Geo Count</q-item-label>
-                              <q-item-label>{{ group.length }}</q-item-label>
-                            </q-item-section>
-                          </q-item>
-                        </q-list>
-                      </q-card>
-                    </div>
-
-                    <div class="col-12 col-md-8">
-                      <q-card class="q-pa-md">
-                        <div class="text-subtitle1">Time Series</div>
-                        <div class="bg-grey-3 flex flex-center q-mt-sm" style="height: 200px">
-                          Time Series Chart
-                        </div>
-                      </q-card>
-                    </div>
-                  </div>
-
-                  <q-card class="q-pa-md q-mt-md">
-                    <div class="text-subtitle1">Geo Units</div>
-                    <q-table
-                      :rows="group"
-                      :columns="geoDetailColumns"
-                      row-key="geo"
-                      dense
-                      :pagination="{ rowsPerPage: 10 }"
-                    />
-                  </q-card>
-                </q-tab-panel>
-              </q-tab-panels>
-            </div>
-          </div>
-        </q-card-section>
-
-        <q-card-actions align="right">
-          <q-btn color="primary" label="Download" @click="downloadDesign(selectedDesign)" />
-          <q-btn color="grey" label="Close" v-close-popup />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, watch } from 'vue';
+import { ref, computed, reactive, watch, onMounted } from 'vue';
 import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
 import type { QTableColumn } from 'quasar';
-import { useQuasar, exportFile } from 'quasar';
+import { useQuasar } from 'quasar';
 import { postApiUi } from 'src/boot/axios';
 import MetricBuilder from 'src/components/MetricBuilder.vue';
-import type { AnyMetric, ExperimentDesign, ExperimentExploreResponse } from 'src/components/models';
+import DesignList from 'src/components/DesignList.vue';
+import LogViewer from 'src/components/LogViewer.vue';
+import type {
+  AnyMetric,
+  ExperimentExploreResponse,
+  LogEntry,
+  SavedDesign,
+} from 'src/components/models';
 
 const dataSourcesStore = useDataSourcesStore();
+
+onMounted(async () => {
+  // Request notification permission on component mount if not already granted or denied
+  if ('Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+});
 const $q = useQuasar();
 
 // Tab state
@@ -1145,6 +862,8 @@ const selectedDataSource = ref<DataSource | null>(null);
 const dataSourceLoaded = ref(false);
 const selectedMetric = ref<AnyMetric>('');
 const secondaryMetrics = ref<AnyMetric[]>([]);
+const explorationLogs = ref<LogEntry[]>([]);
+const explorationDuration = ref<number | null>(null);
 
 // Derived data source properties
 const dataSourceOptions = computed(() => dataSourcesStore.datasources);
@@ -1496,11 +1215,6 @@ const resetParameters = () => {
   Object.assign(parameters, getDefaultParameters());
 };
 
-const sortOptions = [
-  { label: 'Lowest MDE', value: 'mde' },
-  { label: 'Shortest Duration', value: 'duration' },
-];
-
 const cellVolumeConstraintTypeOptions = [
   { label: 'Max Geos per Cell', value: 'max_geos' },
   { label: 'Max % of Metric per Cell', value: 'max_percentage_of_metric' },
@@ -1725,7 +1439,29 @@ const budgetValidationRule = (val: string[]) => {
   }
 };
 
+/**
+ * Shows a system notification.
+ * Requests permission if needed.
+ * @param message The message to display in the notification.
+ */
+function showSystemNotification(message: string) {
+  if (!('Notification' in window)) {
+    console.warn('This browser does not support desktop notification.');
+    return;
+  }
+
+  // No need to request permission here, as we do it on mount.
+  if (Notification.permission === 'granted') {
+    new Notification('Geoflex Experiment', {
+      body: message,
+      icon: '/icons/logo.png',
+      requireInteraction: true,
+    });
+  }
+}
+
 async function runExploration() {
+  explorationDuration.value = null;
   let cell_volume_constraint;
   if (parameters.cellVolumeConstraint.enabled) {
     const { type, values, metric_column } = parameters.cellVolumeConstraint;
@@ -1777,6 +1513,7 @@ async function runExploration() {
   };
   lastRequest = request;
 
+  const started = Date.now();
   const response = await postApiUi<ExperimentExploreResponse>(
     'experiments/explore',
     request,
@@ -1784,47 +1521,27 @@ async function runExploration() {
   );
   if (!response) return;
   // Process the response
-  const designs: ExperimentDesign[] = [];
-  for (const designResp of response.data.designs) {
-    const design: ExperimentDesign = {
-      design_id: designResp.design_id,
-      mde: designResp.mde,
-      runtime_weeks: designResp.runtime_weeks,
-      methodology: designResp.methodology,
-      methodology_parameters: designResp.methodology_parameters,
-      isValid: designResp.evaluation_results?.is_valid_design,
-      groups: {
-        Control: designResp.geo_assignment?.control || [],
-      },
-      evaluation_results: designResp.evaluation_results,
-      parameters: {
-        n_cells: designResp.n_cells,
-        primary_metric: designResp.primary_metric,
-        secondary_metrics: designResp.secondary_metrics,
-        alpha: designResp.alpha,
-        alternative_hypothesis: designResp.alternative_hypothesis,
-        cell_volume_constraint: designResp.cell_volume_constraint,
-        effect_scope: designResp.effect_scope,
-        random_seed: designResp.random_seed,
-      },
-    };
-    if (designResp.geo_assignment?.treatment && designResp.geo_assignment.treatment.length > 0) {
-      if (designResp.geo_assignment.treatment.length === 1) {
-        // This means one treatment group
-        design.groups.Treatment = designResp.geo_assignment.treatment[0] || [];
-      } else {
-        // Multiple treatment groups
-        for (let i = 0; i < designResp.geo_assignment.treatment.length; i++) {
-          design.groups[`Treatment ${String.fromCharCode(65 + i)}`] =
-            designResp.geo_assignment.treatment[i] || [];
-        }
-      }
-    }
-
-    designs.push(design);
-  }
-  testDesigns.value = designs;
+  testDesigns.value = response.data.designs;
+  explorationLogs.value = response.data.logs;
   isExplored.value = true;
+  const durationSeconds = (Date.now() - started) / 1000;
+  explorationDuration.value = durationSeconds;
+
+  if (response.data.designs && response.data.designs.length > 0) {
+    const successMessage = `Exploration complete (took ${durationSeconds} sec)! Found ${response.data.designs.length} potential designs.`;
+    $q.notify({
+      type: 'positive',
+      message: successMessage,
+    });
+    showSystemNotification(successMessage);
+  } else {
+    const warningMessage = `Exploration complete (took ${durationSeconds} sec), but no valid designs were found.`;
+    $q.notify({
+      type: 'warning',
+      message: warningMessage,
+    });
+    showSystemNotification(warningMessage);
+  }
 
   // Navigate to designs tab
   activeTab.value = 'designs';
@@ -1887,152 +1604,29 @@ function parseBudget(parameters: ReturnType<typeof getDefaultParameters>) {
 
 // Test designs
 const isExplored = ref(false);
-const testDesigns = ref([] as ExperimentDesign[]);
-const sortBy = ref(sortOptions[0]); // Default to Lowest MDE
-const sortedDesigns = computed<ExperimentDesign[]>(() => {
-  const designs = [...testDesigns.value];
-  const field = sortBy.value.value;
-
-  if (field === 'mde') {
-    // Sort by MDE, lowest first. Handle undefined mde by pushing them to the end.
-    return designs.sort((a, b) => (a.mde ?? Infinity) - (b.mde ?? Infinity));
-  } else if (field === 'duration') {
-    return designs.sort((a, b) => a.runtime_weeks - b.runtime_weeks);
-  }
-  // Default return if no specific sort matches, or add more conditions
-  return designs;
-});
-
-// Design detail dialog
-const designDetailDialog = ref(false);
-const selectedDesign = ref<ExperimentDesign>(null);
-const groupTab = ref('Control');
-const geoDetailColumns: QTableColumn[] = [
-  { name: 'geo', label: 'Geo Unit', field: (row) => row, align: 'left' },
-];
+const testDesigns = ref([] as SavedDesign[]);
 
 // Format helpers
 const formatNumber = (num) => {
   return new Intl.NumberFormat().format(num);
 };
 
-const formatKey = (key) => {
-  return key
-    .replace(/([A-Z])/g, ' $1') // Insert space before capital letters
-    .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
-};
-
 let lastRequest;
 
-function downloadDesign(design) {
-  // TODO:
-  // Create a design export object
-  const exportData = {
-    name: `Geo Test Design ${new Date().toISOString().split('T')[0]}`,
-    source: selectedDataSource.value?.name,
-    metric: getMetricName(selectedMetric.value),
-    parameters: design.parameters,
-    statistics: {
-      mde: design.mde,
-      duration: design.runtime_weeks,
-    },
-    groups: {},
-  };
-
-  // Add geo assignments for each group
-  Object.keys(design.groups).forEach((groupName) => {
-    // design.groups[groupName] is already an array of geo strings
-    exportData.groups[groupName] = (design.groups[groupName] as string[]).map((geo: string) => ({
-      geo: geo,
-    }));
-  });
-  const filename = `geo-test-design-${Date.now()}.json`;
-  exportFile(filename, JSON.stringify(exportData, null, 2));
-}
-
-function viewDesign(design) {
-  selectedDesign.value = design;
-  groupTab.value = 'Control'; // Reset to first tab
-  designDetailDialog.value = true;
-}
-
-// Helper function to check if a geo was fixed in the assignment
-function isFixedGeo(geo: string, groupName: string): boolean {
-  if (!lastRequest || !lastRequest.fixed_geos) return false;
-
-  if (groupName === 'Control' && lastRequest.fixed_geos.control?.includes(geo)) {
-    return true;
-  }
-
-  if (groupName.startsWith('Treatment')) {
-    let groupIndex = -1;
-    if (groupName === 'Treatment') {
-      groupIndex = 0; // Single treatment group
-    } else if (groupName.startsWith('Treatment ')) {
-      // "Treatment A", "Treatment B"
-      const letter = groupName.split(' ')[1];
-      if (letter && letter.length === 1) {
-        groupIndex = letter.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1
-      }
-    }
-
-    if (
-      groupIndex !== -1 && // Valid groupIndex found
-      lastRequest.fixed_geos.treatment &&
-      lastRequest.fixed_geos.treatment[groupIndex]?.includes(geo)
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function exportDesignGroupToCsv(design: ExperimentDesign, groupName: string) {
-  if (!design || !design.groups || !design.groups[groupName]) {
-    $q.notify({
-      color: 'negative',
-      message: 'Could not find group data to export.',
-      icon: 'warning',
-    });
-    return;
-  }
-
-  const geos: string[] = design.groups[groupName];
-  if (!geos || geos.length === 0) {
-    $q.notify({
-      color: 'info',
-      message: `Group '${groupName}' has no geo units to export.`,
-      icon: 'info',
-    });
-    return;
-  }
-
-  // CSV content: header + data rows
-  let csvContent = 'geo_id\n'; // Header
-  csvContent += geos.join('\n');
-
-  const designId = design.design_id || 'unknown_design';
-  // Sanitize groupName for filename: replace non-alphanumeric (except underscore) with underscore, and convert to lowercase
-  const safeGroupName = String(groupName)
-    .replace(/[^a-z0-9_]/gi, '_')
-    .toLowerCase();
-  const filename = `${designId}_${safeGroupName}.csv`;
-
-  const status = exportFile(filename, csvContent, 'text/csv;charset=utf-8;');
-
-  if (status !== true) {
-    $q.notify({
-      color: 'negative',
-      message: 'CSV export failed. Please try again.',
-      icon: 'warning',
-    });
-  } else {
+async function uploadDesign(design: SavedDesign) {
+  try {
+    await postApiUi(
+      `designs/${design.design.design_id || Date.now()}.json`,
+      design,
+      'Uploading design to Cloud Storage',
+    );
     $q.notify({
       color: 'positive',
-      message: `Successfully exported ${filename}`,
+      message: 'Design uploaded successfully!',
       icon: 'check_circle',
     });
+  } catch {
+    // The error is already logged by postApiUi, no need to handle here
   }
 }
 

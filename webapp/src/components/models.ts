@@ -4,21 +4,25 @@
  */
 export interface Metric {
   // Common properties
+  /** The name of the metric. */
   name: string;
+  /** The type of the metric. */
   type: 'custom' | 'iroas' | 'cpia';
 
-  // For custom metrics
+  /** The column name for a custom metric. */
   column?: string;
 
-  // For custom metrics
+  /** The column name for the cost in a custom metric. */
   cost_column?: string;
+  /** Whether to calculate metric per cost. */
   metric_per_cost?: boolean;
+  /** Whether to calculate cost per metric. */
   cost_per_metric?: boolean;
 
-  // For iROAS
+  /** The column name for the return value in an iROAS metric. */
   return_column?: string;
 
-  // For CPiA
+  /** The column name for conversions in a CPiA metric. */
   conversions_column?: string;
 }
 
@@ -29,56 +33,184 @@ export interface Metric {
 export type AnyMetric = string | Metric;
 
 /**
- * Server response with ExperimentDesign.
+ * Represents the evaluation results for a single metric.
  */
-export interface ExperimentDesignResponse {
-  design_id: string;
-  alpha: number;
-  alternative_hypothesis: string;
-  cell_volume_constraint: { constraint_type: string; values: Array<number | null> };
-  effect_scope: string;
-  evaluation_results;
-  experiment_budget;
-  geo_assignment;
-  geo_eligibility;
-  methodology: string;
-  methodology_parameters;
-  n_cells: number;
-  primary_metric: AnyMetric | undefined;
-  random_seed: number;
-  runtime_weeks: number;
-  secondary_metrics: AnyMetric[];
-  mde: number; // As a percentage (e.g. 0.05 for 5%)
+export interface EvaluationMetricResult {
+  /** The standard error of the absolute effect. */
+  standard_error_absolute_effect: number;
+  /** The standard error of the relative effect. */
+  standard_error_relative_effect: number;
+  /** The coverage of the absolute effect. */
+  coverage_absolute_effect: number;
+  /** The coverage of the relative effect. */
+  coverage_relative_effect: number;
+  /** The empirical power of the metric. */
+  empirical_power: number;
+  /** Whether all checks passed for this metric. */
+  all_checks_pass: boolean;
+  /** A list of checks that failed. */
+  failing_checks: string[];
 }
 
 /**
- * Client-side description of a design.
+ * Represents the overall results of a design evaluation (power analysis).
  */
-export interface ExperimentDesign {
-  design_id: string;
-  mde: number;
-  runtime_weeks: number;
-  methodology: string;
-  methodology_parameters: Record<string, unknown>;
-  isValid: boolean;
-  parameters: {
-    n_cells: number;
-    primary_metric: AnyMetric | undefined;
-    secondary_metrics: AnyMetric[];
-    alpha: number;
-    alternative_hypothesis: string;
-    cell_volume_constraint: { constraint_type: string; values: Array<number | null> };
-    effect_scope: string;
-    random_seed: number;
+export interface EvaluationResults {
+  /** The name of the primary metric. */
+  primary_metric_name: string;
+  /** The alpha value (significance level) for the evaluation. */
+  alpha: number;
+  /** The alternative hypothesis for the evaluation. */
+  alternative_hypothesis: string;
+  /** The evaluation results for all metrics, per cell. */
+  all_metric_results_per_cell: {
+    [metricName: string]: EvaluationMetricResult[];
   };
-  evaluation_results?;
-  groups: {
-    Control: string[];
-    Treatment?: string[];
-    [key: string]: string[]; // For multi-cell tests (Test B, Test C, etc.)
-  };
+  /** The representativeness scores per cell. */
+  representativeness_scores_per_cell: number[];
+  /** The actual cell volumes. */
+  actual_cell_volumes: null | number[];
+  /** Any other errors that occurred during evaluation. */
+  other_errors: string[];
+  /** Whether the design is valid. */
+  is_valid_design: boolean;
+  /** Any warnings generated during evaluation. */
+  warnings: string[];
+  /** Whether a sufficient number of simulations were run. */
+  sufficient_simulations: boolean;
+  /** A list of checks that failed during evaluation. */
+  failing_checks?: string[];
 }
 
+/**
+ * Represents the budget for an experiment.
+ */
+export interface ExperimentBudget {
+  /** The value of the budget. */
+  value: number;
+  /** The type of the budget (e.g., 'cost', 'impressions'). */
+  budget_type: string;
+}
+
+/**
+ * Represents the assignment of geos to control and treatment groups.
+ */
+export interface GeoAssignment {
+  /** The geos assigned to the control group. */
+  control: string[];
+  /** The geos assigned to the treatment groups. */
+  treatment: string[][];
+  /** The geos to exclude from the experiment. */
+  exclude: string[];
+  /** All available geos. */
+  all_geos: string[];
+  /** Whether the geo assignment is flexible. */
+  flexible: boolean;
+}
+
+/**
+ * Represents the eligible geos for an experiment.
+ */
+export interface GeoEligibility {
+  /** The eligible geos for the control group. */
+  control: string[];
+  /** The eligible geos for the treatment groups. */
+  treatment: string[][];
+  /** The geos to exclude from eligibility. */
+  exclude: string[];
+  /** All available geos for eligibility. */
+  all_geos: string[];
+  /** Whether the geo eligibility is flexible. */
+  flexible: boolean;
+}
+
+/**
+ * Client-side description of a design, matching the server's DesignSummary.
+ */
+export interface ExperimentDesign {
+  /** The unique identifier for the design. */
+  design_id: string;
+  /** The alpha value (significance level) for the experiment. */
+  alpha: number;
+  /** The alternative hypothesis for the experiment. */
+  alternative_hypothesis: string;
+  /** The constraint on cell volume. */
+  cell_volume_constraint: {
+    /** The type of constraint. */
+    constraint_type: string;
+    /** The values for the constraint. */
+    values: Array<number | null>;
+    /** The metric column for the constraint. */
+    metric_column: string | null;
+  };
+  /** The scope of the effect being measured. */
+  effect_scope: string;
+  /** The results of the design evaluation. */
+  evaluation_results: EvaluationResults;
+  /** The budget for the experiment. */
+  experiment_budget: ExperimentBudget;
+  /** The assignment of geos to control and treatment groups. */
+  geo_assignment: GeoAssignment;
+  /** The eligible geos for the experiment. */
+  geo_eligibility: GeoEligibility;
+  /** The methodology used for the experiment design. */
+  methodology: string;
+  /** The parameters for the chosen methodology. */
+  methodology_parameters: Record<string, unknown>;
+  /** The number of cells (treatment groups + control). */
+  n_cells: number;
+  /** The primary metric for the experiment. */
+  primary_metric: AnyMetric | undefined;
+  /** The random seed used for the design. */
+  random_seed: number;
+  /** The duration of the experiment in weeks. */
+  runtime_weeks: number;
+  /** The secondary metrics for the experiment. */
+  secondary_metrics: AnyMetric[];
+}
+
+/**
+ * Represents a saved experiment design along with its metadata.
+ */
+export interface SavedDesign {
+  /** The experiment design. */
+  design: ExperimentDesign;
+  /** The Minimum Detectable Effect (MDE) for the design. */
+  mde: number;
+  /** The name of the datasource used for the design. */
+  datasource_name: string;
+  /** The timestamp when the design was saved. */
+  timestamp: string;
+  /** The user who saved the design. */
+  user?: string;
+}
+
+/**
+ * Represents the response from the server when exploring saved designs.
+ */
 export interface ExperimentExploreResponse {
-  designs: ExperimentDesignResponse[];
+  /** A list of saved designs. */
+  designs: SavedDesign[];
+  /** A list of log entries from the backend. */
+  logs: LogEntry[];
+}
+
+/**
+ * Represents a single log entry from the backend.
+ */
+export interface LogEntry {
+  /** The timestamp of the log entry. */
+  timestamp: string;
+  /** The log level (e.g., 'INFO', 'WARNING', 'ERROR'). */
+  level: string;
+  /** The name of the logger that created the entry. */
+  logger_name: string;
+  /** The log message. */
+  message: string;
+  /** The module where the log entry was created. */
+  module: string;
+  /** The function where the log entry was created. */
+  function: string;
+  /** The line number where the log entry was created. */
+  line_number: number;
 }

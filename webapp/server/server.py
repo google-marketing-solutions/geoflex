@@ -29,7 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from env import IS_GAE
 from logger import logger
-from routes import config_router, datasources_router, experiments_router
+from routes import config_router, datasources_router, experiments_router, designs_router
 
 
 @asynccontextmanager
@@ -38,11 +38,17 @@ async def lifespan(application: FastAPI):
   # Startup: Initialize services
   # pylint: disable=C0415, g-import-not-at-top
   from services.datasources import DataSourceService
+  from services.design_storage import DesignStorageService
+  from config import get_config
+
   datasource_service = DataSourceService()
+  config = get_config()
+  design_storage_service = DesignStorageService(config)
 
   try:
     await datasource_service.initialize_master_spreadsheet()
     application.state.datasource_service = datasource_service
+    application.state.design_storage_service = design_storage_service
 
     yield  # This is where the app runs
   finally:
@@ -84,6 +90,7 @@ app.add_middleware(IAPMiddleware)
 app.include_router(datasources_router)
 app.include_router(config_router)
 app.include_router(experiments_router)
+app.include_router(designs_router)
 
 
 class CustomJSONEncoder(json.JSONEncoder):

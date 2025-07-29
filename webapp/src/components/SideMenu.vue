@@ -46,6 +46,26 @@
           <q-icon name="science" />
         </q-item-section>
       </q-item>
+
+      <q-item clickable v-ripple to="/designs">
+        <q-item-section>
+          <q-item-label>Designs</q-item-label>
+          <q-item-label caption lines="2">Browse and analyze saved designs</q-item-label>
+        </q-item-section>
+        <q-item-section side>
+          <q-icon name="inventory" />
+        </q-item-section>
+      </q-item>
+
+      <q-item clickable v-ripple to="/analysis">
+        <q-item-section>
+          <q-item-label>Analysis</q-item-label>
+          <q-item-label caption lines="2">Analyze experiment results</q-item-label>
+        </q-item-section>
+        <q-item-section side>
+          <q-icon name="analytics" />
+        </q-item-section>
+      </q-item>
     </q-list>
   </div>
 </template>

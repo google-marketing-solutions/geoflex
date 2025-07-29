@@ -15,21 +15,19 @@
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import math
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union, Dict, Any, cast
 import geoflex
 import pandas as pd
 import pydantic
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from geoflex.methodology import list_methodologies
 from geoflex.metrics import CPiA, Metric, iROAS
-from logger import logger
+from logger import logger, intercept_logs, LogEntry
 from services.datasources import DataSourceService
+from services.design_storage import DesignStorageService
 
 router = APIRouter(prefix='/api/experiments', tags=['experiments'])
-
-
-class Experiment:
-  pass
 
 
 class ExperimentBudget(pydantic.BaseModel):
@@ -113,18 +111,20 @@ class ExplorationRequest(pydantic.BaseModel):
   model_config = pydantic.ConfigDict(extra='forbid')
 
 
-class DesignSummary(geoflex.ExperimentDesign):
-  """Summary of an experiment design for the UI."""
-
+class SavedDesign(pydantic.BaseModel):
+  """Wrapper for a design with additional metadata."""
+  design: geoflex.ExperimentDesign
   mde: list[float | None] | float | None
-
-  model_config = pydantic.ConfigDict(extra='forbid')
+  datasource_name: str
+  timestamp: datetime
+  user: Optional[str] = None
 
 
 class ExplorationResponse(pydantic.BaseModel):
   """Response model for experiment design exploration."""
 
-  designs: List[DesignSummary]
+  designs: List[SavedDesign]
+  logs: list[dict[str, Any]]
 
   model_config = pydantic.ConfigDict(extra='forbid')
 
@@ -183,7 +183,7 @@ async def explore_experiment_designs(
     This endpoint takes the datasource and experiment parameters and returns
     a list of possible experiment designs, ranked by their statistical power.
     """
-  logger.debug('Generating experiment designs')
+  logger.info('Starting exploration of experiment designs')
   logger.debug(request.model_dump())
   # Get datasource
   datasource = await ds_service.get_datasource_by_id(request.datasource_id)
@@ -193,7 +193,6 @@ async def explore_experiment_designs(
         detail=f'Datasource with id {request.datasource_id} not found or is invalid',
     )
   datasource_data = await ds_service.load_datasource_data(datasource.id)
-
   datasource_pd = pd.DataFrame(datasource_data)
   historical_data = geoflex.GeoPerformanceDataset(
       data=datasource_pd,
@@ -210,10 +209,6 @@ async def explore_experiment_designs(
     excluded_geos = set(request.fixed_geos.exclude)
     fixed_control_geos = set(request.fixed_geos.control)
     fixed_test_geos = [set(geos) for geos in request.fixed_geos.treatment]
-
-  # TODO: remove TestingMethodology
-  methodologies_to_explore = (
-      request.methodologies or list_methodologies() or ['TestingMethodology'])
 
   primary_metric = _parse_metric(request.primary_metric)
   secondary_metrics = [
@@ -232,7 +227,7 @@ async def explore_experiment_designs(
       secondary_metrics=secondary_metrics,
       alpha=request.alpha,
       experiment_budget_candidates=experiment_budget_candidates,
-      eligible_methodologies=methodologies_to_explore,
+      eligible_methodologies=request.methodologies or list_methodologies(),
       runtime_weeks_candidates=[request.min_runtime_weeks]
       if request.min_runtime_weeks == request.max_runtime_weeks else list(
           range(request.min_runtime_weeks, request.max_runtime_weeks + 1)),
@@ -254,8 +249,15 @@ async def explore_experiment_designs(
       explore_spec=exploration_spec,
       historical_data=historical_data,
   )
-  design_explorer.explore(max_trials=request.max_trials or 100)
 
+  logs: list[LogEntry] = []
+  logger.debug('Running geoflex.explore')
+  started = datetime.now()
+  with intercept_logs('geoflex', logs):
+    design_explorer.explore(max_trials=request.max_trials or 100)
+
+  elapsed = datetime.now() - started
+  logger.debug('geoflex.explorer completed, elapsed: %s', elapsed)
   top_designs = design_explorer.get_designs(top_n=request.n_designs or 5)
   designs = []
   target_power = request.target_power or 0.8
@@ -280,7 +282,96 @@ async def explore_experiment_designs(
 
     logger.debug(design.get_summary_dict())
     # wrap library's ExperimentDesign into our class with mde
-    design_summary = DesignSummary(**design.model_dump(), mde=mde)
-    designs.append(design_summary)
+    saved_design = SavedDesign(
+        design=design,
+        mde=mde,
+        datasource_name=datasource.name,
+        timestamp=datetime.utcnow())
+    designs.append(saved_design)
 
-  return ExplorationResponse(designs=designs)
+  return ExplorationResponse(
+      designs=designs, logs=[log_entry.to_dict() for log_entry in logs])
+
+
+class AnalyzeRequest(pydantic.BaseModel):
+  """Request model for analysis experiment results."""
+  datasource_id: str
+  experiment_start_date: datetime
+  design_id: str
+  model_config = pydantic.ConfigDict(extra='forbid')
+
+
+class AnalyzeResponse(pydantic.BaseModel):
+  """Response model for analysis experiment results."""
+  status: str
+  results: list[dict[str, Any]]
+  logs: list[dict[str, Any]]
+  model_config = pydantic.ConfigDict(extra='forbid')
+
+
+async def get_design_storage_service(request: Request) -> DesignStorageService:
+  """
+  Dependency to get the DesignStorageService from the app state.
+  """
+  return request.app.state.design_storage_service
+
+
+@router.post('/analyze', response_model=AnalyzeResponse)
+async def analyse_experiment_results(
+    request: AnalyzeRequest,
+    ds_service: DataSourceService = Depends(get_datasource_service),
+    storage_service: DesignStorageService = Depends(get_design_storage_service)
+) -> AnalyzeResponse:
+  """Analyzes the results of a completed experiment."""
+  logger.info('Analyzing experiment results')
+  logger.debug(request.model_dump())
+
+  # 1. Load experiment data
+  datasource = await ds_service.get_datasource_by_id(request.datasource_id)
+  if not datasource or not datasource.id:
+    raise HTTPException(
+        status_code=404,
+        detail=f'Datasource with id {request.datasource_id} not found or is invalid',
+    )
+  datasource_data = await ds_service.load_datasource_data(datasource.id)
+  datasource_pd = pd.DataFrame(datasource_data)
+  runtime_data = geoflex.GeoPerformanceDataset(
+      data=datasource_pd,
+      geo_id_column=datasource.columns.geo_column,
+      date_column=datasource.columns.date_column)
+
+  # 2. Load the experiment design
+  design_name = f"{request.design_id}.json"
+  design_data = await storage_service.get_design(design_name)
+  if design_data is None:
+    raise HTTPException(status_code=404, detail='Design not found')
+  experiment_design = geoflex.ExperimentDesign(**design_data['design'])
+  logger.debug('Loaded design file by id: %s', experiment_design)
+
+  # 3. Analyze the results
+  logs: list[LogEntry] = []
+  #try:
+  logger.debug('Running geoflex.analyze_experiment')
+  with intercept_logs('geoflex', logs):
+    analysis_results = geoflex.analyze_experiment(
+        experiment_design=experiment_design,
+        runtime_data=runtime_data,
+        experiment_start_date=request.experiment_start_date.strftime(
+            '%Y-%m-%d'),
+    )
+    if isinstance(analysis_results, pd.DataFrame):
+      analysis_results.columns = analysis_results.columns.astype(str)
+      results_list = cast(list[dict[str, Any]],
+                          analysis_results.to_dict(orient='records'))
+      return AnalyzeResponse(
+          status='success',
+          results=results_list or [],
+          logs=[log_entry.to_dict() for log_entry in logs])
+    else:
+      return AnalyzeResponse(
+          status='failure',
+          results=[],
+          logs=[log_entry.to_dict() for log_entry in logs])
+  # except Exception as e:
+  #   logger.error('Error during experiment analysis: %s, ', e)
+  #   raise HTTPException(status_code=500, detail=str(e))

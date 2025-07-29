@@ -14,6 +14,8 @@ pydantic          # Data validation
 appengine-python-standard>=1.0.0
 smart_open
 smart_open[gcs]
+gcsfs
 pyyaml
 python-dotenv
 ./vendor/geoflex-0.0.2-py3-none-any.whl
+git+https://github.com/sam-bailey/matched_markets

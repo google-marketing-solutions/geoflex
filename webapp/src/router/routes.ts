@@ -11,12 +11,22 @@ const routes: RouteRecordRaw[] = [
         component: () => import('pages/ConfigurationPage.vue'),
       },
       {
-        path: 'datasources',
+        path: 'datasources/:id?/:action?',
         component: () => import('pages/DataSourcesPage.vue'),
+        props: true,
       },
       {
         path: 'experiments',
         component: () => import('pages/ExperimentsPage.vue'),
+      },
+      {
+        path: 'designs',
+        component: () => import('pages/DesignsPage.vue'),
+      },
+      {
+        path: 'analysis/:designId?',
+        name: 'analysis',
+        component: () => import('pages/AnalysisPage.vue'),
       },
     ],
   },

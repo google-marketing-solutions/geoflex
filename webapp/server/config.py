@@ -18,6 +18,7 @@ import argparse
 import os
 import json
 import google.auth
+import google.cloud.exceptions
 import smart_open
 from logger import logger
 from typing import Any
@@ -64,9 +65,10 @@ class ConfigItemBase:
 
 class Config(ConfigItemBase):
   """Application configuration."""
-  project_id: str = ''
+  project_id: str | None = ''
   spreadsheet_id: str = ''
   config_location: str = ''
+  gcs_bucket_name: str = ''
 
   def to_dict(self) -> dict[str, Any]:
     """Convert to a dictionary."""
@@ -74,6 +76,7 @@ class Config(ConfigItemBase):
         'project_id': self.project_id,
         'spreadsheet_id': self.spreadsheet_id,
         'config_location': self.config_location,
+        'gcs_bucket_name': self.gcs_bucket_name,
     }
     return values
 
@@ -99,7 +102,7 @@ def parse_arguments(only_known: bool = True) -> argparse.Namespace:
   return args
 
 
-def find_project_id(args: argparse.Namespace) -> str:
+def find_project_id(args: argparse.Namespace) -> str | None:
   if getattr(args, 'project_id', ''):
     project_id = getattr(args, 'project_id')
   else:

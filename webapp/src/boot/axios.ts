@@ -104,17 +104,37 @@ async function postApiUi<T>(
     cancel: true,
     focus: 'none',
   });
+
+  const startTime = Date.now();
+  const intervalId = setInterval(() => {
+    if (progressDlg) {
+      const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
+      progressDlg.update({
+        message: `${message} (${elapsedSeconds}s)`,
+      });
+    }
+  }, 1000);
+
   progressDlg.onCancel(() => {
     progressDlg = null;
+    clearInterval(intervalId);
     controller.abort();
   });
 
-  const loading = () => progressDlg && progressDlg.hide();
+  const loading = () => {
+    if (progressDlg) {
+      progressDlg.hide();
+    }
+    clearInterval(intervalId);
+  };
+
   options = options || {};
   options.signal = controller.signal;
   try {
     return await postApi<T>(url, params, loading, options);
   } catch (e: unknown) {
+    // The 'loading' function is called within postApi's catch block,
+    // so the interval is cleared before the error is re-thrown.
     assertIsError(e);
     Dialog.create({
       title: 'Error',
@@ -196,4 +216,41 @@ async function getApiUi<T>(url: string, params: unknown, message: string) {
   }
 }
 
-export { api, postApi, postApiUi, getApi, getApiUi, getFile };
+async function deleteApi<T>(url: string, loading?: () => void) {
+  try {
+    const res = await api.delete<T>(getUrl(url));
+    loading && loading();
+    return res;
+  } catch (e: unknown) {
+    loading && loading();
+    throw handleServerError(e);
+  }
+}
+
+async function deleteApiUi<T>(url: string, loadingMessage: string, confirmationMessage: string) {
+  return new Promise((resolve) => {
+    Dialog.create({
+      title: 'Confirm',
+      message: confirmationMessage,
+      cancel: true,
+      persistent: true,
+    }).onOk(() => {
+      Loading.show({ message: loadingMessage });
+      const loading = () => Loading.hide();
+      deleteApi<T>(url, loading)
+        .then((response) => {
+          resolve(response);
+        })
+        .catch((e: unknown) => {
+          assertIsError(e);
+          Dialog.create({
+            title: 'Error',
+            message: e.message,
+          });
+          resolve(undefined);
+        });
+    });
+  });
+}
+
+export { api, postApi, postApiUi, getApi, getApiUi, getFile, deleteApiUi };

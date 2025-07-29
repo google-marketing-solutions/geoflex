@@ -184,7 +184,7 @@ class DataSourceService:
         await self._save_datasource_data(datasource)
       except:
         # if data failed to save, remove the just created datasource metadata
-        self._delete_datasource(datasource)
+        await self._delete_datasource(datasource)
         raise
 
     return datasource
