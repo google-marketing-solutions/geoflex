@@ -13,7 +13,11 @@
           align="justify"
         >
           <q-tab name="datasource" label="Data Source" />
-          <q-tab name="constraints" label="Constraints & Parameters" />
+          <q-tab
+            name="constraints"
+            label="Constraints & Parameters"
+            :disable="!selectedDataSource"
+          />
           <q-tab
             name="designs"
             label="Test Designs"

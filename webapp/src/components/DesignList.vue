@@ -29,6 +29,9 @@
                 <div v-if="showMeta" class="text-caption">
                   Created: {{ new Date(design.timestamp).toLocaleString() }} (local time)
                 </div>
+                <div v-if="showMeta && design.start_date" class="text-caption">
+                  Data time frame: {{ formatDate(design.start_date) }} - {{ formatDate(design.end_date) }}
+                </div>
                 <div class="text-caption">Methodology: {{ design.design.methodology }}</div>
                 <div class="text-caption">Duration: {{ design.design.runtime_weeks }} weeks</div>
               </div>
@@ -387,6 +390,7 @@ import type { PropType } from 'vue';
 import { ref, computed } from 'vue';
 import { useQuasar, exportFile } from 'quasar';
 import type { ExperimentDesign, AnyMetric, SavedDesign } from 'src/components/models';
+import { formatDate } from 'src/helpers/utils';
 
 const props = defineProps({
   designs: {

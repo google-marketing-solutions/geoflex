@@ -15,11 +15,13 @@
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import math
-from typing import List, Literal, Optional, Union, Dict, Any, cast
+from typing import List, Literal, Optional, Union, Any, cast
 import geoflex
+import numpy as np
 import pandas as pd
 import pydantic
-from datetime import datetime
+from pydantic import field_serializer
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from geoflex.methodology import list_methodologies
 from geoflex.metrics import CPiA, Metric, iROAS
@@ -116,6 +118,9 @@ class SavedDesign(pydantic.BaseModel):
   design: geoflex.ExperimentDesign
   mde: list[float | None] | float | None
   datasource_name: str
+  datasource_updated: Optional[datetime] = None
+  start_date: Optional[datetime] = None
+  end_date: Optional[datetime] = None
   timestamp: datetime
   user: Optional[str] = None
 
@@ -133,6 +138,11 @@ class ExplorationResponse(pydantic.BaseModel):
 async def get_datasource_service(request: Request) -> DataSourceService:
   """Get the initialized DataSourceService from app state."""
   return request.app.state.datasource_service
+
+
+def get_current_user(request: Request) -> str | None:
+  """Gets the current user from the IAP header in the request state."""
+  return getattr(request.state, 'iap_user', None)
 
 
 def _parse_metric(metric_request: AnyMetric) -> Metric:
@@ -177,6 +187,7 @@ def _parse_metric(metric_request: AnyMetric) -> Metric:
 async def explore_experiment_designs(
     request: ExplorationRequest,
     ds_service: DataSourceService = Depends(get_datasource_service),
+    current_user: str | None = Depends(get_current_user),
 ) -> ExplorationResponse:
   """Explores experiment designs based on the given constraints.
 
@@ -194,6 +205,17 @@ async def explore_experiment_designs(
     )
   datasource_data = await ds_service.load_datasource_data(datasource.id)
   datasource_pd = pd.DataFrame(datasource_data)
+  date_column = datasource.columns.date_column
+  start_date = None
+  end_date = None
+  if date_column in datasource_pd.columns and not datasource_pd.empty:
+    datasource_pd[date_column] = pd.to_datetime(datasource_pd[date_column])
+    start_date = (
+        datasource_pd[date_column].min().to_pydatetime().replace(
+            tzinfo=timezone.utc))
+    end_date = (
+        datasource_pd[date_column].max().to_pydatetime().replace(
+            tzinfo=timezone.utc))
   historical_data = geoflex.GeoPerformanceDataset(
       data=datasource_pd,
       geo_id_column=datasource.columns.geo_column,
@@ -240,9 +262,13 @@ async def explore_experiment_designs(
           ),
       ],
       effect_scope=request.effect_scope,
-      # TODO: failing with []
-      # cell_volume_constraint_candidates=[request.cell_volume_constraint]
-      # if request.cell_volume_constraint else [None],
+      cell_volume_constraint_candidates=[request.cell_volume_constraint]
+      if request.cell_volume_constraint else [
+          geoflex.CellVolumeConstraint(
+              values=[None] * request.n_cells,
+              constraint_type=geoflex.CellVolumeConstraintType.MAX_GEOS,
+          )
+      ],  # TODO:change to [] once supported in the library
   )
   logger.debug(exploration_spec.model_dump())
   design_explorer = geoflex.ExperimentDesignExplorer(
@@ -272,21 +298,25 @@ async def explore_experiment_designs(
           target_power=target_power, relative=True, aggregate_across_cells=True)
       if mdes and primary_metric.name in mdes:
         mde_value = mdes[primary_metric.name]
-        if isinstance(mde_value, list):
-          mde = [
-              v * 100 if v is not None and math.isfinite(v) else None
-              for v in mde_value
-          ]
-        elif mde_value is not None and math.isfinite(mde_value):
-          mde = mde_value * 100
+        if isinstance(mde_value, float):
+          if math.isfinite(mde_value) or np.isfinite(mde_value):
+            mde = mde_value * 100
+          else:
+            mde = mde_value
 
     logger.debug(design.get_summary_dict())
-    # wrap library's ExperimentDesign into our class with mde
+    # wrap library's ExperimentDesign into our class with mde and additional metadata
+    datasource.data
     saved_design = SavedDesign(
         design=design,
         mde=mde,
         datasource_name=datasource.name,
-        timestamp=datetime.utcnow())
+        datasource_updated=datasource.updated_at,
+        start_date=start_date,
+        end_date=end_date,
+        timestamp=datetime.utcnow(),
+        user=current_user,
+    )
     designs.append(saved_design)
 
   return ExplorationResponse(

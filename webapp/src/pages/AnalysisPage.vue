@@ -4,8 +4,6 @@
       <div class="text-h4 q-mb-md">Experiment Analysis</div>
 
       <q-card class="q-pa-md">
-        <div class="text-h6 q-mb-md">Analysis Setup</div>
-
         <div class="row q-col-gutter-md">
           <!-- Design Selection -->
           <div class="col-12">
@@ -14,6 +12,11 @@
               <div class="text-subtitle2">{{ selectedDesign.design.design_id }}</div>
               <div class="text-caption">
                 Created: {{ new Date(selectedDesign.timestamp).toLocaleString() }} (local time)
+              </div>
+              <div class="text-caption">Data source: {{ selectedDesign.datasource_name }}</div>
+              <div class="text-caption">
+                Data time frame: {{ formatDate(selectedDesign.start_date) }} -
+                {{ formatDate(selectedDesign.end_date) }}
               </div>
               <div class="text-caption">Methodology: {{ selectedDesign.design.methodology }}</div>
               <div class="text-caption">
@@ -145,6 +148,7 @@ import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
 import type { LogEntry, SavedDesign } from 'src/components/models';
 import { postApiUi, getApiUi } from 'boot/axios';
 import LogViewer from 'src/components/LogViewer.vue';
+import { formatDate } from 'src/helpers/utils';
 
 const formatKey = (key: string | number) => {
   const keyAsString = String(key);

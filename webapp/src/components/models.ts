@@ -183,6 +183,12 @@ export interface SavedDesign {
   timestamp: string;
   /** The user who saved the design. */
   user?: string;
+  /** The timestamp when the datasource was last updated. */
+  datasource_updated?: string;
+  /** The start date of the data used for the design. */
+  start_date?: string;
+  /** The end date of the data used for the design. */
+  end_date?: string;
 }
 
 /**

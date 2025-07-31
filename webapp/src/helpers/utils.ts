@@ -15,3 +15,8 @@ export function formatNumber(value: number): string {
   if (Math.abs(value) < 10000) return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
   return value.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 }
+
+export function formatDate(date: string | undefined): string {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString();
+}
