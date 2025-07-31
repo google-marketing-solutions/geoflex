@@ -190,6 +190,31 @@ def test_methodology_analyze_experiment(fixtures: dict[str, Any]):
   assert results_df['metric'].iloc[0] == 'sales'
 
 
+def test_analyze_experiment_with_invalid_dates(fixtures: dict[str, Any]):
+  """Tests that an error is raised with invalid date ranges."""
+  geo_assignment = GeoAssignment(
+      treatment=[{'G1', 'G2'}], control={'G3', 'G4', 'G5'}
+  )
+  fixtures['experiment_design'].geo_assignment = geo_assignment
+
+  # Invalid dates that will cause the error
+  pretest_end_date = pd.to_datetime('2025-01-01')
+  experiment_start_date = pd.to_datetime('2026-01-01')
+  experiment_end_date = pd.to_datetime('2026-01-08')
+
+  with pytest.raises(
+      RuntimeError,
+      match='No data in the pretest or runtime period for SyntheticControls'
+  ):
+    fixtures['sc_method']._methodology_analyze_experiment(
+        runtime_data=fixtures['historical_data'],
+        experiment_design=fixtures['experiment_design'],
+        experiment_start_date=experiment_start_date,
+        experiment_end_date=experiment_end_date,
+        pretest_period_end_date=pretest_end_date,
+    )
+
+
 if __name__ == '__main__':
   fixtures_data = setup_fixtures_data()
   aggregated_data = setup_aggregated_df(fixtures_data)

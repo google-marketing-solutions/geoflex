@@ -1,5 +1,6 @@
 """The Synthetic Controls methodology for GeoFleX."""
 
+import logging
 from typing import Any
 import geoflex.data
 import geoflex.experiment_design
@@ -8,6 +9,9 @@ import geoflex.utils
 import pandas as pd
 from pysyncon import Dataprep
 from pysyncon import Synth
+
+
+logger = logging.getLogger(__name__)
 
 
 # pylint:disable=protected-access
@@ -406,6 +410,31 @@ class SyntheticControls(_base.Methodology):
         {},
     )
 
+  def _validate_data_periods(
+      self,
+      runtime_data: GeoPerformanceDataset,
+      experiment_start_date: pd.Timestamp,
+      pretest_period_end_date: pd.Timestamp,
+  ) -> None:
+    """Checks for data presence in pretest and runtime periods."""
+    is_pretest = (
+        runtime_data.parsed_data[runtime_data.date_column] <
+        pretest_period_end_date
+    )
+    is_runtime = (
+        runtime_data.parsed_data[runtime_data.date_column] >=
+        experiment_start_date
+    )
+
+    if not is_pretest.any() or not is_runtime.any():
+      error_message = (
+          "No data in the pretest or runtime period for SyntheticControls. "
+          "This is likely because the experiment start date is too close to "
+          "the start or end of the provided data."
+      )
+      logger.error(error_message)
+      raise RuntimeError(error_message)
+
   def _methodology_analyze_experiment(
       self,
       runtime_data: GeoPerformanceDataset,
@@ -441,6 +470,9 @@ class SyntheticControls(_base.Methodology):
     Returns:
       A dataframe with the analysis results.
     """
+    self._validate_data_periods(
+        runtime_data, experiment_start_date, pretest_period_end_date
+    )
     intermediate_data = {}
     results = []
     control_geos = list(experiment_design.geo_assignment.control)
