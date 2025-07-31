@@ -308,6 +308,32 @@ class AnalyzeResponse(pydantic.BaseModel):
   logs: list[dict[str, Any]]
   model_config = pydantic.ConfigDict(extra='forbid')
 
+  @field_serializer('results')
+  def serialize_results(self, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Serialize results to handle special float values."""
+    serialized_results = []
+    for record in v:
+      serialized_record = {}
+      for key, value in record.items():
+        if isinstance(value, float):
+          if math.isinf(value):
+            serialized_record[key] = 'Infinity' if value > 0 else '-Infinity'
+          elif math.isnan(value):
+            serialized_record[key] = 'NaN'
+          else:
+            serialized_record[key] = value
+        elif isinstance(value, np.floating):
+          if np.isinf(value):
+            serialized_record[key] = 'Infinity' if value > 0 else '-Infinity'
+          elif np.isnan(value):
+            serialized_record[key] = 'NaN'
+          else:
+            serialized_record[key] = float(value)
+        else:
+          serialized_record[key] = value
+      serialized_results.append(serialized_record)
+    return serialized_results
+
 
 async def get_design_storage_service(request: Request) -> DesignStorageService:
   """
@@ -363,6 +389,7 @@ async def analyse_experiment_results(
       analysis_results.columns = analysis_results.columns.astype(str)
       results_list = cast(list[dict[str, Any]],
                           analysis_results.to_dict(orient='records'))
+      logger.info('Analysis completed: %s', results_list)
       return AnalyzeResponse(
           status='success',
           results=results_list or [],

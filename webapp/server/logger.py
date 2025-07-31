@@ -39,6 +39,8 @@ if env.IS_GAE:
   from google.cloud.logging.handlers import CloudLoggingHandler, setup_logging
 
   def _converter(o):
+    if isinstance(o, datetime):
+      return o.isoformat()
     if isinstance(o, set):
       return list(o)
     if isinstance(o, dict):

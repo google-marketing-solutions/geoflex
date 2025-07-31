@@ -96,7 +96,7 @@ async def share_spreadsheet(request: Request):
   datasource_service: DataSourceService = request.app.state.datasource_service
 
   try:
-    datasource_service.share_master_spreadsheet(user_email)
+    await datasource_service.share_master_spreadsheet(user_email)
 
     return ShareResponse(
         success=True, message=f'Spreadsheet shared with {user_email}')

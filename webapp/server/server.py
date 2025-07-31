@@ -14,12 +14,10 @@
 """Application server."""
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
-import json
-import math
 import os
 import traceback
 from contextlib import asynccontextmanager
-from typing import Any, Callable, Awaitable
+from typing import Callable, Awaitable
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -91,36 +89,6 @@ app.include_router(datasources_router)
 app.include_router(config_router)
 app.include_router(experiments_router)
 app.include_router(designs_router)
-
-
-class CustomJSONEncoder(json.JSONEncoder):
-  """A custom JSON encoder to support serialization of special objects."""
-
-  def default(self, o: Any):
-    # Handle regular Python floats
-    if isinstance(o, float):
-      if math.isinf(o):
-        return 'Infinity' if o > 0 else '-Infinity'
-      if math.isnan(o):
-        return 'NaN'
-
-      # For other types, use default serialization
-      return super().default(o)
-
-
-class CustomJSONResponse(JSONResponse):
-  """Custom JSON response using our JSON encoder."""
-
-  def render(self, content: Any) -> bytes:
-    return json.dumps(
-        content,
-        ensure_ascii=False,
-        allow_nan=True,
-        indent=None,
-        separators=(',', ':'),
-        cls=CustomJSONEncoder,
-    ).encode('utf-8')
-
 
 STATIC_DIR = (os.getenv('STATIC_DIR') or '../dist'
              )  # folder for static content relative to the current module
