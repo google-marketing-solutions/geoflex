@@ -3,10 +3,10 @@
     <div class="q-pa-md">
       <div class="row items-center justify-between q-mb-md">
         <div class="text-h4">Saved Designs</div>
-        <q-btn icon="refresh" round flat @click="fetchDesigns" />
+        <q-btn icon="refresh" round flat @click="reloadDesigns" />
       </div>
       <design-list
-        :designs="designs"
+        :designs="designsStore.designs"
         :showAnalyze="true"
         :show-meta="true"
         :show-delete="true"
@@ -19,31 +19,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { getApiUi, deleteApiUi } from 'src/boot/axios';
+import { onMounted } from 'vue';
 import DesignList from 'src/components/DesignList.vue';
 import type { SavedDesign } from 'src/components/models';
 import { useRouter } from 'vue-router';
+import { useDesignsStore } from 'src/stores/designs';
 
-const designs = ref<SavedDesign[]>([]);
 const router = useRouter();
+const designsStore = useDesignsStore();
 
-async function fetchDesigns() {
-  const response = await getApiUi<SavedDesign[]>('designs', {}, 'Loading designs');
-  if (response && response.data) {
-    designs.value = response.data;
-  }
+async function reloadDesigns() {
+  await designsStore.loadDesigns(true);
 }
 
 async function deleteDesign(design: SavedDesign) {
-  const response = await deleteApiUi(
-    `designs/${design.design.design_id}`,
-    'Deleting design...',
-    `Are you sure you want to delete design ${design.design.design_id}?`,
-  );
-  if (response) {
-    await fetchDesigns();
-  }
+  await designsStore.deleteDesign(design);
 }
 
 function analyzeDesign(design: SavedDesign) {
@@ -60,6 +50,6 @@ function analyzeDesign(design: SavedDesign) {
 }
 
 onMounted(async () => {
-  await fetchDesigns();
+  await designsStore.loadDesigns();
 });
 </script>

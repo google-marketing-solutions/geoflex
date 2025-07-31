@@ -836,6 +836,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, watch, onMounted } from 'vue';
 import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
+import { useDesignsStore } from 'src/stores/designs';
 import type { QTableColumn } from 'quasar';
 import { useQuasar } from 'quasar';
 import { postApiUi } from 'src/boot/axios';
@@ -850,6 +851,7 @@ import type {
 } from 'src/components/models';
 
 const dataSourcesStore = useDataSourcesStore();
+const designsStore = useDesignsStore();
 
 onMounted(async () => {
   // Request notification permission on component mount if not already granted or denied
@@ -1619,20 +1621,12 @@ const formatNumber = (num) => {
 let lastRequest;
 
 async function uploadDesign(design: SavedDesign) {
-  try {
-    await postApiUi(
-      `designs/${design.design.design_id || Date.now()}.json`,
-      design,
-      'Uploading design to Cloud Storage',
-    );
-    $q.notify({
-      color: 'positive',
-      message: 'Design uploaded successfully!',
-      icon: 'check_circle',
-    });
-  } catch {
-    // The error is already logged by postApiUi, no need to handle here
-  }
+  await designsStore.uploadDesign(design);
+  $q.notify({
+    color: 'positive',
+    message: 'Design uploaded successfully!',
+    icon: 'check_circle',
+  });
 }
 
 function getMetricName(metric: AnyMetric | undefined): string {
