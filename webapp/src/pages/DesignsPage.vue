@@ -10,6 +10,7 @@
         :showAnalyze="true"
         :show-meta="true"
         :show-delete="true"
+        default-sort="recency"
         @analyze="analyzeDesign"
         @delete="deleteDesign"
       />

@@ -417,6 +417,10 @@ const props = defineProps({
     type: Object as PropType<Record<string, string[]>>,
     default: () => ({}),
   },
+  defaultSort: {
+    type: String as PropType<'mde' | 'duration' | 'recency'>,
+    default: 'mde',
+  },
 });
 
 const emit = defineEmits<{
@@ -433,7 +437,7 @@ const sortOptions = [
   { label: 'Most Recent', value: 'recency' },
 ];
 
-const sortBy = ref(sortOptions[0]);
+const sortBy = ref(sortOptions.find(o => o.value === props.defaultSort) || sortOptions[0]);
 
 const sortedDesigns = computed<SavedDesign[]>(() => {
   const designs = [...props.designs];

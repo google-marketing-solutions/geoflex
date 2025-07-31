@@ -822,6 +822,7 @@
               :designs="testDesigns"
               :fixed-geos="lastRequest?.fixed_geos"
               show-upload
+              default-sort="mde"
               @upload="uploadDesign"
             />
             <log-viewer :logs="explorationLogs" class="q-mt-md" />
