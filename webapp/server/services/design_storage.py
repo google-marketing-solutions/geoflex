@@ -43,7 +43,7 @@ class DesignStorageService:
     """
     designs = []
     try:
-      fs = gcsfs.GCSFileSystem()
+      fs = gcsfs.GCSFileSystem(listings_expiry_time=0)
       files = fs.ls(self.bucket_path, detail=False)
       logger.debug('Loaded design files: %s', files)
       for file_path in files:
