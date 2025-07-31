@@ -36,6 +36,8 @@ class SyntheticControls(_base.Methodology):
     the prediction and actual values.
   """
 
+  is_pseudo_experiment = True
+
   default_methodology_parameter_candidates = {
       "num_iterations": [10],
   }
