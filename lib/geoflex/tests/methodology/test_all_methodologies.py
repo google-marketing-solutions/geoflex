@@ -149,6 +149,16 @@ def experiment_design_fixture(request, methodology):
         n_cells=2,
         methodology_parameters={"linear_model_type": "robust_ols"},
     )
+  elif request.param == "tbr_unconstrained_ab_test":
+    assert methodology == "TBR"
+    return ExperimentDesign(
+        primary_metric="revenue",
+        secondary_metrics=["conversions"],
+        methodology=methodology,
+        runtime_weeks=2,
+        n_cells=2,
+        methodology_parameters={"pretest_weeks": 4},
+    )
   elif request.param == "multicell_ab_test":
     return ExperimentDesign(
         primary_metric="revenue",
@@ -168,6 +178,20 @@ def experiment_design_fixture(request, methodology):
         methodology=methodology,
         runtime_weeks=2,
         n_cells=2,
+    )
+  elif request.param == "tbr_cost_metrics_test":
+    assert methodology == "TBR"
+    return ExperimentDesign(
+        primary_metric=geoflex.metrics.iROAS(),  # Cost-based metric
+        secondary_metrics=[],  # CPiA is not supported by the original library
+        experiment_budget=ExperimentBudget(
+            budget_type=ExperimentBudgetType.PERCENTAGE_CHANGE,
+            value=-1.0,
+        ),
+        methodology=methodology,
+        runtime_weeks=2,
+        n_cells=2,
+        methodology_parameters={"pretest_weeks": 4},
     )
   elif request.param == "holdback_test":
     return ExperimentDesign(
@@ -221,6 +245,8 @@ VALID_COMBINATIONS = [
     ("GBR", "max_geos_constraint_test", "basic_data"),
     ("GBR", "max_revenue_pct_constraint_test", "basic_data"),
     ("GBR", "holdback_test", "zero_cost_data"),
+    ("TBR", "tbr_unconstrained_ab_test", "basic_data"),
+    ("TBR", "tbr_cost_metrics_test", "basic_data"),
     ("TBRMM", "unconstrained_ab_test", "basic_data"),
     ("TBRMM", "ab_test_with_excluded_geos", "basic_data"),
     ("TBRMM", "max_geos_constraint_test", "basic_data"),
@@ -251,6 +277,16 @@ INVALID_COMBINATIONS = [
         "gbr_robust_ols_design",
         "gbr_few_geos_data",
     ),  # Robust OLS GBR fails with too few geos
+    (
+        "TBR",
+        "ab_test_with_fixed_geos",
+        "basic_data",
+    ),  # Fixed geos are not supported for TBR with randomized assignment
+    (
+        "TBR",
+        "multicell_ab_test",
+        "basic_data",
+    ),  # Multi-cell is not supported in original library for TBR
     (
         "TBRMM",
         "multicell_ab_test",
