@@ -96,16 +96,16 @@
     </div>
 
     <!-- Editor Dialog -->
-    <q-dialog v-model="showEditor" maximized persistent>
+    <q-dialog v-model="showEditor" maximized persistent @hide="closeDialogs">
       <DataSourceEditor
         :data-source="selectedDataSource"
         @saved="onDataSourceSaved"
-        @canceled="showEditor = false"
+        @canceled="closeDialogs"
       />
     </q-dialog>
 
     <!-- Viewer Dialog -->
-    <q-dialog v-model="showViewer" maximized>
+    <q-dialog v-model="showViewer" maximized @hide="closeDialogs">
       <DataSourceViewer v-if="selectedDataSource" :data-source="selectedDataSource" />
     </q-dialog>
 
@@ -136,16 +136,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import type { QTableColumn } from 'quasar';
 import { useQuasar } from 'quasar';
 import type { DataSource } from 'stores/datasources';
 import { useDataSourcesStore } from 'stores/datasources';
 import DataSourceViewer from 'components/DataSourceViewer.vue';
 import DataSourceEditor from 'components/DataSourceEditor.vue';
+import { formatDate } from 'src/helpers/utils';
 
 const $q = useQuasar();
 const dataSourcesStore = useDataSourcesStore();
+const router = useRouter();
+const route = useRoute();
 
 // State
 const filter = ref('');
@@ -183,6 +187,22 @@ const columns = [
     align: 'center',
   },
   {
+    name: 'createdAt',
+    label: 'Created',
+    field: 'createdAt',
+    sortable: true,
+    align: 'left',
+    format: (val: string) => formatDate(val),
+  },
+  {
+    name: 'updatedAt',
+    label: 'Updated',
+    field: 'updatedAt',
+    sortable: true,
+    align: 'left',
+    format: (val: string) => formatDate(val),
+  },
+  {
     name: 'actions',
     label: 'Actions',
     field: 'actions',
@@ -190,8 +210,10 @@ const columns = [
   },
 ] as QTableColumn[];
 
-// Load data when component mounts
-onMounted(loadDataSources);
+
+onMounted(() => {
+  void loadDataSources(false); // Don't force reload on mount
+});
 
 // Load data sources
 async function loadDataSources(reload = false) {
@@ -202,23 +224,66 @@ async function loadDataSources(reload = false) {
   }
 }
 
+// Watcher is the single source of truth for dialog visibility
+watch(
+  () => route.params,
+  async (params) => {
+    const { id, action } = params;
+
+    if (id && action) {
+      await dataSourcesStore.loadDataSources(false, false); // Ensure data is loaded
+
+      if (action === 'edit') {
+        const isNew = id === 'new';
+        const ds = isNew ? null : dataSourcesStore.getDataSourceById(id as string);
+
+        if (!isNew && !ds) {
+          $q.notify({ type: 'negative', message: `Datasource '${id as string}' not found.` });
+          return closeDialogs();
+        }
+        selectedDataSource.value = ds;
+        showViewer.value = false;
+        showEditor.value = true;
+      } else if (action === 'view') {
+        const ds = dataSourcesStore.getDataSourceById(id as string);
+        if (!ds) {
+          $q.notify({ type: 'negative', message: `Datasource '${id as string}' not found.` });
+          return closeDialogs();
+        }
+        selectedDataSource.value = ds;
+        showEditor.value = false;
+        showViewer.value = true;
+      }
+    } else {
+      showEditor.value = false;
+      showViewer.value = false;
+    }
+  },
+  { immediate: true },
+);
+
 // Open the data source editor (for editing or creating)
 function openEditor(dataSource?: DataSource) {
-  selectedDataSource.value = dataSource;
-  showEditor.value = true;
+  const id = dataSource?.id || 'new';
+  void router.push(`/datasources/${id}/edit`);
 }
 
 // Open the data source viewer
 function openViewer(dataSource: DataSource) {
-  selectedDataSource.value = dataSource;
+  void router.push(`/datasources/${dataSource.id}/view`);
+}
 
-  showViewer.value = true;
+// Close all dialogs and navigate to the base URL
+function closeDialogs() {
+  if (route.params.id) {
+    void router.push('/datasources');
+  }
 }
 
 // Handle data source save event
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function onDataSourceSaved(dataSource: DataSource) {
-  showEditor.value = false;
+  // After saving, view the result
+  void router.push(`/datasources/${dataSource.id}/view`);
 }
 
 // Confirm data source deletion
