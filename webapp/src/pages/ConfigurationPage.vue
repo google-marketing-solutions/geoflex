@@ -2,9 +2,9 @@
   <q-page padding>
     <q-card class="configuration-card">
       <q-card-section>
-        <div class="text-h5 q-mb-md">Application Configuration</div>
+        <div class="text-h5 q-mt-xs q-mb-lg">Application Configuration</div>
 
-        <q-form @submit="updateConfiguration" class="q-gutter-md">
+        <div>
           <!-- Master Spreadsheet ID -->
           <q-input
             v-model="masterSpreadsheetId"
@@ -23,9 +23,8 @@
                 flat
                 dense
                 icon="open_in_new"
-                type="a"
-                :href="`https://docs.google.com/spreadsheets/d/${masterSpreadsheetId}/edit`"
-                target="_blank"
+                type="button"
+                @click="onOpenSpreadsheet"
                 class="q-ml-sm"
               >
                 <q-tooltip>Open in Google Sheets</q-tooltip>
@@ -40,7 +39,6 @@
           <div class="row justify-between q-mt-lg">
             <q-btn
               label="Reload"
-              color="grey-7"
               flat
               :disable="loading"
               @click="reload"
@@ -59,11 +57,11 @@
 
               <q-btn
                 label="Update"
-                type="submit"
                 color="primary"
                 icon="save"
                 :disable="!hasChanges()"
                 :loading="loading"
+                @click="updateConfiguration"
               />
 
               <q-btn
@@ -75,59 +73,23 @@
               />
             </div>
           </div>
-        </q-form>
-      </q-card-section>
-    </q-card>
-
-    <!-- Spreadsheet Visibility & Information -->
-    <q-card class="q-mt-md" v-if="masterSpreadsheetId">
-      <q-card-section>
-        <div class="text-h6">Spreadsheet Information</div>
-        <p class="text-body1 q-mb-md">
-          This is where your data source definitions are stored. Make sure you have access to this
-          spreadsheet.
-        </p>
-
-        <q-list bordered separator>
-          <q-item>
-            <q-item-section avatar>
-              <q-icon name="table_chart" color="primary" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label>Master Spreadsheet</q-item-label>
-              <q-item-label caption>
-                <a
-                  :href="`https://docs.google.com/spreadsheets/d/${masterSpreadsheetId}/edit`"
-                  target="_blank"
-                  class="text-primary"
-                >
-                  {{ masterSpreadsheetId }}
-                </a>
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-        </q-list>
+        </div>
       </q-card-section>
     </q-card>
 
     <!-- Instructions Card -->
-    <q-card class="q-mt-md">
+    <q-card class="q-mt-lg">
       <q-card-section>
         <div class="text-h6">Setup Instructions</div>
 
         <ol class="q-pl-md">
           <li class="q-mb-sm">
-            Enter a Google Spreadsheet ID or create a new spreadsheet
-            <a
-              href="https://docs.google.com/spreadsheets/create"
-              target="_blank"
-              class="text-primary"
-              >here</a
-            >.
+            Master Spreadsheet is created automatically but you can attach an existing one.
           </li>
           <li class="q-mb-sm">
             If you're using an existing spreadsheet, make sure it has a sheet named "DataSources"
-            with the correct headers: id, name, created_at, updated_at, type, source_link, config.
+            with the correct headers: id, name, description, created_at, updated_at, source_link,
+            columns.
           </li>
           <li class="q-mb-sm">
             After updating the configuration, click "Share With Me" to ensure you have access.
@@ -157,6 +119,13 @@ const sharingLoading = ref(false);
 onMounted(async () => {
   await loadConfiguration();
 });
+
+function onOpenSpreadsheet(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const url = `https://docs.google.com/spreadsheets/d/${masterSpreadsheetId.value}/edit`;
+  window.open(url, '_blank');
+}
 
 async function loadConfiguration() {
   loading.value = true;
@@ -263,7 +232,5 @@ function showError(message: string) {
 
 <style scoped>
 .configuration-card {
-  max-width: 800px;
-  margin: 0 auto;
 }
 </style>
