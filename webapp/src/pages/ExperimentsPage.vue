@@ -1090,12 +1090,12 @@ const structureOptionsDetailed = [
 
 const hypothesisOptionsDetailed = [
   {
-    label: 'One-sided (recommended)',
+    label: 'One-sided',
     value: 'one-sided',
     desc: 'Examines effect in one direction only (e.g., whether treatment performs better than control)',
   },
   {
-    label: 'Two-sided',
+    label: 'Two-sided (recommended)',
     value: 'two-sided',
     desc: 'Examines effect in both directions (better or worse)',
   },
@@ -1147,7 +1147,7 @@ const getDefaultParameters = () => ({
   durationMax: 8,
 
   alpha: 0.05,
-  hypothesisType: 'one-sided',
+  hypothesisType: 'two-sided',
   effectScope: 'all_geos',
 
   // Budget parameters
