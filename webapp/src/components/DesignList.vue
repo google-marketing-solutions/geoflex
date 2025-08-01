@@ -23,17 +23,21 @@
             <div class="row items-center">
               <div class="col">
                 <div class="text-h6">Design #{{ index + 1 }} ({{ design.design.design_id }})</div>
-                <div v-if="showMeta" class="text-caption">
-                  Data source: {{ design.datasource_name }}
-                </div>
+                <div class="text-caption">Methodology: {{ design.design.methodology }}</div>
+                <div class="text-caption">Duration: {{ design.design.runtime_weeks }} weeks</div>
                 <div v-if="showMeta" class="text-caption">
                   Created: {{ new Date(design.timestamp).toLocaleString() }} (local time)
                 </div>
-                <div v-if="showMeta && design.start_date" class="text-caption">
-                  Data time frame: {{ formatDate(design.start_date) }} - {{ formatDate(design.end_date) }}
+                <div v-if="showMeta" class="text-caption">
+                  Data source: {{ design.datasource_name }}
                 </div>
-                <div class="text-caption">Methodology: {{ design.design.methodology }}</div>
-                <div class="text-caption">Duration: {{ design.design.runtime_weeks }} weeks</div>
+                <div v-if="showMeta && design.start_date" class="text-caption">
+                  Data time frame: {{ formatDate(design.start_date) }} -
+                  {{ formatDate(design.end_date) }}
+                </div>
+                <div v-if="showMeta && design.user" class="text-caption">
+                  Created by: {{ design.user }}
+                </div>
               </div>
               <div class="col-auto">
                 <q-btn-group flat>
@@ -437,7 +441,7 @@ const sortOptions = [
   { label: 'Most Recent', value: 'recency' },
 ];
 
-const sortBy = ref(sortOptions.find(o => o.value === props.defaultSort) || sortOptions[0]);
+const sortBy = ref(sortOptions.find((o) => o.value === props.defaultSort) || sortOptions[0]);
 
 const sortedDesigns = computed<SavedDesign[]>(() => {
   const designs = [...props.designs];
