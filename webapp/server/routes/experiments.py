@@ -15,7 +15,7 @@
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import math
-from typing import List, Literal, Optional, Union, Any, cast
+from typing import Literal, Any, cast
 import geoflex
 import numpy as np
 import pandas as pd
@@ -42,9 +42,9 @@ class ExperimentBudget(pydantic.BaseModel):
 
 class CustomMetric(pydantic.BaseModel):
   type: Literal['custom'] = 'custom'
-  name: Optional[str] = None
-  column: Optional[str] = None
-  cost_column: Optional[str] = None
+  name: str | None = None
+  column: str | None = None
+  cost_column: str | None = None
   metric_per_cost: bool = False
   cost_per_metric: bool = False
 
@@ -52,24 +52,24 @@ class CustomMetric(pydantic.BaseModel):
 class IROASMetric(pydantic.BaseModel):
   type: Literal['iroas'] = 'iroas'
   #name: str = 'iROAS'
-  return_column: Optional[str] = None
-  cost_column: Optional[str] = None
+  return_column: str | None = None
+  cost_column: str | None = None
 
 
 class CPIAMetric(pydantic.BaseModel):
   type: Literal['cpia'] = 'cpia'
   #name: str = 'CPiA'
-  conversions_column: Optional[str] = None
-  cost_column: Optional[str] = None
+  conversions_column: str | None = None
+  cost_column: str | None = None
 
 
-AnyMetric = Union[str, CustomMetric, IROASMetric, CPIAMetric]
+AnyMetric = str | CustomMetric | IROASMetric | CPIAMetric
 
 
 class FixedGeos(pydantic.BaseModel):
-  control: List[str] = []
-  treatment: List[List[str]] = []
-  exclude: List[str] = []
+  control: list[str] = []
+  treatment: list[list[str]] = []
+  exclude: list[str] = []
 
 
 class ExplorationRequest(pydantic.BaseModel):
@@ -80,7 +80,7 @@ class ExplorationRequest(pydantic.BaseModel):
 
   # Core parameters
   primary_metric: AnyMetric
-  secondary_metrics: List[AnyMetric] = []
+  secondary_metrics: list[AnyMetric] = []
 
   # Test parameters
   n_cells: int = 2
@@ -94,17 +94,17 @@ class ExplorationRequest(pydantic.BaseModel):
   max_runtime_weeks: int
 
   # Methodology options (empty means explore all)
-  methodologies: List[str] = []
+  methodologies: list[str] = []
 
   # Geo constraints
-  fixed_geos: Optional[FixedGeos] = None
+  fixed_geos: FixedGeos | None = None
 
   target_power: float | None = None
 
-  cell_volume_constraint: Optional[geoflex.CellVolumeConstraint] = None
+  cell_volume_constraint: geoflex.CellVolumeConstraint | None = None
 
   # Optional advanced parameters
-  trimming_quantile_candidates: List[float] = [0.0]
+  trimming_quantile_candidates: list[float] = [0.0]
 
   effect_scope: geoflex.EffectScope
   max_trials: int | None = None
@@ -118,17 +118,17 @@ class SavedDesign(pydantic.BaseModel):
   design: geoflex.ExperimentDesign
   mde: list[float | None] | float | None
   datasource_name: str
-  datasource_updated: Optional[datetime] = None
-  start_date: Optional[datetime] = None
-  end_date: Optional[datetime] = None
+  datasource_updated: datetime | None = None
+  start_date: datetime | None = None
+  end_date: datetime | None = None
   timestamp: datetime
-  user: Optional[str] = None
+  user: str | None = None
 
 
 class ExplorationResponse(pydantic.BaseModel):
   """Response model for experiment design exploration."""
 
-  designs: List[SavedDesign]
+  designs: list[SavedDesign]
   logs: list[dict[str, Any]]
 
   model_config = pydantic.ConfigDict(extra='forbid')

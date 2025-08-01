@@ -19,7 +19,6 @@ import logging
 import env
 import sys
 from contextlib import contextmanager
-from typing import List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -51,11 +50,11 @@ if env.IS_GAE:
 
   class SetToListFilter(logging.Filter):
     def filter(self, record):
-        if isinstance(record.msg, (dict, list, tuple, set)):
-            record.msg = _converter(record.msg)
-        if record.args:
-            record.args = tuple(_converter(list(record.args)))
-        return True
+      if isinstance(record.msg, (dict, list, tuple, set)):
+        record.msg = _converter(record.msg)
+      if record.args:
+        record.args = tuple(_converter(list(record.args)))
+      return True
 
   # Prevent duplicate handlers in Gunicorn worker processes
   if not any(
@@ -74,9 +73,9 @@ class LogEntry:
   level: str
   logger_name: str
   message: str
-  module: Optional[str] = None
-  function: Optional[str] = None
-  line_number: Optional[int] = None
+  module: str | None = None
+  function: str | None = None
+  line_number: str | None = None
 
   def to_dict(self) -> dict:
     """Convert log entry to dictionary for JSON serialization."""
@@ -91,7 +90,7 @@ class LogEntry:
     }
 
 
-def logs_to_dict_list(logs: List[LogEntry]) -> List[dict]:
+def logs_to_dict_list(logs: list[LogEntry]) -> list[dict]:
   """Convert list of LogEntry objects to list of dictionaries for JSON response."""
   return [log_entry.to_dict() for log_entry in logs]
 
@@ -99,7 +98,7 @@ def logs_to_dict_list(logs: List[LogEntry]) -> List[dict]:
 class LogInterceptor(logging.Handler):
   """Custom logging handler that captures log records matching a prefix."""
 
-  def __init__(self, prefix: str, log_list: List[LogEntry]):
+  def __init__(self, prefix: str, log_list: list[LogEntry]):
     super().__init__()
     self.prefix = prefix
     self.log_list = log_list
@@ -127,7 +126,7 @@ class LogInterceptor(logging.Handler):
 
 
 @contextmanager
-def intercept_logs(prefix: str, logs: List[LogEntry], level: int | None = None):
+def intercept_logs(prefix: str, logs: list[LogEntry], level: int | None = None):
   """
     Context manager to intercept logs from loggers with specified prefix.
 

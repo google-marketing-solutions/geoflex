@@ -14,7 +14,7 @@
 """API routes for working with saved designs."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import List, Dict, Any
+from typing import Any
 from services.design_storage import DesignStorageService
 
 designs_router = APIRouter(prefix='/api/designs', tags=['designs'])
@@ -25,14 +25,14 @@ async def get_design_storage_service(request: Request) -> DesignStorageService:
   return request.app.state.design_storage_service
 
 
-@designs_router.get('', response_model=List[Dict[str, Any]])
+@designs_router.get('', response_model=list[dict[str, Any]])
 async def list_designs(storage_service: DesignStorageService = Depends(
     get_design_storage_service),):
   """Lists all available design files."""
   return await storage_service.list_designs()
 
 
-@designs_router.get('/{design_id}', response_model=Dict[str, Any])
+@designs_router.get('/{design_id}', response_model=dict[str, Any])
 async def get_design(
     design_id: str,
     storage_service: DesignStorageService = Depends(get_design_storage_service),
@@ -50,7 +50,7 @@ async def get_design(
 @designs_router.post('/{design_name}')
 async def save_design(
     design_name: str,
-    design_data: Dict[str, Any],
+    design_data: dict[str, Any],
     storage_service: DesignStorageService = Depends(get_design_storage_service),
 ):
   """Saves a design file."""

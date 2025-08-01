@@ -16,7 +16,7 @@
 import json
 import smart_open
 import gcsfs
-from typing import List, Dict, Any
+from typing import Any
 from config import Config
 from logger import logger
 
@@ -35,7 +35,7 @@ class DesignStorageService:
       gcs_bucket_name = f"{config.project_id}/geoflex/designs"
     self.bucket_path = f"gs://{gcs_bucket_name}"
 
-  async def list_designs(self) -> List[Dict[str, Any]]:
+  async def list_designs(self) -> list[dict[str, Any]]:
     """Lists all available designs and their content from the GCS bucket.
 
     Returns:
@@ -53,7 +53,7 @@ class DesignStorageService:
       logger.error(f"Error listing designs from GCS {self.bucket_path}: {e}")
     return designs
 
-  async def get_design(self, design_name: str) -> Dict[str, Any] | None:
+  async def get_design(self, design_name: str) -> dict[str, Any] | None:
     """Retrieves a specific design file from GCS.
 
     Args:
@@ -70,7 +70,7 @@ class DesignStorageService:
       logger.error(f"Error reading design '{file_path}' from GCS: {e}")
       return None
 
-  async def save_design(self, design_name: str, design_data: Dict[str,
+  async def save_design(self, design_name: str, design_data: dict[str,
                                                                   Any]) -> bool:
     """Saves a design file to GCS.
 
