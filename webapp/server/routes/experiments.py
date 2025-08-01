@@ -51,14 +51,12 @@ class CustomMetric(pydantic.BaseModel):
 
 class IROASMetric(pydantic.BaseModel):
   type: Literal['iroas'] = 'iroas'
-  #name: str = 'iROAS'
   return_column: str | None = None
   cost_column: str | None = None
 
 
 class CPIAMetric(pydantic.BaseModel):
   type: Literal['cpia'] = 'cpia'
-  #name: str = 'CPiA'
   conversions_column: str | None = None
   cost_column: str | None = None
 
@@ -80,8 +78,7 @@ class ExplorationRequest(pydantic.BaseModel):
 
   # Core parameters
   primary_metric: AnyMetric
-  secondary_metrics: list[AnyMetric] = []
-
+  secondary_metrics: list[AnyMetric] = pydantic.Field(default_factory=list)
   # Test parameters
   n_cells: int = 2
   alpha: float = 0.1
@@ -94,7 +91,7 @@ class ExplorationRequest(pydantic.BaseModel):
   max_runtime_weeks: int
 
   # Methodology options (empty means explore all)
-  methodologies: list[str] = []
+  methodologies: list[str] = pydantic.Field(default_factory=list)
 
   # Geo constraints
   fixed_geos: FixedGeos | None = None
@@ -193,7 +190,7 @@ async def explore_experiment_designs(
 
     This endpoint takes the datasource and experiment parameters and returns
     a list of possible experiment designs, ranked by their statistical power.
-    """
+  """
   logger.info('Starting exploration of experiment designs')
   logger.debug(request.model_dump())
   # Get datasource
@@ -366,9 +363,7 @@ class AnalyzeResponse(pydantic.BaseModel):
 
 
 async def get_design_storage_service(request: Request) -> DesignStorageService:
-  """
-  Dependency to get the DesignStorageService from the app state.
-  """
+  """Dependency to get the DesignStorageService from the app state."""
   return request.app.state.design_storage_service
 
 
@@ -406,7 +401,7 @@ async def analyse_experiment_results(
 
   # 3. Analyze the results
   logs: list[LogEntry] = []
-  #try:
+
   logger.debug('Running geoflex.analyze_experiment')
   with intercept_logs('geoflex', logs):
     analysis_results = geoflex.analyze_experiment(
@@ -429,6 +424,3 @@ async def analyse_experiment_results(
           status='failure',
           results=[],
           logs=[log_entry.to_dict() for log_entry in logs])
-  # except Exception as e:
-  #   logger.error('Error during experiment analysis: %s, ', e)
-  #   raise HTTPException(status_code=500, detail=str(e))

@@ -18,8 +18,8 @@ import os
 import logging
 import env
 import sys
+from pydantic import field_serializer, BaseModel
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import datetime, timezone
 
 LOGGER_NAME = 'GeoFlex'
@@ -49,6 +49,7 @@ if env.IS_GAE:
     return o
 
   class SetToListFilter(logging.Filter):
+
     def filter(self, record):
       if isinstance(record.msg, (dict, list, tuple, set)):
         record.msg = _converter(record.msg)
@@ -66,8 +67,7 @@ if env.IS_GAE:
     setup_logging(handler)
 
 
-@dataclass
-class LogEntry:
+class LogEntry(BaseModel):
   """Represents a single log entry with all relevant information."""
   timestamp: datetime
   level: str
@@ -77,21 +77,17 @@ class LogEntry:
   function: str | None = None
   line_number: str | None = None
 
+  @field_serializer('timestamp')
+  def serialize_dt(self, timestamp: datetime):
+    return timestamp.isoformat()
+
   def to_dict(self) -> dict:
     """Convert log entry to dictionary for JSON serialization."""
-    return {
-        'timestamp': self.timestamp.isoformat(),
-        'level': self.level,
-        'logger_name': self.logger_name,
-        'message': self.message,
-        'module': self.module,
-        'function': self.function,
-        'line_number': self.line_number
-    }
+    return self.model_dump()
 
 
 def logs_to_dict_list(logs: list[LogEntry]) -> list[dict]:
-  """Convert list of LogEntry objects to list of dictionaries for JSON response."""
+  """Convert list of LogEntry objects for JSON response."""
   return [log_entry.to_dict() for log_entry in logs]
 
 
@@ -122,18 +118,17 @@ class LogInterceptor(logging.Handler):
 
       except Exception as e:
         # Prevent logging errors from breaking the interceptor
-        print(f"Error in log interceptor: {e}", file=sys.stderr)
+        print(f'Error in log interceptor: {e}', file=sys.stderr)
 
 
 @contextmanager
 def intercept_logs(prefix: str, logs: list[LogEntry], level: int | None = None):
-  """
-    Context manager to intercept logs from loggers with specified prefix.
+  """Context manager to intercept logs from loggers with specified prefix.
 
     Args:
-        prefix: Logger name prefix to match (e.g., 'geoflex.')
-        logs: List to append captured log entries to
-        level: Minimum logging level to capture (default: DEBUG)
+      prefix: Logger name prefix to match (e.g., 'geoflex.')
+      logs: List to append captured log entries to
+      level: Minimum logging level to capture (default: DEBUG)
     """
 
   # Create the interceptor handler

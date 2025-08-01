@@ -26,7 +26,7 @@ from logger import logger
 from config import get_config, save_config
 
 
-def get_credentials(scopes) -> credentials.Credentials:
+def get_credentials(scopes) -> credentials.Credentials | None:
   cred, _ = google.auth.default(scopes)
   return cred
 
@@ -253,7 +253,7 @@ class DataSourceService:
 
     return updated_datasource
 
-  async def _save_datasource_data(self, datasource: DataSource) -> bool:
+  async def _save_datasource_data(self, datasource: DataSource):
     """Internal method to save data for a data source."""
     if not datasource.data:
       raise ValueError(
@@ -349,7 +349,7 @@ class DataSourceService:
     datasource = await self.get_datasource_by_id(id)
     if not datasource:
       return False
-    return self._delete_datasource(datasource)
+    return await self._delete_datasource(datasource)
 
   # pylint: disable=W0622
   async def _delete_datasource(self, datasource: DataSource) -> bool:

@@ -13,6 +13,7 @@
 # limitations under the License.
 """API routes for working with saved designs."""
 
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Any
 from services.design_storage import DesignStorageService

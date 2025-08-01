@@ -13,6 +13,7 @@
 # limitations under the License.
 """Service for storing and retrieving experiment designs."""
 
+# pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
 import json
 import smart_open
 import gcsfs
