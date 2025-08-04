@@ -243,31 +243,16 @@
                   </div>
 
                   <q-table
+                    v-model:pagination="geoPagination"
                     :rows="filteredGeoUnits"
                     :columns="geoUnitsColumns"
                     row-key="geo"
                     dense
-                    :pagination="{ rowsPerPage: 10 }"
+                    :rows-per-page-options="[10, 25, 50, 100, 0]"
                   >
-                    <template v-slot:body-cell-assignment="props">
-                      <q-td :props="props">
-                        <q-select
-                          v-model="props.row.assignment"
-                          :options="computedAssignmentOptions"
-                          dense
-                          outlined
-                          options-dense
-                          style="min-width: 150px"
-                          emit-value
-                          map-options
-                        >
-                        </q-select>
-                      </q-td>
-                    </template>
-
-                    <template v-slot:bottom="">
-                      <div class="row full-width q-pa-sm">
-                        <div class="col-auto q-mr-xl">
+                    <template v-slot:top>
+                      <div class="row full-width q-pa-sm items-center q-gutter-md">
+                        <div class="col-auto">
                           <q-btn
                             outline
                             color="primary"
@@ -278,7 +263,7 @@
                           />
                         </div>
                         <div
-                          class="col-auto q-mr-md"
+                          class="col-auto"
                           v-for="(count, group) in geoAssignmentCounts"
                           :key="group"
                         >
@@ -305,6 +290,22 @@
                           </q-chip>
                         </div>
                       </div>
+                    </template>
+
+                    <template v-slot:body-cell-assignment="props">
+                      <q-td :props="props">
+                        <q-select
+                          v-model="props.row.assignment"
+                          :options="computedAssignmentOptions"
+                          dense
+                          outlined
+                          options-dense
+                          style="min-width: 150px"
+                          emit-value
+                          map-options
+                        >
+                        </q-select>
+                      </q-td>
                     </template>
                   </q-table>
                 </div>
@@ -924,6 +925,7 @@ function populateGeoUnits(dataSource) {
       assignment: 'auto',
     };
   });
+  console.log('geoUnits.value', geoUnits.value.length);
 }
 
 const datePeriod = computed(() => {
@@ -972,6 +974,12 @@ const dataSample = computed(() => {
 
 const geoSearch = ref('');
 const geoUnits = ref([]);
+const geoPagination = ref({
+  rowsPerPage: 10,
+  page: 1,
+  sortBy: 'geo',
+  descending: false,
+});
 
 // Geo units table
 const geoUnitsColumns: QTableColumn[] = [
