@@ -6,6 +6,7 @@ import geoflex.data
 import geoflex.experiment_design
 from geoflex.methodology import _base
 import geoflex.utils
+import numpy as np
 import pandas as pd
 from pysyncon import Dataprep
 from pysyncon import Synth
@@ -414,16 +415,20 @@ class SyntheticControls(_base.Methodology):
       self,
       runtime_data: GeoPerformanceDataset,
       experiment_start_date: pd.Timestamp,
+      experiment_end_date: pd.Timestamp,
       pretest_period_end_date: pd.Timestamp,
   ) -> None:
     """Checks for data presence in pretest and runtime periods."""
     is_pretest = (
-        runtime_data.parsed_data[runtime_data.date_column] <
-        pretest_period_end_date
+        runtime_data.parsed_data[runtime_data.date_column]
+        < pretest_period_end_date
     )
     is_runtime = (
-        runtime_data.parsed_data[runtime_data.date_column] >=
-        experiment_start_date
+        runtime_data.parsed_data[runtime_data.date_column]
+        >= experiment_start_date
+    ) & (
+        runtime_data.parsed_data[runtime_data.date_column]
+        < experiment_end_date
     )
 
     if not is_pretest.any() or not is_runtime.any():
@@ -470,9 +475,25 @@ class SyntheticControls(_base.Methodology):
     Returns:
       A dataframe with the analysis results.
     """
-    self._validate_data_periods(
-        runtime_data, experiment_start_date, pretest_period_end_date
-    )
+    last_available_date = runtime_data.parsed_data[
+        runtime_data.date_column
+    ].max()
+    if experiment_end_date > last_available_date:
+      logger.warning(
+          "The provided experiment_end_date (%s) is after the last"
+          " available data point (%s). Adjusting experiment_end_date to"
+          " match the last available date.",
+          experiment_end_date.strftime("%Y-%m-%d"),
+          last_available_date.strftime("%Y-%m-%d"),
+      )
+      experiment_end_date = last_available_date
+      self._validate_data_periods(
+          runtime_data,
+          experiment_start_date,
+          experiment_end_date,
+          pretest_period_end_date,
+      )
+
     intermediate_data = {}
     results = []
     control_geos = list(experiment_design.geo_assignment.control)
@@ -522,45 +543,82 @@ class SyntheticControls(_base.Methodology):
         if not synth_model:
           continue
 
-        time_period = pd.date_range(
-            start=experiment_start_date, end=experiment_end_date
+        # Create the ideal time period for the analysis.
+        ideal_time_period = pd.date_range(
+            start=experiment_start_date,
+            end=experiment_end_date,
+            inclusive="left"
         )
+        # Find the dates that are actually available in the runtime data.
+        available_runtime_dates = runtime_data.parsed_data[
+            runtime_data.parsed_data[runtime_data.date_column].isin(
+                ideal_time_period
+            )
+        ][runtime_data.date_column].unique()
+        # The final time period is the intersection of the ideal and available.
+        time_period = ideal_time_period.intersection(available_runtime_dates)
+
         att_results = synth_model.att(time_period=time_period)
 
-        # 1. Get control data (Z0) to calculate the baseline
-        exp_data_controls = df_agg[
-            (df_agg[runtime_data.date_column].isin(time_period)) &
-            (df_agg[runtime_data.geo_id_column].isin(control_geos))
-        ]
-        z0_exp = exp_data_controls.pivot_table(
-            index=runtime_data.date_column,
-            columns=runtime_data.geo_id_column,
-            values=metric.column
+        # 1. Get the essential time series: actuals and predictions
+        z0_exp, z1_exp = synth_model.dataprep.make_outcome_mats(
+            time_period=time_period
         )
-
-        # 2. Calculate the baseline estimate (the counterfactual)
+        treatment_ts = z1_exp.squeeze()
         baseline_ts = synth_model._synthetic(Z0=z0_exp)
-        baseline_estimate = baseline_ts.mean()
 
-        # 3. Estimate baseline_standard_error from pre-treatment residuals
-        z_zero_pre, z_one_pre = synth_model.dataprep.make_outcome_mats(
-            time_period=synth_model.dataprep.time_optimize_ssr
-        )
-        pre_treatment_gaps = synth_model._gaps(Z0=z_zero_pre, Z1=z_one_pre)
-        baseline_standard_error = pre_treatment_gaps.std()
-
-        # 4. Get summary statistics, now including baseline estimates
+        # Call the utils function to get the parts it does correctly:
+        # p-value and the absolute confidence interval.
+        # The relative CI from this call will be WRONG.
         st = geoflex.utils.get_summary_statistics_from_standard_errors(
             impact_estimate=att_results["att"],
             impact_standard_error=att_results["se"],
-            baseline_estimate=baseline_estimate,
-            baseline_standard_error=baseline_standard_error,
-            impact_baseline_corr=0,
             degrees_of_freedom=len(time_period) - 1,
             alternative_hypothesis=experiment_design.alternative_hypothesis,
             alpha=experiment_design.alpha,
             invert_result=metric.cost_per_metric,
+            baseline_estimate=None,
         )
+        # 2. Manually calculate the relative CI.
+        # Check if we can calculate a relative effect
+        if (
+            metric.cost_per_metric
+            or (baseline_ts.mean() <= 0.0)
+            or (treatment_ts.mean() <= 0.0)
+        ):
+          # If not, set relative metrics to NA
+          st["point_estimate_relative"] = pd.NA
+          st["lower_bound_relative"] = pd.NA
+          st["upper_bound_relative"] = pd.NA
+        else:
+          # 3. Calculate the correct inputs for the relative difference
+          n = len(time_period)
+          se_treatment_mean = treatment_ts.std() / np.sqrt(n)
+          se_baseline_mean = baseline_ts.std() / np.sqrt(n)
+          correlation = treatment_ts.corr(baseline_ts)
+          if pd.isna(correlation):
+            correlation = 0.0
+
+          # 4. Call relative_difference_confidence_interval
+          lower_bound_relative, upper_bound_relative = (
+              geoflex.utils.relative_difference_confidence_interval(
+                  mean_1=treatment_ts.mean(),
+                  mean_2=baseline_ts.mean(),
+                  standard_error_1=se_treatment_mean,
+                  standard_error_2=se_baseline_mean,
+                  corr=correlation,
+                  degrees_of_freedom=len(time_period) - 1,
+                  alternative=experiment_design.alternative_hypothesis,
+                  alpha=experiment_design.alpha,
+              )
+          )
+
+          # 5. Add the correct relative values to our results dictionary
+          point_est_rel = (treatment_ts.mean() / baseline_ts.mean()) - 1
+          st["point_estimate_relative"] = point_est_rel
+          st["lower_bound_relative"] = lower_bound_relative
+          st["upper_bound_relative"] = upper_bound_relative
+
         st["metric"] = metric.name
         st["cell"] = cell_index + 1
         results.append(st)
