@@ -222,3 +222,16 @@ export interface LogEntry {
   /** The line number where the log entry was created. */
   line_number: number;
 }
+
+/**
+ * Represents the result of validating a datasource against a design.
+ */
+export interface ValidationResult {
+  metrics: {
+    missing: string[];
+  };
+  geoUnits: {
+    designOnly: string[];
+    dataSourceOnly: string[];
+  };
+}

@@ -102,11 +102,24 @@
           <q-btn
             label="Run Analysis"
             color="primary"
-            :disable="!selectedDesign || !selectedDataSource || !experimentStartDate"
+            :disable="
+              !selectedDesign ||
+              !selectedDataSource ||
+              !experimentStartDate ||
+              (validationComponent && !validationComponent.validationPassed)
+            "
             @click="runAnalysis"
           />
         </div>
       </q-card>
+
+      <!-- Validation Section -->
+      <ValidationComponent
+        v-if="validationResult"
+        :validation="validationResult"
+        ref="validationComponent"
+        class="q-mt-md"
+      />
 
       <!-- Results Section -->
       <q-card v-if="analysisResults" class="q-mt-md q-pa-md">
@@ -142,12 +155,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
-import type { LogEntry, SavedDesign } from 'src/components/models';
+import type { LogEntry, SavedDesign, AnyMetric, ValidationResult } from 'src/components/models';
 import { postApiUi, getApiUi } from 'boot/axios';
 import LogViewer from 'src/components/LogViewer.vue';
+import ValidationComponent from 'src/components/ValidationComponent.vue';
 import { formatDate } from 'src/helpers/utils';
 
 const formatKey = (key: string | number) => {
@@ -186,6 +200,8 @@ const analysisResults = ref<AnalysisResult[] | null>(null);
 const analysisLogs = ref<LogEntry[]>([]);
 const dataSourceLoaded = ref(false);
 const dataSourceOptions = computed(() => dataSourcesStore.datasources);
+const validationResult = ref<ValidationResult | null>(null);
+const validationComponent = ref<InstanceType<typeof ValidationComponent> | null>(null);
 
 // Function to load data sources when dropdown is opened
 async function loadDataSourcesOnOpen() {
@@ -205,12 +221,78 @@ const handleDataSourceChange = async (dataSource: DataSource) => {
     if (!dataSource.data) {
       await dataSourcesStore.loadDataSourceData(dataSource);
     }
-
+    validateDataSource();
     dataSourceLoaded.value = true;
   } catch (error) {
     console.error('Error loading data source:', error);
   }
 };
+
+// Watch for changes in selected design or data source to re-run validation
+watch([selectedDesign, selectedDataSource], () => {
+  if (selectedDesign.value && selectedDataSource.value) {
+    validateDataSource();
+  } else {
+    validationResult.value = null;
+  }
+});
+
+function getMetricColumns(metric: AnyMetric): string[] {
+  if (typeof metric === 'string') {
+    return [metric];
+  }
+  const columns: string[] = [];
+  if (metric.type === 'iroas' && metric.return_column) {
+    columns.push(metric.return_column);
+  } else if (metric.type === 'cpia' && metric.conversions_column) {
+    columns.push(metric.conversions_column);
+  } else {
+    columns.push(metric.column || metric.name);
+  }
+  if ((metric.metric_per_cost || metric.cost_per_metric) && metric.cost_column) {
+    columns.push(metric.cost_column);
+  }
+  return columns;
+}
+
+function validateDataSource() {
+  if (!selectedDesign.value || !selectedDataSource.value || !selectedDataSource.value.data) {
+    validationResult.value = null;
+    return;
+  }
+
+  const design = selectedDesign.value.design;
+  const dataSource = selectedDataSource.value;
+
+  // 1. Validate Metrics
+  const designMetrics = [
+    ...getMetricColumns(design.primary_metric),
+    ...design.secondary_metrics.flatMap(getMetricColumns),
+  ];
+  const dataSourceMetrics = dataSource.data.metricNames || [];
+  const missingMetrics = designMetrics.filter((m) => !dataSourceMetrics.includes(m));
+
+  // 2. Validate Geo Units
+  const designGeos = new Set([
+    ...design.geo_assignment.control,
+    ...design.geo_assignment.treatment.flat(),
+  ]);
+  const dataSourceGeos = new Set(dataSource.data.geoUnits || []);
+
+  const designOnlyGeos = [...designGeos].filter((geo) => !dataSourceGeos.has(geo));
+  const dataSourceOnlyGeos = [...dataSourceGeos].filter((geo) => !designGeos.has(geo));
+
+  validationResult.value = {
+    metrics: {
+      missing: missingMetrics,
+    },
+    geoUnits: {
+      designOnly: designOnlyGeos,
+      dataSourceOnly: dataSourceOnlyGeos,
+    },
+  };
+}
+
 // Pre-fill design from route params if available
 onMounted(async () => {
   if (route.params.designId) {
