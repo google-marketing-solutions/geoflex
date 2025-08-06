@@ -175,6 +175,8 @@ export interface ExperimentDesign {
 export interface SavedDesign {
   /** The experiment design. */
   design: ExperimentDesign;
+  /** The name of the design. */
+  name?: string;
   /** The Minimum Detectable Effect (MDE) for the design. */
   mde: number;
   /** The name of the datasource used for the design. */

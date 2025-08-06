@@ -71,26 +71,42 @@ class DesignStorageService:
       logger.error(f"Error reading design '{file_path}' from GCS: {e}")
       return None
 
-  async def save_design(self, design_name: str, design_data: dict[str,
-                                                                  Any]) -> bool:
-    """Saves a design file to GCS.
+  async def save_design(
+      self, design_name: str, design_data: dict[str, Any]
+  ) -> dict[str, Any] | None:
+    """Saves or updates a design file in GCS.
+
+    If the design exists, it will be updated with the new data.
+    If it does not exist, it will be created.
 
     Args:
-      design_name: The name of the design file to save.
-      design_data: The design content to save.
+      design_name: The name of the design file.
+      design_data: The design content to save or update.
 
     Returns:
-      True if successful, False otherwise.
+      The final design content as a dictionary, or None if an error occurs.
     """
     file_path = f"{self.bucket_path}/{design_name}"
     try:
+      # Try to read the existing design
+      try:
+        with smart_open.open(file_path, 'r') as f:
+          existing_data = json.load(f)
+      except Exception:
+        existing_data = {}
+
+      # Update with new data
+      existing_data.update(design_data)
+
+      # Write back to the file
       with smart_open.open(file_path, 'w') as f:
-        json.dump(design_data, f, indent=2)
-      logger.info(f"Successfully saved design '{file_path}' to GCS.")
-      return True
+        json.dump(existing_data, f, indent=2)
+
+      logger.info(f"Successfully saved/updated design '{file_path}' to GCS.")
+      return existing_data
     except Exception as e:
-      logger.error(f"Error saving design '{file_path}' to GCS: {e}")
-      return False
+      logger.error(f"Error saving/updating design '{file_path}' to GCS: {e}")
+      return None
 
   async def delete_design(self, design_name: str) -> bool:
     """Deletes a design file from GCS.

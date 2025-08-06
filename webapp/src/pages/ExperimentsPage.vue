@@ -825,6 +825,7 @@
               show-upload
               default-sort="mde"
               @upload="uploadDesign"
+              @update="updateDesign"
             />
             <log-viewer :logs="explorationLogs" class="q-mt-md" />
           </q-tab-panel>
@@ -1635,6 +1636,22 @@ async function uploadDesign(design: SavedDesign) {
     message: 'Design uploaded successfully!',
     icon: 'check_circle',
   });
+}
+
+async function updateDesign(design: SavedDesign, newValues: Partial<SavedDesign>) {
+  // Check if the design is a saved one (exists in the store)
+  const isSaved = designsStore.designs.some((d) => d.design.design_id === design.design.design_id);
+
+  if (isSaved) {
+    // If it's a saved design, call the store action to update it on the server
+    await designsStore.updateDesign(design, newValues);
+  }
+
+  // Also update the local `testDesigns` array for immediate UI feedback
+  const index = testDesigns.value.findIndex((d) => d.design.design_id === design.design.design_id);
+  if (index !== -1) {
+    testDesigns.value[index] = { ...testDesigns.value[index], ...newValues };
+  }
 }
 
 function getMetricName(metric: AnyMetric | undefined): string {

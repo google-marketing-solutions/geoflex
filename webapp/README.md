@@ -28,7 +28,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 ```
 
-- run pip install (assuming we've built the library in vendor folder):
+- run pip install (assuming you've built the library in vendor folder):
 
 ```
 pip install -r requirements.txt
@@ -50,4 +50,4 @@ quasar dev --port 9000
 ```
 
 and access the application on http://localhost:9000.
-(the client will routes all api requests to 8080 port - see the section `devServer` in `quasar.config.ts`)
+(the client will route all api requests to 8080 port - see the section `devServer` in `quasar.config.ts`)

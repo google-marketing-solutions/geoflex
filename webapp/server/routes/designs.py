@@ -49,16 +49,20 @@ async def get_design(
 
 
 @designs_router.post('/{design_name}')
-async def save_design(
+async def save_or_update_design(
     design_name: str,
     design_data: dict[str, Any],
     storage_service: DesignStorageService = Depends(get_design_storage_service),
 ):
-  """Saves a design file."""
-  success = await storage_service.save_design(design_name, design_data)
-  if not success:
-    raise HTTPException(status_code=500, detail='Failed to save design')
-  return {'status': 'success'}
+  """Saves or updates a design file."""
+  file_to_save = design_name
+  if not file_to_save.endswith('.json'):
+    file_to_save = f"{file_to_save}.json"
+
+  result = await storage_service.save_design(file_to_save, design_data)
+  if result is None:
+    raise HTTPException(status_code=500, detail='Failed to save or update design')
+  return result
 
 
 @designs_router.delete('/{design_id}')

@@ -74,6 +74,28 @@ export const useDesignsStore = defineStore('designs', () => {
     }
   }
 
+  async function updateDesign(design: SavedDesign, newValues: Partial<SavedDesign>) {
+    try {
+      const response = await postApiUi(
+        `designs/${design.design.design_id}`,
+        newValues,
+        'Updating design...',
+      );
+      if (response) {
+        // Find the design in the store and update it
+        const index = designs.value.findIndex((d) => d.design.design_id === design.design.design_id);
+        if (index !== -1) {
+          designs.value[index] = { ...designs.value[index], ...newValues };
+        }
+      }
+      return response;
+    } catch (err) {
+      console.error('Failed to update design:', err);
+      error.value = (err as Error).message;
+      throw err;
+    }
+  }
+
   function reset() {
     isLoaded.value = false;
     designs.value = [];
@@ -87,6 +109,7 @@ export const useDesignsStore = defineStore('designs', () => {
     loadDesigns,
     deleteDesign,
     uploadDesign,
+    updateDesign,
     reset,
   };
 });

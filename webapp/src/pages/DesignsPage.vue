@@ -13,6 +13,7 @@
         default-sort="recency"
         @analyze="analyzeDesign"
         @delete="deleteDesign"
+        @update="updateDesign"
       />
     </div>
   </q-page>
@@ -34,6 +35,10 @@ async function reloadDesigns() {
 
 async function deleteDesign(design: SavedDesign) {
   await designsStore.deleteDesign(design);
+}
+
+async function updateDesign(design: SavedDesign, newValues: Partial<SavedDesign>) {
+  await designsStore.updateDesign(design, newValues);
 }
 
 function analyzeDesign(design: SavedDesign) {

@@ -22,7 +22,21 @@
           <q-card-section>
             <div class="row items-center">
               <div class="col">
-                <div class="text-h6">Design #{{ index + 1 }} ({{ design.design.design_id }})</div>
+                <div class="text-h6 row items-center">
+                  <span>{{ design.name || `Design #${index + 1}` }}</span>
+                  <q-btn
+                    flat
+                    round
+                    dense
+                    icon="edit"
+                    size="sm"
+                    class="q-ml-sm"
+                    @click="openEditNameDialog(design)"
+                  >
+                    <q-tooltip>Edit Name</q-tooltip>
+                  </q-btn>
+                </div>
+                <div class="text-caption text-grey-7">ID: {{ design.design.design_id }}</div>
                 <div class="text-caption">Methodology: {{ design.design.methodology }}</div>
                 <div class="text-caption">Duration: {{ design.design.runtime_weeks }} weeks</div>
                 <div v-if="showMeta" class="text-caption">
@@ -41,8 +55,12 @@
               </div>
               <div class="col-auto">
                 <q-btn-group flat>
-                  <q-btn color="primary" icon="visibility" @click="viewDesign(design)" />
-                  <q-btn color="positive" icon="download" @click="downloadDesign(design)" />
+                  <q-btn color="primary" icon="visibility" @click="viewDesign(design)">
+                    <q-tooltip>View details</q-tooltip>
+                  </q-btn>
+                  <q-btn color="positive" icon="download" @click="downloadDesign(design)">
+                    <q-tooltip>Export to a file</q-tooltip>
+                  </q-btn>
                   <q-btn
                     v-if="showUpload"
                     color="secondary"
@@ -144,11 +162,37 @@
       </div>
     </q-card>
 
+    <!-- Edit Name Dialog -->
+    <q-dialog v-model="editNameDialog" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">Edit Design Name</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <q-input
+            dense
+            v-model="newName"
+            autofocus
+            @keyup.enter="saveNewName"
+            :rules="[(val) => !!val || 'Name is required']"
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="text-primary">
+          <q-btn flat label="Cancel" v-close-popup />
+          <q-btn flat label="Save" @click="saveNewName" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
     <!-- Design Detail Dialog -->
     <q-dialog v-model="designDetailDialog" maximized persistent>
       <q-card>
         <q-card-section class="row items-center">
-          <div class="text-h6">Design Details</div>
+          <div class="text-h6">
+            {{ selectedDesign?.name || 'Design Details' }} ({{ selectedDesign?.design.design_id }})
+          </div>
           <q-space />
           <q-btn icon="close" flat round dense v-close-popup />
         </q-card-section>
@@ -431,6 +475,7 @@ const emit = defineEmits<{
   (e: 'analyze', design: SavedDesign): void;
   (e: 'upload', design: SavedDesign): void;
   (e: 'delete', design: SavedDesign): void;
+  (e: 'update', design: SavedDesign, newValues: Partial<SavedDesign>): void;
 }>();
 
 const $q = useQuasar();
@@ -472,6 +517,25 @@ function downloadDesign(design: SavedDesign | null) {
   if (!design) return;
   const filename = `geo-test-design-${design.design.design_id || Date.now()}.json`;
   exportFile(filename, JSON.stringify(design.design, null, 2));
+}
+
+// Edit name dialog
+const editNameDialog = ref(false);
+const newName = ref('');
+const designToEdit = ref<SavedDesign | null>(null);
+
+function openEditNameDialog(design: SavedDesign) {
+  designToEdit.value = design;
+  newName.value = design.name || '';
+  editNameDialog.value = true;
+}
+
+function saveNewName() {
+  if (designToEdit.value && newName.value) {
+    emit('update', designToEdit.value, { name: newName.value });
+    editNameDialog.value = false;
+    designToEdit.value = null;
+  }
 }
 
 function getDesignGroups(design: ExperimentDesign) {
