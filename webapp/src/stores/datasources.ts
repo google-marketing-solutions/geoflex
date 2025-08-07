@@ -154,7 +154,10 @@ export const useDataSourcesStore = defineStore('datasources', () => {
 
         // Transform from API format
         const updatedDataSource = response.data ? transformFromApi(response.data) : dataSource;
-
+        updatedDataSource.data = normalizeRawData(
+          updatedDataSource.data.rawRows,
+          updatedDataSource.columns,
+        );
         // Preserve data if not included in response
         if (!updatedDataSource.data && datasources.value[existingIndex].data) {
           updatedDataSource.data = datasources.value[existingIndex].data;
@@ -169,6 +172,7 @@ export const useDataSourcesStore = defineStore('datasources', () => {
 
         // If the server returned a new version, use it, otherwise the one we sent
         const newDataSource = response.data ? transformFromApi(response.data) : dataSource;
+        newDataSource.data = normalizeRawData(newDataSource.data.rawRows, newDataSource.columns);
         datasources.value.push(newDataSource);
         return newDataSource;
       }
