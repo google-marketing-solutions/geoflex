@@ -34,7 +34,7 @@
         :rows="datasources"
         :columns="columns"
         row-key="id"
-        :pagination="{ rowsPerPage: 10 }"
+        v-model:pagination="pagination"
         :filter="filter"
         :loading="loading"
       >
@@ -142,17 +142,27 @@ import type { QTableColumn } from 'quasar';
 import { useQuasar } from 'quasar';
 import type { DataSource } from 'stores/datasources';
 import { useDataSourcesStore } from 'stores/datasources';
+import { useUiSettingsStore } from 'stores/ui-settings';
 import DataSourceViewer from 'components/DataSourceViewer.vue';
 import DataSourceEditor from 'components/DataSourceEditor.vue';
 import { formatDate } from 'src/helpers/utils';
 
 const $q = useQuasar();
 const dataSourcesStore = useDataSourcesStore();
+const uiSettingsStore = useUiSettingsStore();
 const router = useRouter();
 const route = useRoute();
 
+const COMPONENT_ID = 'DataSourcesPage';
+
 // State
 const filter = ref('');
+const pagination = ref({
+  sortBy: 'name',
+  descending: false,
+  page: 1,
+  rowsPerPage: 10,
+});
 const showEditor = ref(false);
 const showViewer = ref(false);
 const showDeleteConfirm = ref(false);
@@ -212,8 +222,34 @@ const columns = [
 
 
 onMounted(() => {
+  // Load saved UI settings
+  const savedSettings = uiSettingsStore.getComponentSettings(COMPONENT_ID);
+  if (savedSettings.filter) {
+    filter.value = savedSettings.filter;
+  }
+  if (savedSettings.pagination) {
+    pagination.value = savedSettings.pagination;
+  }
+
   void loadDataSources(false); // Don't force reload on mount
 });
+
+// Watch for changes and save them to the store
+watch(
+  filter,
+  (newFilter) => {
+    uiSettingsStore.saveComponentSettings(COMPONENT_ID, { filter: newFilter });
+  },
+  { deep: true },
+);
+
+watch(
+  pagination,
+  (newPagination) => {
+    uiSettingsStore.saveComponentSettings(COMPONENT_ID, { pagination: newPagination });
+  },
+  { deep: true },
+);
 
 // Load data sources
 async function loadDataSources(reload = false) {

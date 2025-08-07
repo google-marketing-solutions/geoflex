@@ -435,7 +435,7 @@
 
 <script setup lang="ts">
 import type { PropType } from 'vue';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useQuasar, exportFile } from 'quasar';
 import type { ExperimentDesign, AnyMetric, SavedDesign } from 'src/components/models';
 import { formatDate } from 'src/helpers/utils';
@@ -476,6 +476,7 @@ const emit = defineEmits<{
   (e: 'upload', design: SavedDesign): void;
   (e: 'delete', design: SavedDesign): void;
   (e: 'update', design: SavedDesign, newValues: Partial<SavedDesign>): void;
+  (e: 'update:sortBy', value: string): void;
 }>();
 
 const $q = useQuasar();
@@ -487,6 +488,10 @@ const sortOptions = [
 ];
 
 const sortBy = ref(sortOptions.find((o) => o.value === props.defaultSort) || sortOptions[0]);
+
+watch(sortBy, (newValue) => {
+  emit('update:sortBy', newValue.value);
+});
 
 const sortedDesigns = computed<SavedDesign[]>(() => {
   const designs = [...props.designs];
