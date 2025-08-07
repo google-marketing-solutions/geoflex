@@ -234,4 +234,15 @@ export interface ValidationResult {
     designOnly: string[];
     dataSourceOnly: string[];
   };
+  dates: {
+    valid: boolean;
+    required: {
+      start: string;
+      end: string;
+    };
+    actual: {
+      start: string;
+      end: string;
+    };
+  } | null;
 }

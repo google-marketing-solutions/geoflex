@@ -15,6 +15,25 @@
       </q-banner>
     </div>
 
+    <!-- Dates Validation -->
+    <div class="q-mb-md">
+      <div class="text-subtitle1 q-mb-sm">Dates</div>
+      <div v-if="validation.dates">
+        <q-banner v-if="validation.dates.valid" class="bg-positive text-white">
+          The data source covers the required experiment date range.
+        </q-banner>
+        <q-banner v-else class="bg-negative text-white">
+          <div class="text-weight-bold">Date Range Mismatch:</div>
+          <div>
+            Experiment time frame: {{ validation.dates.required.start }} - {{ validation.dates.required.end }}
+          </div>
+          <div>
+            Data source time frame: {{ validation.dates.actual.start }} - {{ validation.dates.actual.end }}
+          </div>
+        </q-banner>
+      </div>
+    </div>
+
     <!-- Geo Units Validation -->
     <div>
       <div class="text-subtitle1 q-mb-sm">Geo Units Mismatch</div>
@@ -69,7 +88,10 @@ const props = defineProps({
 });
 
 const validationPassed = computed(() => {
-  return props.validation.metrics.missing.length === 0;
+  return (
+    props.validation.metrics.missing.length === 0 &&
+    (props.validation.dates ? props.validation.dates.valid : false)
+  );
 });
 
 defineExpose({

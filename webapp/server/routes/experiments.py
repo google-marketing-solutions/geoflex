@@ -322,9 +322,11 @@ async def explore_experiment_designs(
 
 class AnalyzeRequest(pydantic.BaseModel):
   """Request model for analysis experiment results."""
+  design_id: str
   datasource_id: str
   experiment_start_date: datetime
-  design_id: str
+  experiment_end_date: datetime | None
+
   model_config = pydantic.ConfigDict(extra='forbid')
 
 
@@ -409,7 +411,9 @@ async def analyse_experiment_results(
         runtime_data=runtime_data,
         experiment_start_date=request.experiment_start_date.strftime(
             '%Y-%m-%d'),
-    )
+        experiment_end_date=request.experiment_end_date.strftime('%Y-%m-%d')
+        if request.experiment_end_date else None)
+
     if isinstance(analysis_results, pd.DataFrame):
       analysis_results.columns = analysis_results.columns.astype(str)
       results_list = cast(list[dict[str, Any]],

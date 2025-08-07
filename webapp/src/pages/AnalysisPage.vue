@@ -71,7 +71,7 @@
           </div>
         </div>
 
-        <!-- Experiment Start Date -->
+        <!-- Experiment Start/End Dates -->
         <div class="row q-col-gutter-md q-mt-md">
           <div class="col-3">
             <div class="text-subtitle1 q-mb-sm">Experiment Start Date</div>
@@ -85,11 +85,26 @@
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
                   <q-popup-proxy cover transition-show="scale" transition-hide="scale">
-                    <q-date v-model="experimentStartDate">
-                      <div class="row items-center justify-end">
-                        <q-btn v-close-popup label="Close" color="primary" flat />
-                      </div>
-                    </q-date>
+                    <q-date v-model="experimentStartDate" v-close-popup />
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
+          </div>
+          <div class="col-3">
+            <div class="text-subtitle1 q-mb-sm">Experiment End Date</div>
+            <q-input
+              filled
+              clearable
+              v-model="experimentEndDate"
+              mask="date"
+              label="Select the end date of the experiment"
+              hint="By default it is determined by adding runtime weeks from the design to start date"
+            >
+              <template v-slot:append>
+                <q-icon name="event" class="cursor-pointer">
+                  <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                    <q-date v-model="experimentEndDate" v-close-popup />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -196,6 +211,7 @@ interface AnalysisResult {
 const selectedDesign = ref<SavedDesign | null>(null);
 const selectedDataSource = ref<DataSource | null>(null);
 const experimentStartDate = ref<string | null>(null);
+const experimentEndDate = ref<string | null>(null);
 const analysisResults = ref<AnalysisResult[] | null>(null);
 const analysisLogs = ref<LogEntry[]>([]);
 const dataSourceLoaded = ref(false);
@@ -229,13 +245,15 @@ const handleDataSourceChange = async (dataSource: DataSource) => {
 };
 
 // Watch for changes in selected design or data source to re-run validation
-watch([selectedDesign, selectedDataSource], () => {
-  if (selectedDesign.value && selectedDataSource.value) {
-    validateDataSource();
-  } else {
-    validationResult.value = null;
-  }
-});
+watch(
+  [selectedDesign, selectedDataSource, experimentStartDate, experimentEndDate],
+  () => {
+    if (selectedDesign.value && selectedDataSource.value) {
+      validateDataSource();
+    } else {
+      validationResult.value = null;
+    }
+  });
 
 function getMetricColumns(metric: AnyMetric): string[] {
   if (typeof metric === 'string') {
@@ -282,6 +300,32 @@ function validateDataSource() {
   const designOnlyGeos = [...designGeos].filter((geo) => !dataSourceGeos.has(geo));
   const dataSourceOnlyGeos = [...dataSourceGeos].filter((geo) => !designGeos.has(geo));
 
+  // 3. Validate Dates
+  let datesValidation = null;
+  if (experimentStartDate.value && dataSource.data?.uniqueDates) {
+    const expStartDate = new Date(experimentStartDate.value);
+    const expEndDate = experimentEndDate.value
+      ? new Date(experimentEndDate.value)
+      : new Date(expStartDate.getTime() + design.runtime_weeks * 7 * 24 * 60 * 60 * 1000);
+
+    const dsStartDate = new Date(dataSource.data.uniqueDates[0]);
+    const dsEndDate = new Date(dataSource.data.uniqueDates[dataSource.data.uniqueDates.length - 1]);
+
+    const valid = expStartDate >= dsStartDate && expEndDate <= dsEndDate;
+
+    datesValidation = {
+      valid,
+      required: {
+        start: expStartDate.toISOString().split('T')[0],
+        end: expEndDate.toISOString().split('T')[0],
+      },
+      actual: {
+        start: dsStartDate.toISOString().split('T')[0],
+        end: dsEndDate.toISOString().split('T')[0],
+      },
+    };
+  }
+
   validationResult.value = {
     metrics: {
       missing: missingMetrics,
@@ -290,6 +334,7 @@ function validateDataSource() {
       designOnly: designOnlyGeos,
       dataSourceOnly: dataSourceOnlyGeos,
     },
+    dates: datesValidation,
   };
 }
 
@@ -318,6 +363,7 @@ async function runAnalysis() {
     datasource_id: selectedDataSource.value.id,
     design_id: selectedDesign.value.design.design_id,
     experiment_start_date: experimentStartDate.value.replace(/\//g, '-'), // API expects YYYY-MM-DD
+    experiment_end_date: experimentEndDate.value?.replace(/\//g, '-'),
   };
 
   const response = await postApiUi<{
