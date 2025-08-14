@@ -311,6 +311,15 @@
                 </div>
               </div>
             </q-card>
+
+            <div class="row justify-end q-mt-md">
+              <q-btn
+                label="Next"
+                color="primary"
+                @click="activeTab = 'constraints'"
+                :disable="!selectedDataSource"
+              />
+            </div>
           </q-tab-panel>
 
           <!-- Constraints & Parameters Tab -->
@@ -797,6 +806,13 @@
               </div>
               <div class="row items-center justify-end">
                 <div class="col-auto">
+                  <q-btn
+                    label="Back"
+                    color="primary"
+                    flat
+                    class="q-mr-sm"
+                    @click="activeTab = 'datasource'"
+                  />
                   <q-btn label="Reset" color="grey" flat class="q-mr-sm" @click="resetParameters" />
                   <q-btn
                     label="Run Exploration"
@@ -1080,6 +1096,11 @@ const methodologyOptionsDetailed = [
   {
     label: 'Synthetic Control',
     value: 'SyntheticControls',
+    desc: '',
+  },
+  {
+    label: 'Time Based Regression - Matched Markets (TBRMM)',
+    value: 'TBRMM',
     desc: '',
   },
 ];
