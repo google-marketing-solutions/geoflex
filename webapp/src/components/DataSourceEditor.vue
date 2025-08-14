@@ -565,19 +565,16 @@ const dataQualityIssues = computed((): DataQualityIssue[] => {
           encounteredGenericIssueMessages.add(msg);
         }
       } else {
-        try {
-          if (isNaN(new Date(dateVal as string | number | Date).getTime())) {
-            collectedIssues.push({
-              type: DataQualityIssueType.InvalidDateFormat,
-              message: `${rowIndexStr}: Invalid date format in '${dateColumn}' column: '${String(dateVal)}'.`,
-              isUnfixableFormatError: true,
-            });
-            hasUnfixableFormatErrorFlag = true;
-          }
-        } catch {
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (
+          !dateRegex.test(String(dateVal)) ||
+          isNaN(new Date(dateVal as string | number | Date).getTime())
+        ) {
           collectedIssues.push({
             type: DataQualityIssueType.InvalidDateFormat,
-            message: `${rowIndexStr}: Error parsing date in '${dateColumn}' column: '${String(dateVal)}'.`,
+            message: `${rowIndexStr}: Invalid date format in '${dateColumn}' column: '${String(
+              dateVal,
+            )}'. Expected YYYY-MM-DD.`,
             isUnfixableFormatError: true,
           });
           hasUnfixableFormatErrorFlag = true;
@@ -682,12 +679,14 @@ const dataQualityIssues = computed((): DataQualityIssue[] => {
 
   // Date Gaps
   if (dateColumn && rawData.value.length > 1) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     const validDateRows = rawData.value.filter((row) => {
       const dateVal = row[dateColumn];
       return (
         dateVal !== undefined &&
         dateVal !== null &&
         String(dateVal).trim() !== '' &&
+        dateRegex.test(String(dateVal)) &&
         !isNaN(new Date(dateVal as string | number | Date).getTime())
       );
     });
@@ -736,6 +735,7 @@ const dataQualityIssues = computed((): DataQualityIssue[] => {
   if (dateColumn && geoColumn && rawData.value.length > 0) {
     const seenCombinations = new Set<string>();
     const duplicateRowMessages = new Set<string>();
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     const validRowsForDuplicateCheck = rawData.value.filter((row) => {
       const dateVal = row[dateColumn];
       const geoVal = row[geoColumn];
@@ -746,6 +746,7 @@ const dataQualityIssues = computed((): DataQualityIssue[] => {
         geoVal !== undefined &&
         geoVal !== null &&
         String(geoVal).trim() !== '' &&
+        dateRegex.test(String(dateVal)) &&
         !isNaN(new Date(dateVal as string | number | Date).getTime())
       );
     });

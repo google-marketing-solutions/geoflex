@@ -75,7 +75,7 @@ class LogEntry(BaseModel):
   message: str
   module: str | None = None
   function: str | None = None
-  line_number: str | None = None
+  line_number: int | None = None
 
   @field_serializer('timestamp')
   def serialize_dt(self, timestamp: datetime):
