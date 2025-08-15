@@ -27,7 +27,7 @@ Whether you're a seasoned data scientist or new to geo-experimentation, GeoFleX 
 GeoFleX allows you to choose from any of the following methodologies, or you can allow GeoFleX to automatically select the best one for your situation based on the data you provide:
 
 1. Time Based Regression with Matched Markets (TBR-MM). [Paper](https://research.google/pubs/a-time-based-regression-matched-markets-approach-for-designing-geo-experiments/).
-2. [COMING SOON] Time Based Regression with Random Assignment (TBR). [Paper](https://research.google/pubs/estimating-ad-effectiveness-using-geo-experiments-in-a-time-based-regression-framework/).
+2. Time Based Regression with Random Assignment (TBR). [Paper](https://research.google/pubs/estimating-ad-effectiveness-using-geo-experiments-in-a-time-based-regression-framework/).
 3. [COMING SOON] Trimmed Match (TM). [Paper](https://research.google/pubs/trimmed-match-design-for-randomized-paired-geo-experiments/).
 4. Geo Based Regression (GBR). [Paper](https://research.google/pubs/measuring-ad-effectiveness-using-geo-experiments/).
 5. [COMING SOON] Synthetic Controls.

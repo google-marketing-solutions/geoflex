@@ -284,7 +284,18 @@ class TBR(_base.Methodology):
           summary = model.summary(level=1.0 - experiment_design.alpha)
 
         summary_row = summary.iloc[0]
-        df = model.pre_period_model.df_resid
+        if metric.cost_column:
+          df = summary_row.get("df_resid")
+        else:
+          df = model.pre_period_model.df_resid
+
+        if pd.isna(df) or df <= 0:
+          logger.warning(
+              "Could not obtain valid degrees of freedom for metric '%s'."
+              " Using an approximation for p-value calculation.",
+              metric.name,
+          )
+          df = 1000  # Default degrees of freedom for approximation
         # adapt results back to GeoFleX format
         result_row = self._adapt_summary_to_geoflex(
             summary_row,
@@ -459,10 +470,9 @@ class TBR(_base.Methodology):
       A dictionary containing the adapted summary row in the GeoFleX format.
     """
     point_estimate = summary_row.get("estimate", pd.NA)
-    scale = summary_row.get("scale", pd.NA)
 
     # if the analysis failed to produce an estimate, return a null row.
-    if pd.isna(point_estimate) or pd.isna(scale):
+    if pd.isna(point_estimate):
       return {
           "metric": metric.name,
           "cell": 1,
@@ -472,28 +482,47 @@ class TBR(_base.Methodology):
           "p_value": pd.NA,
           "point_estimate_relative": pd.NA,
           "lower_bound_relative": pd.NA,
-          "upper_bound_relative": pd.NA
+          "upper_bound_relative": pd.NA,
       }
 
-    # reconstruct the posterior t-distribution from the model results
-    # scipy is imported as sp in the original tbr.py
-    dist = tbr.sp.stats.t(df, loc=point_estimate, scale=scale)
-
-    # calculate confidence bounds and p-value based on the hypothesis
-    if alternative == "greater":
-      lower_bound = dist.ppf(alpha)
-      upper_bound = np.inf
-      p_value = 1.0 - dist.cdf(0)
-    elif alternative == "less":
-      lower_bound = -np.inf
-      upper_bound = dist.ppf(1.0 - alpha)
-      p_value = dist.cdf(0)
-    # remaining cases are two-sided
+    if metric.cost_column:
+      # For iROAS, bounds are in the summary. p-value is not available.
+      lower_bound = summary_row.get("lower", pd.NA)
+      upper_bound = summary_row.get("upper", pd.NA)
+      p_value = pd.NA
     else:
-      alpha_half = alpha / 2.0
-      lower_bound = dist.ppf(alpha_half)
-      upper_bound = dist.ppf(1.0 - alpha_half)
-      p_value = 2.0 * min(dist.cdf(0), 1.0 - dist.cdf(0))
+      scale = summary_row.get("scale", pd.NA)
+      if pd.isna(scale):
+        return {
+            "metric": metric.name,
+            "cell": 1,
+            "point_estimate": point_estimate,
+            "lower_bound": pd.NA,
+            "upper_bound": pd.NA,
+            "p_value": pd.NA,
+            "point_estimate_relative": pd.NA,
+            "lower_bound_relative": pd.NA,
+            "upper_bound_relative": pd.NA,
+        }
+      # reconstruct the posterior t-distribution from the model results
+      # scipy is imported as sp in the original tbr.py
+      dist = tbr.sp.stats.t(df, loc=point_estimate, scale=scale)
+
+      # calculate confidence bounds and p-value based on the hypothesis
+      if alternative == "greater":
+        lower_bound = dist.ppf(alpha)
+        upper_bound = np.inf
+        p_value = 1.0 - dist.cdf(0)
+      elif alternative == "less":
+        lower_bound = -np.inf
+        upper_bound = dist.ppf(1.0 - alpha)
+        p_value = dist.cdf(0)
+      # remaining cases are two-sided
+      else:
+        alpha_half = alpha / 2.0
+        lower_bound = dist.ppf(alpha_half)
+        upper_bound = dist.ppf(1.0 - alpha_half)
+        p_value = 2.0 * min(dist.cdf(0), 1.0 - dist.cdf(0))
 
     # For iROAS, relative metrics are not meaningful
     pe_rel, lb_rel, ub_rel = (pd.NA, pd.NA, pd.NA)

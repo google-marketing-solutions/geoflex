@@ -26,6 +26,7 @@ import geoflex.metrics
 # pylint: disable = line-too-long
 from matched_markets.methodology import geoeligibility as original_geoeligibility_module
 from matched_markets.methodology import tbr as original_tbr_analysis
+from matched_markets.methodology import tbr_iroas as original_tbr_iroas_analysis
 from matched_markets.methodology import tbrmatchedmarkets as original_tbrmm_main
 from matched_markets.methodology import tbrmmdata as original_tbrmmdata
 from matched_markets.methodology import tbrmmdesignparameters as original_tbrmmdesignparameters
@@ -481,7 +482,10 @@ class TBRMM(_base.Methodology):
         experiment_design.secondary_metrics
         )
     # Collect all metric column names
-    all_metric_column_names = [metric.column for metric in all_metrics]
+    all_metric_column_names = {metric.column for metric in all_metrics}
+    for metric in all_metrics:
+      if hasattr(metric, "cost_column") and metric.cost_column:
+        all_metric_column_names.add(metric.cost_column)
 
     # Adapt data once for all metrics using the provided assignment
     try:
@@ -489,7 +493,7 @@ class TBRMM(_base.Methodology):
           self._adapt_geoflex_data_to_original_tbr_input(
               runtime_data=runtime_data,
               assignment=assignment_to_use,
-              metric_column_names=all_metric_column_names,
+              metric_column_names=list(all_metric_column_names),
               pretest_weeks=geoflex_tbrmm_params.pretest_weeks,
               experiment_start_date=experiment_start_date,
               experiment_end_date=experiment_end_date,
@@ -528,18 +532,42 @@ class TBRMM(_base.Methodology):
           )
       try:
         # Select the target metric column from the already adapted DataFrame
-        data_for_tbr_fit = adapted_long_format_df[[
-            semantic_kwargs["key_date"],
-            semantic_kwargs["key_group"],
-            semantic_kwargs["key_period"],
-            metric_column_name  # Select the specific metric column
-        ]].copy()
-
-        original_tbr_analyzer = original_tbr_analysis.TBR(use_cooldown=False)
-        original_tbr_analyzer.fit(
-            data_frame=data_for_tbr_fit,  # DataFrame sliced for this metric
-            target=metric_column_name,
-            **semantic_kwargs)
+        metric_column_name = metric_obj.column
+        if hasattr(metric_obj, "cost_column") and metric_obj.cost_column:
+          cost_column_name = metric_obj.cost_column
+          data_for_tbr_fit = adapted_long_format_df[[
+              semantic_kwargs["key_date"],
+              semantic_kwargs["key_group"],
+              semantic_kwargs["key_period"],
+              metric_column_name,
+              cost_column_name,
+          ]].copy()
+          data_for_tbr_fit.rename(
+              columns={
+                  metric_column_name: "response",
+                  cost_column_name: "cost",
+              },
+              inplace=True,
+          )
+          original_tbr_analyzer = original_tbr_iroas_analysis.TBRiROAS(
+              use_cooldown=False
+          )
+          original_tbr_analyzer.fit(
+              data_frame=data_for_tbr_fit, **semantic_kwargs
+          )
+        else:
+          data_for_tbr_fit = adapted_long_format_df[[
+              semantic_kwargs["key_date"],
+              semantic_kwargs["key_group"],
+              semantic_kwargs["key_period"],
+              metric_column_name,  # Select the specific metric column
+          ]].copy()
+          original_tbr_analyzer = original_tbr_analysis.TBR(use_cooldown=False)
+          original_tbr_analyzer.fit(
+              data_frame=data_for_tbr_fit,  # DataFrame sliced for this metric
+              target=metric_column_name,
+              **semantic_kwargs,
+          )
         summary_df_original = original_tbr_analyzer.summary(
             report="last",
             level=(1.0 - alpha),
@@ -563,7 +591,7 @@ class TBRMM(_base.Methodology):
             control_total_runtime=control_total_runtime,
             alternative_hypothesis=experiment_design.alternative_hypothesis,
             alpha=alpha,
-            metric_name=metric_obj.name
+            metric=metric_obj
             ))
       except(
           ValueError,
@@ -1083,7 +1111,7 @@ class TBRMM(_base.Methodology):
       control_total_runtime: float,
       alternative_hypothesis: str,
       alpha: float,
-      metric_name: str
+      metric: Metric
   ) -> dict[str, Any]:
     """Converts the original TBR summary to the GeoFleX format.
 
@@ -1096,11 +1124,12 @@ class TBRMM(_base.Methodology):
       control_total_runtime: The total runtime of the control group.
       alternative_hypothesis: The alternative hypothesis.
       alpha: The significance level.
-      metric_name: The name of the metric.
+      metric: The metric object that was analyzed.
 
     Returns:
       A dictionary of the adapted summary.
     """
+    metric_name = metric.name
     logger.debug(
         "Adapting original TBR summary to GeoFleX format for metric '%s'.",
         metric_name
@@ -1140,13 +1169,19 @@ class TBRMM(_base.Methodology):
       p_value = min(p_value, 1.0) if pd.notna(p_value) else pd.NA
 
     is_significant = pd.notna(p_value) and p_value < alpha
-    pe_rel, lb_rel, ub_rel = self._get_relative_metrics(
-        point_estimate,
-        lower_bound,
-        upper_bound,
-        control_total_runtime,
-        alternative_hypothesis
-        )
+
+    if metric.cost_column:
+      # for iROAS, estimate is already ratio
+      # no need to calculate relative metrics
+      pe_rel, lb_rel, ub_rel = point_estimate, lower_bound, upper_bound
+    else:
+      pe_rel, lb_rel, ub_rel = self._get_relative_metrics(
+          point_estimate,
+          lower_bound,
+          upper_bound,
+          control_total_runtime,
+          alternative_hypothesis
+          )
     return {
         "point_estimate": point_estimate,
         "lower_bound": lower_bound,

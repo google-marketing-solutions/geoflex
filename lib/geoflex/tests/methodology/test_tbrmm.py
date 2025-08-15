@@ -259,25 +259,25 @@ def test_tbrmm_assign_geos_with_geo_eligibility(
                 budget_type=ExperimentBudgetType.TOTAL_BUDGET, value=500.0
             ),
             "cost",
-            """Mapped GeoFleX budget type 'TOTAL_BUDGET' with value 500.0
-            (total) to original library budget_range (0.0, 500.0)""",
+            ("Mapped GeoFleX budget type 'TOTAL_BUDGET' with value 500.0"
+             " (total) to original library budget_range (0.0, 500.0)"),
         ),
         (
             ExperimentBudget(
                 budget_type=ExperimentBudgetType.DAILY_BUDGET, value=50.0
             ),
             "cost",
-            """Mapped GeoFleX budget type 'DAILY_BUDGET' with value 50.0
-            (daily) to original library budget_range (0.0, 700.0)
-            (total over 2 runtime weeks)""",
+            ("Mapped GeoFleX budget type 'DAILY_BUDGET' with value 50.0"
+             " (daily) to original library budget_range (0.0, 700.0)"
+             " (total over 2 runtime weeks)."),
         ),
         (
             ExperimentBudget(
                 budget_type=ExperimentBudgetType.TOTAL_BUDGET, value=500.0
             ),
             None,
-            """A budget is specified for the experiment, but the 'cost_column'
-            is not set""",
+            ("A budget is specified for the experiment, but the 'cost_column'"
+             " is not set"),
         ),
     ],
 )
