@@ -128,10 +128,9 @@ class TBRMM(_base.Methodology):
   """
   is_pseudo_experiment = True  # enforced to True for TBRMM
   default_methodology_parameter_candidates: dict[str, list[Any]] = {
-      # default pretest_weeks is 4 weeks if user does not specify
-      "pretest_weeks": [4, 8, 12, 16, 26, 52],
-      "min_corr": [0.8, 0.85, 0.9, 0.95],
-      "rho_max": [None, 0.995],
+      "pretest_weeks": [8, 16, 26],
+      "min_corr": [0.8],
+      "rho_max": [0.995],
       "volume_ratio_tolerance": [None],
       "geo_ratio_tolerance": [None],
   }
