@@ -65,7 +65,8 @@ enable_apis() {
   gcloud services enable iap.googleapis.com
   gcloud services enable cloudresourcemanager.googleapis.com
   gcloud services enable artifactregistry.googleapis.com
-#  gcloud services enable cloudbuild.googleapis.com
+  gcloud services enable cloudbuild.googleapis.com
+  gcloud services enable sheets.googleapis.com
 }
 
 create_gae() {
@@ -109,12 +110,16 @@ update_git_commit() {
 }
 
 
-deploy_files() {
-  echo -e "${COLOR}Deploying files to GCS...${NC}"
+create_gcs_bucket() {
   if ! gsutil ls gs://${PROJECT_ID} > /dev/null 2> /dev/null; then
     gsutil mb -b on gs://${PROJECT_ID}
   fi
+}
 
+
+deploy_files() {
+  echo -e "${COLOR}Deploying files to GCS...${NC}"
+  create_gcs_bucket
   GCS_BUCKET=gs://${PROJECT_ID}/${APP_NAME}
   gsutil cp app.yaml $GCS_BUCKET/
   #gsutil cp config.json $GCS_BUCKET/
@@ -125,7 +130,7 @@ deploy_files() {
 build_library() {
   echo -e "${COLOR}Building geoflex library wheel package...${NC}"
   cd ../lib
-  python -m build --wheel
+  python3 -m build --wheel
 
   # Get the filename of the newly built wheel
   WHEEL_FILE=$(ls -t dist/*.whl | head -1)
@@ -251,8 +256,8 @@ deploy_all() {
   enable_apis
   create_gae
   set_iam_permissions
-  #update_git_commit
-  #deploy_files
+  update_git_commit
+  deploy_files
   deploy_app
   # NOTE: crerate_iap will fail if the current project isn't in a Cloud Org
   create_iap
