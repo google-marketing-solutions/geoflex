@@ -753,20 +753,9 @@
                                 outlined
                                 dense
                                 min="1"
+                                max="100"
                                 step="1"
-                                hint="The maximum number of valid trials to run (leave empty for default)"
-                              />
-                            </div>
-                            <div class="col-6">
-                              <q-input
-                                v-model.number="parameters.nDesigns"
-                                label="# of designs"
-                                type="number"
-                                outlined
-                                dense
-                                min="1"
-                                step="1"
-                                hint="The number of designs to explore (by default 5)"
+                                hint="The maximum number of trials to run / the number of design to get (10 for default)"
                               />
                             </div>
                           </div>
@@ -1115,6 +1104,11 @@ const methodologyOptionsDetailed = [
     desc: '',
   },
   {
+    label: 'Time Based Regression',
+    value: 'TBR',
+    desc: '',
+  },
+  {
     label: 'Time Based Regression - Matched Markets (TBRMM)',
     value: 'TBRMM',
     desc: '',
@@ -1210,7 +1204,6 @@ const getDefaultParameters = () => ({
 
   simulationsPerTrial: undefined,
   maxTrials: undefined,
-  nDesigns: undefined,
 });
 
 // Initialize parameters with default values
@@ -1558,11 +1551,6 @@ async function runExploration() {
     max_trials: Number.isFinite(Number(parameters.maxTrials))
       ? Number(parameters.maxTrials)
       : undefined,
-    n_designs: Number.isFinite(Number(parameters.nDesigns))
-      ? Number(parameters.nDesigns)
-      : undefined,
-    // TODO:
-    //trimming_quantile_candidates: List[float] = [0.0]
   };
   lastRequest = request;
 

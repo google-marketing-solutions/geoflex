@@ -17,5 +17,5 @@ smart_open[gcs]
 gcsfs
 pyyaml
 python-dotenv
-./vendor/geoflex-0.0.2-py3-none-any.whl
 git+https://github.com/sam-bailey/matched_markets
+./vendor/geoflex-0.0.2-py3-none-any.whl

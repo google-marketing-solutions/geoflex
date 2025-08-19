@@ -105,7 +105,6 @@ class ExplorationRequest(pydantic.BaseModel):
 
   effect_scope: geoflex.EffectScope
   max_trials: int | None = None
-  n_designs: int | None = None
 
   model_config = pydantic.ConfigDict(extra='forbid')
 
@@ -277,11 +276,11 @@ async def explore_experiment_designs(
   logger.debug('Running geoflex.explore')
   started = datetime.now()
   with intercept_logs('geoflex', logs):
-    design_explorer.explore(max_trials=request.max_trials or 100)
+    design_explorer.explore(max_trials=request.max_trials or 10)
 
   elapsed = datetime.now() - started
   logger.debug('geoflex.explorer completed, elapsed: %s', elapsed)
-  top_designs = design_explorer.get_designs(top_n=request.n_designs or 5)
+  top_designs = design_explorer.get_designs()
   designs = []
   target_power = request.target_power or 0.8
   if target_power > 1:
@@ -303,7 +302,6 @@ async def explore_experiment_designs(
 
     logger.debug(design.get_summary_dict())
     # wrap library's ExperimentDesign into our class with mde and additional metadata
-    datasource.data
     saved_design = SavedDesign(
         design=design,
         mde=mde,
