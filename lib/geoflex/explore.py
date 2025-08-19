@@ -364,7 +364,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
     # None. In this case we return inf for the standard error, and -1.0 for the
     # representativeness score. This will ensure that this design is never
     # selected.
-    if not evaluation_results.is_valid_design:
+    if not evaluation_results.is_compatible_design:
       logger.info(
           "Design %s (trial %s) is not eligible for methodology %s",
           design.design_id,

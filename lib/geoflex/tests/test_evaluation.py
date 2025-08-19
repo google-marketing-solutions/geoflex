@@ -255,7 +255,7 @@ def test_evaluator_evaluate_design_raw_results_have_correct_data(
   )
   raw_results = evaluator.raw_simulation_results[mock_design.design_id]
 
-  assert raw_results.is_valid_design
+  assert raw_results.is_compatible_design
   assert raw_results.design == mock_design
 
   assert isinstance(raw_results.representativeness_scores, list)
@@ -318,7 +318,7 @@ def test_evaluator_evaluate_design_raw_results_have_correct_data_if_no_ab_simula
   )
   raw_results = evaluator.raw_simulation_results[mock_design.design_id]
 
-  assert raw_results.is_valid_design
+  assert raw_results.is_compatible_design
   assert raw_results.design == mock_design
 
   assert isinstance(raw_results.representativeness_scores, list)
@@ -492,7 +492,7 @@ def test_evaluator_evaluate_design_for_invalid_design(
 
   raw_results = evaluator.raw_simulation_results[mock_design.design_id]
 
-  assert not results.is_valid_design
+  assert not results.is_compatible_design
   assert results.representativeness_scores_per_cell is None
   assert raw_results.aa_simulation_results.empty
   assert raw_results.ab_simulation_results.empty
@@ -509,7 +509,7 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_results(
         aa_simulation_results=pd.DataFrame({"cell": [1]}),
         ab_simulation_results=pd.DataFrame(),
         representativeness_scores=[1, 2],
-        is_valid_design=True,
+        is_compatible_design=True,
         sufficient_simulations=True,
     )
 
@@ -523,7 +523,7 @@ def test_raw_experiment_simulation_results_does_not_raise_error_if_all_results_e
       aa_simulation_results=pd.DataFrame({"cell": [1, 2]}),
       ab_simulation_results=pd.DataFrame(),
       representativeness_scores=[1, 2],
-      is_valid_design=True,
+      is_compatible_design=True,
       sufficient_simulations=True,
   )
 
@@ -538,7 +538,7 @@ def test_raw_experiment_simulation_results_raises_error_if_missing_representativ
         aa_simulation_results=pd.DataFrame({"cell": [1, 2]}),
         ab_simulation_results=pd.DataFrame(),
         representativeness_scores=[1],
-        is_valid_design=True,
+        is_compatible_design=True,
         sufficient_simulations=True,
     )
 
@@ -564,7 +564,7 @@ def test_evaluator_evaluate_design_returns_correct_data_and_adds_results_to_desi
   assert mock_design.evaluation_results is not None
   assert mock_design.evaluation_results == evaluation_results
 
-  assert evaluation_results.is_valid_design
+  assert evaluation_results.is_compatible_design
   assert (
       evaluation_results.primary_metric_name == mock_design.primary_metric.name
   )
@@ -595,7 +595,7 @@ def test_evaluator_evaluate_design_correctly_sets_automatic_sample_size(
   assert mock_design.evaluation_results is not None
   assert mock_design.evaluation_results == evaluation_results
 
-  assert evaluation_results.is_valid_design
+  assert evaluation_results.is_compatible_design
   assert (
       evaluation_results.primary_metric_name == mock_design.primary_metric.name
   )
@@ -634,7 +634,7 @@ def test_evaluator_evaluate_design_returns_correct_data_for_invalid_design(
   assert mock_design.evaluation_results is not None
   assert mock_design.evaluation_results == evaluation_results
 
-  assert not evaluation_results.is_valid_design
+  assert not evaluation_results.is_compatible_design
   assert (
       evaluation_results.primary_metric_name == mock_design.primary_metric.name
   )

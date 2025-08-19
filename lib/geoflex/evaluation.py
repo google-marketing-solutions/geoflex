@@ -255,8 +255,9 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
     ab_simulation_results: The A/B simulation results for the experiment design.
     representativeness_scores: The representativeness scores for the experiment
       design, of each treatment cell.
-    is_valid_design: Whether the design is valid or not. The design is not valid
-      if the methodology is not eligible for the design.
+    is_compatible_design: Whether the design is compatible with the
+      methodology or not. The design is not valid if the methodology is not
+      eligible for the design.
     sufficient_simulations: Whether the design has sufficient simulations to
       calculate the minimum detectable effect.
     warnings: A list of warnings that were generated during the simulation.
@@ -266,7 +267,7 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
   aa_simulation_results: ParquetDataFrame
   ab_simulation_results: ParquetDataFrame
   representativeness_scores: list[float] | None
-  is_valid_design: bool
+  is_compatible_design: bool
   sufficient_simulations: bool
   warnings: list[str] = []
 
@@ -280,7 +281,7 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
       self,
   ) -> "RawExperimentSimulationResults":
     """Sets the design id in simulation results."""
-    if not self.is_valid_design:
+    if not self.is_compatible_design:
       # Simulation results are empty if the design is not valid.
       return self
 
@@ -296,7 +297,7 @@ class RawExperimentSimulationResults(pydantic.BaseModel):
       self,
   ) -> "RawExperimentSimulationResults":
     """Checks that the results for all cells exist."""
-    if not self.is_valid_design:
+    if not self.is_compatible_design:
       # Simulation results are empty if the design is not valid.
       return self
 
@@ -1207,12 +1208,12 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       actual_cell_volumes = None
       is_valid_cell_volume_constraint = True
 
-    is_valid_design = (
+    is_compatible_design = (
         is_valid_cell_volume_constraint
-        and raw_simulation_results.is_valid_design
+        and raw_simulation_results.is_compatible_design
     )
 
-    if not raw_simulation_results.is_valid_design:
+    if not raw_simulation_results.is_compatible_design:
       # If the design is not eligible for the methodology, then the results
       # are None, and we don't want to evaluate it. We just return the design
       # unchanged.
@@ -1224,7 +1225,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           representativeness_scores_per_cell=None,
           actual_cell_volumes=actual_cell_volumes,
           other_errors=other_errors,
-          is_valid_design=False,
+          is_compatible_design=False,
           warnings=raw_simulation_results.warnings,
           sufficient_simulations=raw_simulation_results.sufficient_simulations,
       )
@@ -1301,7 +1302,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         representativeness_scores_per_cell=raw_simulation_results.representativeness_scores,
         actual_cell_volumes=actual_cell_volumes,
         other_errors=other_errors,
-        is_valid_design=is_valid_design,
+        is_compatible_design=is_compatible_design,
         warnings=raw_simulation_results.warnings,
         sufficient_simulations=raw_simulation_results.sufficient_simulations,
     )
@@ -1482,7 +1483,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           aa_simulation_results=existing_aa_simulations,
           ab_simulation_results=existing_ab_simulations,
           representativeness_scores=None,
-          is_valid_design=False,
+          is_compatible_design=False,
           warnings=warnings,
           sufficient_simulations=sufficient_simulations,
       )
@@ -1501,7 +1502,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           aa_simulation_results=existing_aa_simulations,
           ab_simulation_results=existing_ab_simulations,
           representativeness_scores=None,
-          is_valid_design=False,
+          is_compatible_design=False,
           warnings=warnings,
           sufficient_simulations=sufficient_simulations,
       )
@@ -1529,7 +1530,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
             aa_simulation_results=existing_aa_simulations,
             ab_simulation_results=existing_ab_simulations,
             representativeness_scores=representativeness_scores,
-            is_valid_design=False,
+            is_compatible_design=False,
             warnings=warnings,
             sufficient_simulations=sufficient_simulations,
         )
@@ -1553,7 +1554,7 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
         aa_simulation_results=aa_simulation_results,
         ab_simulation_results=existing_ab_simulations,
         representativeness_scores=representativeness_scores,
-        is_valid_design=True,
+        is_compatible_design=True,
         warnings=warnings,
         sufficient_simulations=sufficient_simulations,
     )

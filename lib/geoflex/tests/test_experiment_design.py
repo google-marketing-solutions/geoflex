@@ -432,7 +432,7 @@ def mock_design_fixture():
 def mock_design_evaluation_results_fixture():
   """Fixture for a mock design evaluation results."""
   return geoflex.evaluation.ExperimentDesignEvaluationResults(
-      is_valid_design=True,
+      is_compatible_design=True,
       primary_metric_name="revenue",
       alpha=0.1,
       alternative_hypothesis="two-sided",
@@ -583,7 +583,7 @@ def test_experiment_design_evaluation_results_primary_metric_results(
 
 def test_invalid_experiment_design_results_has_none_for_all_properties():
   invalid_design_results = geoflex.evaluation.ExperimentDesignEvaluationResults(
-      is_valid_design=False,
+      is_compatible_design=False,
       primary_metric_name="revenue",
       alpha=0.1,
       alternative_hypothesis="two-sided",
@@ -655,6 +655,7 @@ def test_get_summary_dict_returns_correct_dict(
       ),
       "warnings": ["some warning"],
       "sufficient_simulations": True,
+      "is_robust_design": False,
   }
 
 
@@ -720,6 +721,7 @@ def test_experiment_design_print_summary_dict_returns_correct_dict_with_evaluati
       "actual_cell_volumes": (
           "control: 5 geos, treatment_1: 10 geos, treatment_2: 9 geos"
       ),
+      "is_robust_design": False,
   }
 
 

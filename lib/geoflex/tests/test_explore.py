@@ -464,6 +464,7 @@ def test_get_design_summaries_returns_correct_data_relative_effects(
       "actual_cell_volumes": "object",
       "warnings": "object",
       "sufficient_simulations": "bool",
+      "is_robust_design": "object",
   }
   assert len(design_summaries) == 3
 
@@ -516,6 +517,7 @@ def test_get_design_summaries_returns_correct_data_absolute_effects(
       "actual_cell_volumes": "object",
       "warnings": "object",
       "sufficient_simulations": "bool",
+      "is_robust_design": "object",
   }
   assert len(design_summaries) == 3
 

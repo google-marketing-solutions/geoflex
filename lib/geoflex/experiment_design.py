@@ -505,12 +505,16 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
     other_errors: A list of errors that were generated during the evaluation,
       that are not coming from a specific metric. For example, this includes
       errors that the cell volume constraint was not met.
-    is_valid_design: Whether the design is valid. This will be false if the
-      methodology is not eligible for the design. All of the design results will
-      be None in this case.
+    is_compatible_design: Whether the design is compatible with the methodology.
+      This will be false if the methodology is not eligible for the design. All
+      of the design results will be None in this case.
     warnings: A list of warnings that were generated during the evaluation.
     sufficient_simulations: Whether the number of simulations was sufficient for
       conclusive validation checks.
+    is_robust_design: Whether the design is robust. This will be True if the
+      design does not have any errors and has sufficient simulations, it will be
+      False if it does not have any errors and has sufficient simulations, and
+      it will be None if it does not have sufficient simulations.
   """
 
   primary_metric_name: str
@@ -522,11 +526,33 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
   representativeness_scores_per_cell: list[float] | None = None
   actual_cell_volumes: CellVolumeConstraint | None = None
   other_errors: list[str] = []
-  is_valid_design: bool
+  is_compatible_design: bool
   warnings: list[str] = []
   sufficient_simulations: bool
 
   model_config = pydantic.ConfigDict(extra="forbid")
+
+  @property
+  def is_robust_design(self) -> bool | None:
+    """Returns whether the design is robust."""
+
+    if not self.is_compatible_design:
+      return False
+
+    if not self.sufficient_simulations:
+      return None
+
+    if self.other_errors:
+      return False
+
+    if self.all_metric_results is None:
+      return False
+
+    for metric_results in self.all_metric_results.values():
+      if not metric_results.all_checks_pass:
+        return False
+
+    return True
 
   @property
   def primary_metric_results_per_cell(
@@ -717,6 +743,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
           "actual_cell_volumes": str(self.actual_cell_volumes),
           "warnings": self.warnings,
           "sufficient_simulations": self.sufficient_simulations,
+          "is_robust_design": self.is_robust_design,
       }
 
     absolute_mde = self.get_mde(
@@ -740,6 +767,7 @@ class ExperimentDesignEvaluationResults(pydantic.BaseModel):
         "representativeness_score": self.representativeness_score,
         "actual_cell_volumes": str(self.actual_cell_volumes),
         "sufficient_simulations": self.sufficient_simulations,
+        "is_robust_design": self.is_robust_design,
     }
     for metric_name, result in self.all_metric_results.items():
       if "__INVERTED__" in metric_name:
