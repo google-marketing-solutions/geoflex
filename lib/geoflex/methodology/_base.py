@@ -15,9 +15,11 @@
 """The base class for all methodologies, to ensure a unified interface."""
 
 import abc
+import contextlib
 import datetime as dt
 import logging
 from typing import Any
+import warnings
 import geoflex.data
 import geoflex.experiment_design
 import geoflex.exploration_spec
@@ -35,6 +37,29 @@ ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 
 _METHODOLOGIES = {}
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def capture_warnings(warning_prefix: str = "") -> None:
+  """A context manager to capture warnings and log them to a given logger.
+
+  This prevents warnings from being sent to stderr/stdout.
+
+  Args:
+    warning_prefix: A prefix to add to the warning message.
+  """
+  with warnings.catch_warnings(record=True) as warning_list:
+    warnings.simplefilter("always")
+
+    yield
+
+    for item in warning_list:
+      warning_message = warnings.formatwarning(
+          item.message, item.category, item.filename, item.lineno, ""
+      )
+      if warning_prefix:
+        warning_message = f"{warning_prefix}: {warning_message}"
+      logger.warning(warning_message)
 
 
 class Methodology(abc.ABC):
@@ -273,9 +298,12 @@ class Methodology(abc.ABC):
         experiment_design
     )
 
-    geo_assignment, intermediate_data = self._methodology_assign_geos(
-        experiment_design, historical_data
-    )
+    with capture_warnings(
+        f"Warning from {self.__class__.__name__} assign_geos"
+    ):
+      geo_assignment, intermediate_data = self._methodology_assign_geos(
+          experiment_design, historical_data
+      )
     if not return_intermediate_data:
       intermediate_data = {}
 
@@ -512,13 +540,17 @@ class Methodology(abc.ABC):
         experiment_design
     )
 
-    raw_results, intermediate_data = self._methodology_analyze_experiment(
-        runtime_data,
-        validated_experiment_design,
-        experiment_start_date,
-        experiment_end_date,
-        pretest_period_end_date,
-    )
+    with capture_warnings(
+        f"Warning from {self.__class__.__name__} analyze_experiment"
+    ):
+      raw_results, intermediate_data = self._methodology_analyze_experiment(
+          runtime_data,
+          validated_experiment_design,
+          experiment_start_date,
+          experiment_end_date,
+          pretest_period_end_date,
+      )
+
     if not return_intermediate_data:
       intermediate_data = {}
 

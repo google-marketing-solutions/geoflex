@@ -14,7 +14,9 @@
 
 """Tests for top level import."""
 
+import logging
 import types
+import pytest
 
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
@@ -26,3 +28,42 @@ def test_import_geoflex():
   import geoflex  # pylint: disable=g-import-not-at-top
 
   assert isinstance(geoflex, types.ModuleType)
+
+
+def test_temporay_log_level():
+  """Tests that the log level is changed and restored."""
+  import geoflex  # pylint: disable=g-import-not-at-top
+
+  original_level = geoflex.logger.getEffectiveLevel()
+  target_level = logging.DEBUG
+  if original_level == logging.DEBUG:
+    target_level = logging.INFO
+
+  assert geoflex.logger.getEffectiveLevel() == original_level
+  assert geoflex.logger.getEffectiveLevel() != target_level
+
+  with geoflex.temporary_log_level(target_level):
+    assert geoflex.logger.getEffectiveLevel() == target_level
+
+  assert geoflex.logger.getEffectiveLevel() == original_level
+
+
+def test_temporary_log_level_with_exception():
+  """Tests that the log level is restored after an exception."""
+  import geoflex  # pylint: disable=g-import-not-at-top
+
+  original_level = geoflex.logger.getEffectiveLevel()
+  target_level = logging.DEBUG
+  if original_level == logging.DEBUG:
+    target_level = logging.INFO
+
+  assert geoflex.logger.getEffectiveLevel() == original_level
+  assert geoflex.logger.getEffectiveLevel() != target_level
+
+  try:
+    with pytest.raises(ValueError):
+      with geoflex.temporary_log_level(target_level):
+        assert geoflex.logger.getEffectiveLevel() == target_level
+        raise ValueError("test exception")
+  finally:
+    assert geoflex.logger.getEffectiveLevel() == original_level

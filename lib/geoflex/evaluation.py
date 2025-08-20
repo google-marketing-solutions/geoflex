@@ -1570,6 +1570,13 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
           relative=False,
           aggregate_across_cells=False,
       )[design.primary_metric.name]
+
+      logger.info(
+          "Applying synthetic treatment effect sizes for design %s: %s",
+          design.design_id,
+          treatment_effect_sizes,
+      )
+
       if design.primary_metric.cost_per_metric:
         # For this, the MDE needs to be inverted, because the actual metric is
         # inverted for the purposes of a power calculation.
@@ -1578,9 +1585,13 @@ class ExperimentDesignEvaluator(pydantic.BaseModel):
       # For the A/B test simulations we only care about the primary metric.
       # So we remove the secondary metrics from the design to speed up the
       # simulations.
-      primary_metric_only_design = design_with_inverted_metrics.make_variation(
-          secondary_metrics=[]
+      primary_metric_only_design = design_with_inverted_metrics.model_copy(
+          update={
+              "secondary_metrics": [],
+          },
+          deep=True,
       )
+
       ab_simulation_results = self._run_simulations(
           design=primary_metric_only_design,
           n_simulations=n_ab_simulations,
