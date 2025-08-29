@@ -47,6 +47,7 @@
                   v-model="currentDataSource.description"
                   label="Description"
                   type="textarea"
+                  hint="Optional description"
                   filled
                   autogrow
                 />
@@ -204,7 +205,7 @@
                   <q-card class="bg-secondary text-white">
                     <q-card-section>
                       <div class="text-h6">Geo Units</div>
-                      <div class="text-h4">{{ uniqueGeoCount }}</div>
+                      <div class="text-h4">{{ geoUnits.length }}</div>
                     </q-card-section>
                   </q-card>
                 </div>
@@ -213,7 +214,13 @@
                   <q-card class="bg-accent text-white">
                     <q-card-section>
                       <div class="text-h6">Time Points</div>
-                      <div class="text-h4">{{ uniqueDateCount }}</div>
+                      <div class="text-h4">
+                        {{ uniqueDates.length }}
+                        <span class="text-subtitle1"
+                          >({{ formatDate(uniqueDates[0]) }} —
+                          {{ formatDate(uniqueDates[uniqueDates.length - 1]) }})</span
+                        >
+                      </div>
                     </q-card-section>
                   </q-card>
                 </div>
@@ -354,6 +361,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
+import { formatDate } from 'src/helpers/utils';
 
 enum DataQualityIssueType {
   MissingGeo = 'MissingGeo',
@@ -371,7 +379,7 @@ interface DataQualityIssue {
   isUnfixableFormatError?: boolean;
 }
 import { parse } from 'csv-parse/browser/esm';
-import type { DataSource } from 'stores/datasources'; // Removed DataRow, DataSourceData
+import type { DataSource } from 'stores/datasources';
 import { useDataSourcesStore, DataSourceType } from 'stores/datasources';
 import { getApiUi } from 'src/boot/axios';
 import { assertIsError } from 'src/helpers/utils';
@@ -541,22 +549,8 @@ const dataPreviewColumns = computed(() => {
     sortable: true,
   }));
 });
-
-const uniqueGeoCount = computed(() => {
-  if (!currentDataSource.value.columns.geoColumn || rawData.value.length === 0) return 0;
-  const uniqueGeos = new Set(
-    rawData.value.map((row) => row[currentDataSource.value.columns.geoColumn]),
-  );
-  return uniqueGeos.size;
-});
-
-const uniqueDateCount = computed(() => {
-  if (!currentDataSource.value.columns.dateColumn || rawData.value.length === 0) return 0;
-  const uniqueDates = new Set(
-    rawData.value.map((row) => row[currentDataSource.value.columns.dateColumn]),
-  );
-  return uniqueDates.size;
-});
+const geoUnits = ref<string[]>([]);
+const uniqueDates = ref<string[]>([]);
 
 const dataQualityIssues = computed((): DataQualityIssue[] => {
   const collectedIssues: DataQualityIssue[] = [];
@@ -879,6 +873,8 @@ onMounted(async () => {
       currentDataSource.value.columns.metricColumns.forEach((metric) => {
         columnRoles.value[metric] = ColumnRole.Metric;
       });
+
+      updateDataStats();
     }
   }
 });
@@ -1173,6 +1169,33 @@ function handleColumnRoleChange(columnName: string, newRole: any) {
         break;
     }
   });
+  updateDataStats();
+}
+
+function updateDataStats() {
+  // Extract unique geo units
+  const geoColumn = currentDataSource.value.columns.geoColumn;
+  if (geoColumn) {
+    const geoSet = new Set<string>();
+    rawData.value.forEach((row) => {
+      if (row[geoColumn] !== undefined && row[geoColumn] !== null) {
+        geoSet.add(String(row[geoColumn]));
+      }
+    });
+    geoUnits.value = Array.from(geoSet).sort();
+  }
+
+  // Extract unique dates
+  const dateColumn = currentDataSource.value.columns.dateColumn;
+  if (dateColumn) {
+    const dateSet = new Set<string>();
+    rawData.value.forEach((row) => {
+      if (row[dateColumn] !== undefined && row[dateColumn] !== null) {
+        dateSet.add(String(row[dateColumn]));
+      }
+    });
+    uniqueDates.value = Array.from(dateSet).sort();
+  }
 }
 
 function openFixDialog() {

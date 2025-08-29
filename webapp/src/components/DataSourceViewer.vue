@@ -48,6 +48,10 @@
                 <div class="text-h6">Time Points</div>
                 <div class="text-h4">
                   {{ uniqueDates.length }}
+                  <span class="text-subtitle1"
+                    >({{ formatDate(uniqueDates[0]) }} —
+                    {{ formatDate(uniqueDates[uniqueDates.length - 1]) }})</span
+                  >
                 </div>
               </q-card-section>
             </q-card>
@@ -169,6 +173,7 @@ import { formatNumber } from 'src/helpers/utils';
 import type { DataSource } from 'stores/datasources';
 import { useDataSourcesStore } from 'stores/datasources';
 import { ref, computed, onMounted } from 'vue';
+import { formatDate } from 'src/helpers/utils';
 
 const dataSearch = ref('');
 const selectedGeo = ref<string | null>(null);
