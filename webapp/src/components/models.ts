@@ -88,8 +88,11 @@ export interface EvaluationResults {
   actual_cell_volumes: null | number[];
   /** Any other errors that occurred during evaluation. */
   other_errors: string[];
-  /** Whether the design is valid. */
-  is_valid_design: boolean;
+  /** Whether the design is robust. This will be True if the design
+   * does not have any errors and has sufficient simulations.
+   * it will be False if it does not have any errors and has sufficient simulations,
+   * and it will be None if it does not have sufficient simulations. */
+  is_robust_design: boolean | null;
   /** Any warnings generated during evaluation. */
   warnings: string[];
   /** Whether a sufficient number of simulations were run. */

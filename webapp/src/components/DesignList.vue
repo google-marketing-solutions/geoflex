@@ -350,17 +350,21 @@
                 <q-list dense v-if="selectedDesign.design.evaluation_results">
                   <q-item>
                     <q-item-section>
-                      <q-item-label caption>Valid Design</q-item-label>
+                      <q-item-label caption>Robust Design</q-item-label>
                       <q-item-label>
                         <q-badge
                           :color="
-                            selectedDesign.design.evaluation_results.is_valid_design
+                            selectedDesign.design.evaluation_results.is_robust_design
                               ? 'positive'
                               : 'negative'
                           "
                         >
                           {{
-                            selectedDesign.design.evaluation_results.is_valid_design ? 'Yes' : 'No'
+                            selectedDesign.design.evaluation_results.is_robust_design
+                              ? 'Yes'
+                              : selectedDesign.design.evaluation_results.is_robust_design === null
+                                ? 'Not enough simulations'
+                                : 'No'
                           }}
                         </q-badge>
                       </q-item-label>

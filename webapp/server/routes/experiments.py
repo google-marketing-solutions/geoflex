@@ -323,7 +323,7 @@ class AnalyzeRequest(pydantic.BaseModel):
   design_id: str
   datasource_id: str
   experiment_start_date: datetime
-  experiment_end_date: datetime | None
+  experiment_end_date: datetime | None = None
 
   model_config = pydantic.ConfigDict(extra='forbid')
 
