@@ -17,10 +17,27 @@
 <template>
   <q-page padding>
     <div class="q-pa-md">
-      <div class="text-h4 q-mb-md">Experiment Analysis</div>
+      <div class="row justify-between items-center q-mb-md">
+        <div>
+          <div class="text-h4">GeoFlex Experiment Report</div>
+          <div v-if="selectedDesign" class="text-subtitle1 text-grey-7">
+            {{ selectedDesign.design.design_id }}
+          </div>
+        </div>
+        <div>
+          <q-btn
+            v-if="analysisResults"
+            icon="download"
+            label="Download Report"
+            color="primary"
+            unelevated
+            @click="downloadReport"
+          />
+        </div>
+      </div>
 
       <q-card class="q-pa-md">
-        <div class="row q-col-gutter-md">
+        <div class="row q-col-gutter-md" v-if="!analysisResults">
           <!-- Design Selection -->
           <div class="col-12">
             <div class="text-subtitle1 q-mb-sm">Experiment Design</div>
@@ -88,7 +105,7 @@
         </div>
 
         <!-- Experiment Start/End Dates -->
-        <div class="row q-col-gutter-md q-mt-md">
+        <div class="row q-col-gutter-md q-mt-md" v-if="!analysisResults">
           <div class="col-3">
             <div class="text-subtitle1 q-mb-sm">Experiment Start Date</div>
             <q-input
@@ -100,8 +117,16 @@
             >
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover transition-show="scale" transition-hide="scale">
-                    <q-date v-model="experimentStartDate" v-close-popup />
+                  <q-popup-proxy
+                    ref="startDateProxy"
+                    cover
+                    transition-show="scale"
+                    transition-hide="scale"
+                  >
+                    <q-date
+                      v-model="experimentStartDate"
+                      @update:model-value="() => startDateProxy.hide()"
+                    />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -119,18 +144,170 @@
             >
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover transition-show="scale" transition-hide="scale">
-                    <q-date v-model="experimentEndDate" v-close-popup />
+                  <q-popup-proxy
+                    ref="endDateProxy"
+                    cover
+                    transition-show="scale"
+                    transition-hide="scale"
+                  >
+                    <q-date
+                      v-model="experimentEndDate"
+                      @update:model-value="() => endDateProxy.hide()"
+                    />
                   </q-popup-proxy>
                 </q-icon>
               </template>
             </q-input>
           </div>
         </div>
+
+        <!-- Metric Results -->
+        <div class="row q-mt-md" v-if="analysisResults">
+          <div class="col-12 col-md-8 col-lg-9">
+            <div v-if="analysisResults.length > 0">
+              <div v-for="(result, index) in analysisResults" :key="index" class="q-mb-xl">
+                <div class="text-h6 q-mb-md">
+                  Metric:
+                  <span class="text-weight-bold"
+                    >{{ result.metric }} ({{
+                      result.is_primary_metric ? 'primary' : 'secondary'
+                    }})</span
+                  >
+                </div>
+                <div class="row q-col-gutter-md">
+                  <!-- Significance Card -->
+                  <div class="col-12 col-sm-6 col-md-3">
+                    <q-card class="q-pa-md full-height">
+                      <div class="row items-center no-wrap">
+                        <q-icon
+                          :name="result.is_significant ? 'check_circle' : 'cancel'"
+                          :color="result.is_significant ? 'positive' : 'negative'"
+                          size="2em"
+                          class="q-mr-sm"
+                        />
+                        <div
+                          class="text-h6"
+                          :class="result.is_significant ? 'text-positive' : 'text-negative'"
+                        >
+                          {{
+                            result.is_significant ? 'Statistically Significant' : 'Not Significant'
+                          }}
+                        </div>
+                      </div>
+                      <div class="q-mt-sm text-grey-7">
+                        <div>
+                          p-value:
+                          {{ formatValue(result.p_value, 'number', 4) }}
+                        </div>
+                        <!-- <div>95% Confidence Interval</div> -->
+                      </div>
+                    </q-card>
+                  </div>
+
+                  <!-- Incremental Lift Card -->
+                  <div class="col-12 col-sm-6 col-md-3">
+                    <q-card class="q-pa-md full-height">
+                      <div class="text-subtitle1 text-grey-7">Incremental Lift</div>
+                      <div class="text-h4 q-mt-xs">
+                        {{ formatValue(result.point_estimate_relative, 'percent') }}
+                      </div>
+                      <!-- <div class="text-grey-7 q-mt-sm">
+                        Increase in {{ result.metric }} in test geos.
+                      </div> -->
+                    </q-card>
+                  </div>
+
+                  <!-- Total Incremental Conversions Card -->
+                  <div class="col-12 col-sm-6 col-md-3">
+                    <q-card class="q-pa-md full-height">
+                      <div class="text-subtitle1 text-grey-7">
+                        Total Incremental {{ result.metric }}
+                      </div>
+                      <div class="text-h4 q-mt-xs">
+                        {{ formatValue(result.point_estimate, 'number', 2) }}
+                      </div>
+                      <!-- <div class="text-grey-7 q-mt-sm">
+                        Additional {{ result.metric }} generated.
+                      </div> -->
+                    </q-card>
+                  </div>
+
+                  <!-- Confidence Interval Card -->
+                  <div class="col-12 col-sm-6 col-md-3">
+                    <q-card class="q-pa-md full-height">
+                      <div class="text-subtitle1 text-grey-7">Absolute Effect</div>
+                      <div class="text-h6 q-mt-xs">
+                        {{ formatValue(result.lower_bound, 'number', 2) }}
+                        &mdash;
+                        {{ formatValue(result.upper_bound, 'number', 2) }}
+                      </div>
+                      <div class="text-grey-7 q-mt-sm">
+                        Confidence Interval:<br />
+                        [{{ formatValue(result.lower_bound_relative, 'number', 2) }};
+                        {{ formatValue(result.upper_bound_relative, 'number', 2) }}]
+                      </div>
+                    </q-card>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else>
+              <q-banner class="bg-info text-white">
+                Analysis completed successfully, but returned no result rows.
+              </q-banner>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results: Experiment Details -->
+        <data class="row q-mt-md" v-if="analysisResults">
+          <div class="col-4 col-md-4 col-lg-3">
+            <q-card class="q-pa-md">
+              <div class="text-h6 q-mb-md">Experiment Details</div>
+              <div
+                v-for="(item, index) in experimentDetails"
+                :key="index"
+                class="row q-mb-sm items-center"
+              >
+                <div class="col-6 text-grey-7">{{ item.label }}:</div>
+                <div class="col-6 text-weight-medium text-right">
+                  <span>{{ item.value }}</span>
+                </div>
+              </div>
+            </q-card>
+          </div>
+        </data>
+
+        <div class="row q-col-gutter-md q-mt-md">
+          <div class="col-12">
+            <ExperimentTimeline
+              v-if="
+                selectedDesign &&
+                selectedDataSource &&
+                selectedDataSource.data &&
+                experimentStartDate
+              "
+              :design="selectedDesign"
+              :data-source="selectedDataSource"
+              :experiment-start-date="experimentStartDate"
+              :experiment-end-date="experimentEndDate"
+            />
+          </div>
+        </div>
+
+        <!-- Validation Section -->
+        <ValidationComponent
+          v-if="validationResult && !analysisResults"
+          :validation="validationResult"
+          ref="validationComponent"
+          class="q-mt-md"
+        />
+
         <q-separator class="q-my-md" />
 
         <div class="row justify-end">
           <q-btn
+            v-if="!analysisResults"
             label="Run Analysis"
             color="primary"
             :disable="
@@ -141,45 +318,20 @@
             "
             @click="runAnalysis"
           />
+          <q-btn
+            v-if="analysisResults"
+            icon="edit"
+            label="Modify Parameters"
+            color="secondary"
+            outline
+            class="q-mr-sm"
+            @click="analysisResults = null"
+          />
         </div>
       </q-card>
-
-      <!-- Validation Section -->
-      <ValidationComponent
-        v-if="validationResult"
-        :validation="validationResult"
-        ref="validationComponent"
-        class="q-mt-md"
-      />
 
       <!-- Results Section -->
-      <q-card v-if="analysisResults" class="q-mt-md q-pa-md">
-        <div class="text-h6 q-mb-md">Analysis Results</div>
-        <div v-if="analysisResults.length > 0">
-          <div v-for="(result, index) in analysisResults" :key="index" class="q-mb-lg">
-            <div class="text-subtitle1 q-mb-sm">
-              Result for Metric:
-              <span class="text-weight-bold">{{ result.metric }}</span>
-              (Cell: {{ result.cell }})
-            </div>
-            <q-markup-table flat bordered dense>
-              <tbody>
-                <tr v-for="(value, key) in result" :key="key">
-                  <td class="text-weight-medium" style="width: 30%">
-                    {{ formatKey(key) }}
-                  </td>
-                  <td>{{ formatValue(value) }}</td>
-                </tr>
-              </tbody>
-            </q-markup-table>
-          </div>
-        </div>
-        <div v-else>
-          <q-banner class="bg-info text-white">
-            Analysis completed successfully, but returned no result rows.
-          </q-banner>
-        </div>
-      </q-card>
+      <div class="q-mt-md"></div>
       <log-viewer v-if="analysisLogs.length" :logs="analysisLogs" class="q-mt-md" />
     </div>
   </q-page>
@@ -187,35 +339,45 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
+import type { QPopupProxy } from 'quasar';
 import { useRoute } from 'vue-router';
 import { useDataSourcesStore, type DataSource } from 'src/stores/datasources';
 import type { LogEntry, SavedDesign, AnyMetric, ValidationResult } from 'src/components/models';
 import { postApiUi, getApiUi } from 'boot/axios';
 import LogViewer from 'src/components/LogViewer.vue';
 import ValidationComponent from 'src/components/ValidationComponent.vue';
+import ExperimentTimeline from 'src/components/ExperimentTimeline.vue';
 import { formatDate } from 'src/helpers/utils';
 
-const formatKey = (key: string | number) => {
-  const keyAsString = String(key);
-  if (!keyAsString) return '';
-  const result = keyAsString.replace(/_/g, ' ');
-  return result.charAt(0).toUpperCase() + result.slice(1);
-};
-
-const formatValue = (value: string | number | boolean | null) => {
-  if (value === null) {
+const formatValue = (
+  value: string | number | boolean | null,
+  type: 'string' | 'number' | 'percent' | 'boolean' = 'string',
+  maxFractionDigits = 4,
+) => {
+  if (value === null || value === undefined) {
     return 'N/A';
   }
-  if (typeof value === 'number') {
-    return value.toLocaleString(undefined, {
+
+  if (type === 'percent') {
+    const numValue = typeof value === 'string' ? parseFloat(value) : (value as number);
+    if (isNaN(numValue)) return 'N/A';
+    return `${(numValue * 100).toFixed(1)}%`;
+  }
+
+  if (type === 'number' || typeof value === 'number') {
+    const numValue = typeof value === 'string' ? parseFloat(value) : (value as number);
+    if (isNaN(numValue)) return 'N/A';
+    return numValue.toLocaleString(undefined, {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 4,
+      maximumFractionDigits: maxFractionDigits,
     });
   }
-  if (typeof value === 'boolean') {
+
+  if (type === 'boolean' || typeof value === 'boolean') {
     return value ? 'Yes' : 'No';
   }
-  return value;
+
+  return String(value);
 };
 const route = useRoute();
 const dataSourcesStore = useDataSourcesStore();
@@ -234,6 +396,36 @@ const dataSourceLoaded = ref(false);
 const dataSourceOptions = computed(() => dataSourcesStore.datasources);
 const validationResult = ref<ValidationResult | null>(null);
 const validationComponent = ref<InstanceType<typeof ValidationComponent> | null>(null);
+const startDateProxy = ref<QPopupProxy | null>(null);
+const endDateProxy = ref<QPopupProxy | null>(null);
+
+const experimentDetails = computed(() => {
+  if (!selectedDesign.value) return [];
+  const design = selectedDesign.value.design;
+
+  return [
+    {
+      label: 'Test Duration',
+      value: `${design.runtime_weeks} Weeks`,
+    },
+    {
+      label: 'Test Type',
+      value: design.effect_scope,
+    },
+    {
+      label: 'Methodology',
+      value: design.methodology,
+    },
+    {
+      label: 'Test Geos',
+      value: design.geo_assignment.treatment.flat().length,
+    },
+    {
+      label: 'Control Geos',
+      value: design.geo_assignment.control.length,
+    },
+  ];
+});
 
 // Function to load data sources when dropdown is opened
 async function loadDataSourcesOnOpen() {
@@ -261,15 +453,13 @@ const handleDataSourceChange = async (dataSource: DataSource) => {
 };
 
 // Watch for changes in selected design or data source to re-run validation
-watch(
-  [selectedDesign, selectedDataSource, experimentStartDate, experimentEndDate],
-  () => {
-    if (selectedDesign.value && selectedDataSource.value) {
-      validateDataSource();
-    } else {
-      validationResult.value = null;
-    }
-  });
+watch([selectedDesign, selectedDataSource, experimentStartDate, experimentEndDate], () => {
+  if (selectedDesign.value && selectedDataSource.value) {
+    validateDataSource();
+  } else {
+    validationResult.value = null;
+  }
+});
 
 function getMetricColumns(metric: AnyMetric): string[] {
   if (typeof metric === 'string') {
@@ -368,6 +558,11 @@ async function fetchDesign(designId: string) {
   }
 }
 
+const downloadReport = () => {
+  // TODO: Implement report download functionality
+  alert('Report download functionality is not yet implemented.');
+};
+
 async function runAnalysis() {
   if (!selectedDesign.value || !selectedDataSource.value || !experimentStartDate.value) {
     return;
@@ -390,6 +585,34 @@ async function runAnalysis() {
   if (response) {
     analysisResults.value = response.data.results;
     analysisLogs.value = response.data.logs;
+
+    /**
+     "metric": "revenue",
+     "cell": 1,
+     "point_estimate": 13.928580899098364,
+     "lower_bound": -109.35050997899843,
+     "upper_bound": 137.20767177719517,
+     "p_value": 0.818422545387028,
+     "is_significant": false,
+     "is_primary_metric": true
+
+     "point_estimate_relative": 0.009646595480609296,
+     "lower_bound_relative": -0.1327475286297486,
+     "upper_bound_relative": 0.17294733243686844,
+
+"metric", # The name of the metric
+"cell",   # The number of the treatment cell
+"point_estimate",  # The absolute effect size
+"lower_bound",     # Lower bound on the absolute effect size
+"upper_bound",     # Upper bound on the absolute effect size
+"p_value",         # P-value for the test
+"is_significant"   # Is the test stat-sig?
+
+Only available for non cost based metrics:
+"point_estimate_relative",  # Relative lift (0.2 = +20%)
+"lower_bound_relative",
+"upper_bound_relative",
+     */
   }
 }
 </script>

@@ -34,5 +34,5 @@ export function formatNumber(value: number): string {
 
 export function formatDate(date: string | undefined): string {
   if (!date) return '';
-  return new Date(date).toLocaleDateString();
+  return new Date(date).toLocaleDateString('ru');
 }
