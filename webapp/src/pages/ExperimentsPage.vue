@@ -216,7 +216,13 @@
                     <div class="col-12 col-md-4">
                       <q-card class="q-pa-sm">
                         <div class="text-subtitle2">Date Range</div>
-                        <div class="text-h5">{{ datePeriod }}</div>
+                        <div class="text-h5">
+                          {{ uniqueDates.length }}
+                          <span class="text-subtitle1"
+                            >({{ formatDate(uniqueDates[0]) }} —
+                            {{ formatDate(uniqueDates[uniqueDates.length - 1]) }})</span
+                          >
+                        </div>
                       </q-card>
                     </div>
                     <div class="col-12 col-md-4">
@@ -226,104 +232,6 @@
                       </q-card>
                     </div>
                   </div>
-                </div>
-
-                <div v-if="selectedDataSource.data?.geoUnits?.length" class="q-mt-md">
-                  <q-separator class="q-my-md" />
-
-                  <div class="text-weight-medium">Geo Units Assignment</div>
-                  <div class="row items-center q-mb-md">
-                    <div class="col">
-                      <div class="text-body2">
-                        Assign geo units to specific groups or exclude them from the test.
-                        <span class="text-caption"
-                          >Creating multiple test groups will automatically enable multi-cell
-                          testing.</span
-                        >
-                      </div>
-                    </div>
-                    <div class="col-auto">
-                      <q-input
-                        v-model="geoSearch"
-                        dense
-                        outlined
-                        placeholder="Search geo units"
-                        class="q-mr-sm"
-                        style="width: 200px"
-                      >
-                        <template v-slot:append>
-                          <q-icon name="search" />
-                        </template>
-                      </q-input>
-                    </div>
-                  </div>
-
-                  <q-table
-                    v-model:pagination="geoPagination"
-                    :rows="filteredGeoUnits"
-                    :columns="geoUnitsColumns"
-                    row-key="geo"
-                    dense
-                    :rows-per-page-options="[10, 25, 50, 100, 0]"
-                  >
-                    <template v-slot:top>
-                      <div class="row full-width q-pa-sm items-center q-gutter-md">
-                        <div class="col-auto">
-                          <q-btn
-                            outline
-                            color="primary"
-                            icon="add_circle"
-                            label="Add Test Group"
-                            :disable="parameters.testGroups >= 10"
-                            @click="addTestGroup"
-                          />
-                        </div>
-                        <div
-                          class="col-auto"
-                          v-for="(count, group) in geoAssignmentCounts"
-                          :key="group"
-                        >
-                          <q-chip
-                            :color="
-                              group === 'auto'
-                                ? 'positive'
-                                : group === 'control'
-                                  ? 'blue'
-                                  : group === 'exclude'
-                                    ? 'negative'
-                                    : 'orange'
-                            "
-                            text-color="white"
-                            :icon="
-                              group === 'control'
-                                ? 'brightness_low'
-                                : group === 'exclude'
-                                  ? 'block'
-                                  : 'science'
-                            "
-                          >
-                            {{ formatGroupLabel(group) }}: {{ count }}
-                          </q-chip>
-                        </div>
-                      </div>
-                    </template>
-
-                    <template v-slot:body-cell-assignment="props">
-                      <q-td :props="props">
-                        <q-select
-                          v-model="props.row.assignment"
-                          :options="computedAssignmentOptions"
-                          dense
-                          outlined
-                          options-dense
-                          style="min-width: 150px"
-                          emit-value
-                          map-options
-                        >
-                        </q-select>
-                      </q-td>
-                    </template>
-                  </q-table>
                 </div>
               </div>
             </q-card>
@@ -728,7 +636,9 @@
                                   parameters.cellVolumeConstraint.type ===
                                   'max_percentage_of_metric'
                                     ? 'As a percentage (e.g., 0.1 for 10%)'
-                                    : 'As a number of geos'
+                                    : 'As a number of geos (0 -' +
+                                      selectedDataSource.data.geoUnits.length +
+                                      ')'
                                 "
                               />
                             </div>
@@ -787,6 +697,105 @@
                     </div>
                   --></div>
                 </div>
+              </div>
+
+              <!-- Geo Units Assignment -->
+              <div v-if="selectedDataSource.data?.geoUnits?.length" class="q-mt-md">
+                <q-separator class="q-my-md" />
+
+                <div class="text-weight-medium">Geo Units Assignment</div>
+                <div class="row items-center q-mb-md">
+                  <div class="col">
+                    <div class="text-body2">
+                      Assign geo units to specific groups or exclude them from the test.
+                      <span class="text-caption"
+                        >Creating multiple test groups will automatically enable multi-cell
+                        testing.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="col-auto">
+                    <q-input
+                      v-model="geoSearch"
+                      dense
+                      outlined
+                      placeholder="Search geo units"
+                      class="q-mr-sm"
+                      style="width: 200px"
+                    >
+                      <template v-slot:append>
+                        <q-icon name="search" />
+                      </template>
+                    </q-input>
+                  </div>
+                </div>
+
+                <q-table
+                  v-model:pagination="geoPagination"
+                  :rows="filteredGeoUnits"
+                  :columns="geoUnitsColumns"
+                  row-key="geo"
+                  dense
+                  :rows-per-page-options="[10, 25, 50, 100, 0]"
+                >
+                  <template v-slot:top>
+                    <div class="row full-width q-pa-sm items-center q-gutter-md">
+                      <div class="col-auto">
+                        <q-btn
+                          outline
+                          color="primary"
+                          icon="add_circle"
+                          label="Add Test Group"
+                          :disable="parameters.testGroups >= 10"
+                          @click="addTestGroup"
+                        />
+                      </div>
+                      <div
+                        class="col-auto"
+                        v-for="(count, group) in geoAssignmentCounts"
+                        :key="group"
+                      >
+                        <q-chip
+                          :color="
+                            group === 'auto'
+                              ? 'positive'
+                              : group === 'control'
+                                ? 'blue'
+                                : group === 'exclude'
+                                  ? 'negative'
+                                  : 'orange'
+                          "
+                          text-color="white"
+                          :icon="
+                            group === 'control'
+                              ? 'brightness_low'
+                              : group === 'exclude'
+                                ? 'block'
+                                : 'science'
+                          "
+                        >
+                          {{ formatGroupLabel(group) }}: {{ count }}
+                        </q-chip>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template v-slot:body-cell-assignment="props">
+                    <q-td :props="props">
+                      <q-select
+                        v-model="props.row.assignment"
+                        :options="computedAssignmentOptions"
+                        dense
+                        outlined
+                        options-dense
+                        style="min-width: 150px"
+                        emit-value
+                        map-options
+                      >
+                      </q-select>
+                    </q-td>
+                  </template>
+                </q-table>
               </div>
 
               <q-separator class="q-my-md" />
@@ -872,6 +881,7 @@ import type {
   LogEntry,
   SavedDesign,
 } from 'src/components/models';
+import { formatDate } from 'src/helpers/utils';
 
 const dataSourcesStore = useDataSourcesStore();
 const designsStore = useDesignsStore();
@@ -945,15 +955,41 @@ function populateGeoUnits(dataSource) {
     return {
       geo,
       assignment: 'auto',
+      metricValue: geoMetricSummary.value[geo] || 0,
     };
   });
   console.log('geoUnits.value', geoUnits.value.length);
 }
 
-const datePeriod = computed(() => {
-  if (!selectedDataSource.value?.data?.uniqueDates?.length) return 'No dates';
-  const dates = selectedDataSource.value.data.uniqueDates;
-  return `${dates[0]} - ${dates[dates.length - 1]}`;
+const geoMetricSummary = computed(() => {
+  if (!selectedDataSource.value?.data?.rawRows || !selectedMetric.value) {
+    return {};
+  }
+
+  const metricName = getMetricName(selectedMetric.value);
+  if (!metricName) return {};
+
+  const geoColumn = selectedDataSource.value.columns.geoColumn;
+  const summary = {};
+
+  for (const row of selectedDataSource.value.data.rawRows) {
+    const geo = row[geoColumn];
+    const metricValue = Number(row[metricName]);
+
+    if (!summary[geo]) {
+      summary[geo] = 0;
+    }
+    if (!isNaN(metricValue)) {
+      summary[geo] += metricValue;
+    }
+  }
+  return summary;
+});
+
+const uniqueDates = computed(() => {
+  //if (!selectedDataSource.value?.data?.uniqueDates?.length) return 'No dates';
+  return selectedDataSource.value?.data?.uniqueDates;
+  //return `${dates[0]} - ${dates[dates.length - 1]}`;
 });
 
 const metricRange = computed(() => {
@@ -1004,10 +1040,18 @@ const geoPagination = ref({
 });
 
 // Geo units table
-const geoUnitsColumns: QTableColumn[] = [
-  { name: 'geo', label: 'Geo Unit', field: 'geo', align: 'left' },
+const geoUnitsColumns = computed<QTableColumn[]>(() => [
+  { name: 'geo', label: 'Geo Unit', field: 'geo', align: 'left', sortable: true },
+  {
+    name: 'metric',
+    label: getMetricName(selectedMetric.value) || 'Metric',
+    field: 'metricValue',
+    align: 'center',
+    format: (val) => formatNumber(val),
+    sortable: true,
+  },
   { name: 'assignment', label: 'Assignment', field: 'assignment', align: 'center' },
-];
+]);
 
 // Computed properties for geo assignment
 const computedAssignmentOptions = computed(() => {

@@ -45,7 +45,7 @@
           <div class="col-12 col-md-3">
             <q-card class="bg-secondary text-white q-pa-sm">
               <q-card-section>
-                <div class="text-h6">Time Points</div>
+                <div class="text-h6">Date Range</div>
                 <div class="text-h4">
                   {{ uniqueDates.length }}
                   <span class="text-subtitle1"
