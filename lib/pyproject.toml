@@ -48,7 +48,7 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://professional-services.git.corp.google.com/solutions/geoflex"
+Repository = "https://professional-services.googlesource.com/solutions/geoflex"
 
 [tool.setuptools.package-data]
 geoflex = ["tests/*", "tests/**/*"]
