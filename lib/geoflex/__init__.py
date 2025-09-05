@@ -14,6 +14,7 @@
 
 """GeoFleX: A flexible and unified geo-experiment solution."""
 
+import contextlib
 import logging
 from geoflex import data
 from geoflex import evaluation
@@ -81,3 +82,21 @@ def stop_logging_to_stdout() -> None:
 
   logging.basicConfig(force=True, handlers=[])
   op.logging.disable_default_handler()
+
+
+@contextlib.contextmanager
+def temporary_log_level(level: int) -> None:
+  """A context manager to temporarily change the log level.
+
+  Args:
+    level: The logging level to set.
+
+  Yields:
+    None.
+  """
+  original_log_level = logger.getEffectiveLevel()
+  try:
+    logging.basicConfig(force=True, level=level)
+    yield
+  finally:
+    logging.basicConfig(force=True, level=original_log_level)
