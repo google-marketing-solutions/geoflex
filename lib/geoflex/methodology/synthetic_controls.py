@@ -204,7 +204,7 @@ class SyntheticControls(_base.Methodology):
         treatment_identifier=test_geo,
         controls_identifier=control_geos,
         time_predictors_prior=list(predictor_dates),
-        special_predictors=[(dependent, list(train_dates), "mean")],
+        special_predictors=[(dependent, list(predictor_dates), "mean")],
         time_optimize_ssr=list(train_dates),
         predictors_op="mean",
     )
@@ -549,7 +549,7 @@ class SyntheticControls(_base.Methodology):
             predictor_start_date=runtime_data.parsed_data[
                 runtime_data.date_column
             ].min(),
-            predictor_end_date=experiment_end_date,
+            predictor_end_date=pretest_period_end_date,
             is_analysis_phase=True,
         )
 
@@ -581,13 +581,30 @@ class SyntheticControls(_base.Methodology):
         treatment_ts = z1_exp.squeeze()
         baseline_ts = synth_model._synthetic(Z0=z0_exp)
 
+        # Get the number of non-zero weights to use for the degrees of freedom.
+        weights = model_results.get("weights")
+        if weights is None:
+          num_params = len(control_geos)
+        else:
+          num_params = (weights > 1e-6).sum()
+
         # Call the utils function to get the parts it does correctly:
         # p-value and the absolute confidence interval.
         # The relative CI from this call will be WRONG.
+
+        total_impact_estimate = (
+            att_results["att"] * len(treatment_geos) * len(time_period)
+        )
+
+        point_wise_att = treatment_ts - baseline_ts
+        point_wise_att_scaled = point_wise_att * len(treatment_geos)
+        total_impact_standard_error = point_wise_att_scaled.std() * np.sqrt(
+            len(time_period)
+        )
         st = geoflex.utils.get_summary_statistics_from_standard_errors(
-            impact_estimate=att_results["att"],
-            impact_standard_error=att_results["se"],
-            degrees_of_freedom=len(time_period) - 1,
+            impact_estimate=total_impact_estimate,
+            impact_standard_error=total_impact_standard_error,
+            degrees_of_freedom=len(time_period) - num_params,
             alternative_hypothesis=experiment_design.alternative_hypothesis,
             alpha=experiment_design.alpha,
             invert_result=metric.cost_per_metric,
@@ -621,7 +638,7 @@ class SyntheticControls(_base.Methodology):
                   standard_error_1=se_treatment_mean,
                   standard_error_2=se_baseline_mean,
                   corr=correlation,
-                  degrees_of_freedom=len(time_period) - 1,
+                  degrees_of_freedom=len(time_period) - num_params,
                   alternative=experiment_design.alternative_hypothesis,
                   alpha=experiment_design.alpha,
               )
