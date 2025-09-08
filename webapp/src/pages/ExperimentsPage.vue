@@ -63,6 +63,11 @@
                     :loading="dataSourcesStore.loading"
                     @popup-show="loadDataSourcesOnOpen"
                     @update:model-value="handleDataSourceChange"
+                    use-input
+                    fill-input
+                    hide-selected
+                    input-debounce="0"
+                    @filter="filterFn"
                   >
                     <template v-slot:option="scope">
                       <q-item v-bind="scope.itemProps">
@@ -906,7 +911,8 @@ const explorationLogs = ref<LogEntry[]>([]);
 const explorationDuration = ref<number | null>(null);
 
 // Derived data source properties
-const dataSourceOptions = computed(() => dataSourcesStore.datasources);
+const allDataSourceOptions = computed(() => dataSourcesStore.datasources);
+const dataSourceOptions = ref<DataSource[]>(allDataSourceOptions.value);
 
 // Function to load data sources when dropdown is opened
 async function loadDataSourcesOnOpen() {
@@ -914,6 +920,23 @@ async function loadDataSourcesOnOpen() {
     await dataSourcesStore.loadDataSources();
   }
 }
+
+watch(allDataSourceOptions, (newVal) => {
+  dataSourceOptions.value = newVal;
+});
+
+const filterFn = (val: string, update: (callback: () => void) => void) => {
+  update(() => {
+    if (val === '') {
+      dataSourceOptions.value = allDataSourceOptions.value;
+    } else {
+      const needle = val.toLowerCase();
+      dataSourceOptions.value = allDataSourceOptions.value.filter(
+        (v) => v.name.toLowerCase().indexOf(needle) > -1,
+      );
+    }
+  });
+};
 
 // Data source handling
 const handleDataSourceChange = async (dataSource) => {
