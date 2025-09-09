@@ -77,7 +77,7 @@ class TBR(_base.Methodology):
   def _methodology_is_eligible_for_design_and_data(
       self,
       design: ExperimentDesign,
-      pretest_data: GeoPerformanceDataset
+      pretest_data: GeoPerformanceDataset,
   ) -> bool:
     """Checks if the design is eligible for the TBR methodology.
 
@@ -87,8 +87,8 @@ class TBR(_base.Methodology):
     as a cost-based metric.
 
     Args:
-      design: The experiment design to check.se
-      pretest_data: The pretest data (unused in this check).
+      design: The experiment design to check.
+      pretest_data: The pretest data for the experiment.
 
     Returns:
       True if the design is eligible, False otherwise.
@@ -202,8 +202,8 @@ class TBR(_base.Methodology):
     to the GeoFleX format.
 
     Args:
-      runtime_data: The runtime data for the experiment.
-      experiment_design: The design of the experiment being analyzed.
+      runtime_data: The runtime data source to analyze.
+      experiment_design: The experiment design to analyze.
       experiment_start_date: The start date of the experiment.
       experiment_end_date: The end date of the experiment.
       pretest_period_end_date: The end date of the pretest period.
@@ -232,10 +232,6 @@ class TBR(_base.Methodology):
             runtime_data, experiment_design, metric, params,
             experiment_start_date, pretest_period_end_date)
 
-        control_total_runtime = self._get_control_total_for_relative(
-            adapted_df, metric, tbr_kwargs
-        )
-
         # run diagnostics from the original library
         # removes noisy geos, outlier dates and does final correlation check
         # performing final correlation test between control and treatment
@@ -246,7 +242,9 @@ class TBR(_base.Methodology):
               **tbr_kwargs
               )
 
-          if not diagnostics.tests_passed():
+          if diagnostics.tests_passed():
+            clean_data = diagnostics.get_clean_data()
+          else:
             test_results = diagnostics.get_test_results()
             # only log warning if test failed but do not stop analysis so
             # user can see results from evaluation layer of GeoFleX
@@ -255,10 +253,6 @@ class TBR(_base.Methodology):
                 " Proceeding with analysis without diagnostics.",
                 metric.name, test_results)
             clean_data = adapted_df
-          else:
-            logger.debug("TBR diagnostics passed for metric '%s'.", metric.name)
-            clean_data = diagnostics.get_data()
-
         except (ValueError, RuntimeError) as diag_error:
           logger.warning(
               "TBR diagnostics failed with an exception for metric '%s': %s."
@@ -267,13 +261,20 @@ class TBR(_base.Methodology):
           clean_data = adapted_df
 
         # fit model and get summary
+        if experiment_design.alternative_hypothesis == "two-sided":
+          tails = 2
+        else:
+          tails = 1
         if metric.cost_column:
           model = tbr_iroas.TBRiROAS(use_cooldown=params.use_cooldown)
           model.fit(
               clean_data,
               **tbr_kwargs
               )
-          summary = model.summary(level=1.0 - experiment_design.alpha)
+          summary = model.summary(
+              level=1.0 - experiment_design.alpha,
+              tails=tails
+              )
         else:
           model = tbr.TBR(use_cooldown=params.use_cooldown)
           model.fit(
@@ -281,9 +282,60 @@ class TBR(_base.Methodology):
               target=tbr_kwargs["key_response"],
               **tbr_kwargs
               )
-          summary = model.summary(level=1.0 - experiment_design.alpha)
+          summary = model.summary(
+              level=1.0 - experiment_design.alpha,
+              tails=tails
+              )
 
         summary_row = summary.iloc[0]
+        # The baseline for relative effects is the predicted counterfactual for
+        # the treatment group, which is available in the summary
+        relative_effect_baseline = summary_row.get("prediction", pd.NA)
+
+        # baseline is often not available in summary from original library
+        if pd.isna(relative_effect_baseline):
+          logger.info(
+              "Could not find 'prediction' in TBR summary for metric '%s'."
+              " Using scaled control group total as fallback baseline for"
+              " relative effects.",
+              metric.name,
+          )
+          # fall back option is to use control group data
+          # baseline is control group response during test period
+          pretest_df = clean_data[
+              clean_data[tbr_kwargs["key_period"]] == tbr_kwargs["period_pre"]
+          ]
+          pretest_control_sum = pretest_df[
+              pretest_df[tbr_kwargs["key_group"]]
+              == tbr_kwargs["group_control"]
+          ][tbr_kwargs["key_response"]].sum()
+          pretest_treatment_sum = pretest_df[
+              pretest_df[tbr_kwargs["key_group"]]
+              == tbr_kwargs["group_treatment"]
+          ][tbr_kwargs["key_response"]].sum()
+
+          # scaling is done to account for difference in size of groups
+          scaling_factor = 1.0
+          if pretest_control_sum > 1e-9:
+            # look at pre-test period and calculate ratio
+            scaling_factor = pretest_treatment_sum / pretest_control_sum
+          else:
+            logger.warning(
+                "Pre-test control sum for metric '%s' is near zero."
+                " Cannot compute scaling factor, using 1.0.",
+                metric.name,
+            )
+
+          test_df = clean_data[
+              clean_data[tbr_kwargs["key_period"]] == tbr_kwargs["period_test"]
+          ]
+          test_control_sum = test_df[
+              test_df[tbr_kwargs["key_group"]] == tbr_kwargs["group_control"]
+          ][tbr_kwargs["key_response"]].sum()
+          # scale control group total to match treatment
+          # this is based on pre-test period data
+          relative_effect_baseline = test_control_sum * scaling_factor
+
         if metric.cost_column:
           df = summary_row.get("df_resid")
         else:
@@ -302,7 +354,7 @@ class TBR(_base.Methodology):
             metric,
             experiment_design.alternative_hypothesis,
             experiment_design.alpha,
-            control_total_runtime,
+            relative_effect_baseline,
             df
         )
         analysis_results.append(result_row)
@@ -326,33 +378,6 @@ class TBR(_base.Methodology):
         })
 
     return pd.DataFrame(analysis_results), {}
-
-  def _get_control_total_for_relative(
-      self,
-      adapted_df: pd.DataFrame,
-      metric: Metric,
-      tbr_kwargs: dict[str, Any]
-  ) -> float:
-    """Calculates total response of the control group during the test period.
-
-    This is the baseline for calculating relative metrics. The GeoFleX
-    evaluation layer expects MDE to be provided as a percentage so calculating
-    relative metrics instead of absolute metrics is required.
-
-    Args:
-      adapted_df: The adapted DataFrame for the original TBR library.
-      metric: The metric that was analyzed.
-      tbr_kwargs: A dictionary of parameters for the original library.
-
-    Returns:
-      The total response of the control group during the test period.
-    """
-    control_test_df = adapted_df[
-        (adapted_df[tbr_kwargs["key_group"]] == tbr_kwargs["group_control"]) &
-        (adapted_df[tbr_kwargs["key_period"]] == tbr_kwargs["period_test"])
-    ]
-    # The response column name is stored in key_response, which is metric.column
-    return control_test_df[tbr_kwargs["key_response"]].sum()
 
   def _adapt_data_for_tbr(
       self,
@@ -449,7 +474,7 @@ class TBR(_base.Methodology):
       metric: Metric,
       alternative: str,
       alpha: float,
-      control_total_runtime: float,
+      relative_effect_baseline: float,
       df: int,
   ) -> dict[str, Any]:
     """Adapts a result row from the original library to the GeoFleX format.
@@ -463,8 +488,7 @@ class TBR(_base.Methodology):
       metric: The metric that was analyzed.
       alternative: The alternative hypothesis of the experiment design.
       alpha: The alpha level for the confidence interval.
-      control_total_runtime: The total response of the control group during the
-        test period, used for calculating relative metrics.
+      relative_effect_baseline: The baseline for calculating relative effect.
       df: The number of degrees of freedom in the posterior distribution.
     Returns:
       A dictionary containing the adapted summary row in the GeoFleX format.
@@ -508,49 +532,53 @@ class TBR(_base.Methodology):
       # scipy is imported as sp in the original tbr.py
       dist = tbr.sp.stats.t(df, loc=point_estimate, scale=scale)
 
-      # calculate confidence bounds and p-value based on the hypothesis
+      # calculate p-value based on the hypothesis
       if alternative == "greater":
-        lower_bound = dist.ppf(alpha)
-        upper_bound = np.inf
         p_value = 1.0 - dist.cdf(0)
       elif alternative == "less":
-        lower_bound = -np.inf
-        upper_bound = dist.ppf(1.0 - alpha)
         p_value = dist.cdf(0)
-      # remaining cases are two-sided
-      else:
-        alpha_half = alpha / 2.0
-        lower_bound = dist.ppf(alpha_half)
-        upper_bound = dist.ppf(1.0 - alpha_half)
+      else:  # two-sided
         p_value = 2.0 * min(dist.cdf(0), 1.0 - dist.cdf(0))
 
-    # For iROAS, relative metrics are not meaningful
+      # calculate confidence bounds based on the hypothesis
+      if alternative == "less":
+        # for 'less', the original library with tails=1 gives the wrong bound
+        lower_bound = -np.inf
+        upper_bound = dist.ppf(1.0 - alpha)
+      else:
+        # for 'greater' (tails=1) and 'two-sided' (tails=2), we can use the
+        # bounds from the original library's summary
+        lower_bound = summary_row.get("lower", pd.NA)
+        upper_bound = summary_row.get("upper", pd.NA)
+
+    # for iROAS, relative metrics are not meaningful
+    # absolute estimates are returned since they are already relative
     pe_rel, lb_rel, ub_rel = (pd.NA, pd.NA, pd.NA)
     if not metric.cost_column:
-      if control_total_runtime > 0:
+      if pd.notna(relative_effect_baseline) and relative_effect_baseline != 0:
         pe_rel = (
-            point_estimate / control_total_runtime
+            point_estimate / relative_effect_baseline
             if pd.notna(point_estimate)
             else pd.NA
         )
         lb_rel = (
-            lower_bound / control_total_runtime
+            lower_bound / relative_effect_baseline
             if pd.notna(lower_bound)
             else pd.NA
         )
         ub_rel = (
-            upper_bound / control_total_runtime
+            upper_bound / relative_effect_baseline
             if pd.notna(upper_bound)
             else pd.NA
         )
       else:
         logger.warning(
-            "Control total is not positive (%s), cannot calculate relative"
-            " metrics for metric '%s'.",
-            control_total_runtime,
+            "Cannot calculate relative metrics with zero or NA baseline for"
+            " relative effect (%s) for metric '%s'.",
+            relative_effect_baseline,
             metric.name,
         )
-    else:
+    elif metric.metric_per_cost:
       # For iROAS, return absolute estimates which are already relative
       pe_rel = point_estimate
       lb_rel = lower_bound

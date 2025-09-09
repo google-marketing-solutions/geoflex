@@ -136,13 +136,15 @@ class TBRMM(_base.Methodology):
   }
 
   def _methodology_is_eligible_for_design_and_data(
-      self, design: ExperimentDesign, pretest_data: GeoPerformanceDataset
+      self,
+      design: ExperimentDesign,
+      pretest_data: GeoPerformanceDataset,
   ) -> bool:
     """Checks if the design is eligible for the TBRMM methodology.
 
     Args:
       design: The experiment design to check.
-      pretest_data: The pretest data (unused in this implementation).
+      pretest_data: The pretest data for the experiment.
 
     Returns:
       True if the design is eligible, False otherwise.
@@ -426,16 +428,14 @@ class TBRMM(_base.Methodology):
     Uses the geo assignment provided in the experiment_design object.
 
     Args:
-      runtime_data: The runtime data to analyze. Data is bootstrapped during
-        evaluation step.
-      experiment_design: The experiment design to analyze (contains the
-        assignment to use).
+      runtime_data: The runtime data source to analyze.
+      experiment_design: The experiment design to analyze.
       experiment_start_date: The start date of the experiment.
       experiment_end_date: The end date of the experiment.
       pretest_period_end_date: The end date of the pretest period.
     Returns:
-      The analysis results as a DataFrame and an empty dictionary for
-      intermediate data.
+      A DataFrame containing the analysis results for all metrics.
+      An empty dictionary for intermediate data.
     """
     method_name = experiment_design.methodology
     design_id = experiment_design.design_id
@@ -578,16 +578,29 @@ class TBRMM(_base.Methodology):
               "Original TBR.summary() returned empty for"
               f"metric {metric_obj.name}.")
 
-        # Calculate control total runtime for the current metric
-        control_total_runtime = self._get_control_total_for_relative(
-            data_for_tbr_fit,  # DataFrame sliced for this metric
-            metric_column_name,
-            semantic_kwargs
-            )
+        summary_row = summary_df_original.iloc[0]
+        # baseline for relative effects should be predicted counterfactual for
+        # the treatment group, which is available in the summary.
+        relative_effect_baseline = summary_row.get("prediction", pd.NA)
+
+        # baseline is often not available in summary from original library
+        if pd.isna(relative_effect_baseline):
+          logger.info(
+              "Could not find 'prediction' in TBR summary for metric '%s'."
+              " Using scaled control group total as fallback baseline for"
+              " relative effects.",
+              metric_obj.name,
+          )
+          # fall back option is to use control group data
+          # baseline is scaled control group response during test period
+          # scaling is done using pre-test data for control and treatment group
+          relative_effect_baseline = self._calculate_fallback_baseline(
+              adapted_long_format_df, metric_column_name, semantic_kwargs
+          )
 
         results_dict.update(self._adapt_original_tbr_summary_to_geoflex(
-            original_summary_row=summary_df_original.iloc[0],
-            control_total_runtime=control_total_runtime,
+            original_summary_row=summary_row,
+            relative_effect_baseline=relative_effect_baseline,
             alternative_hypothesis=experiment_design.alternative_hypothesis,
             alpha=alpha,
             metric=metric_obj
@@ -1107,7 +1120,7 @@ class TBRMM(_base.Methodology):
   def _adapt_original_tbr_summary_to_geoflex(
       self,
       original_summary_row: pd.Series,
-      control_total_runtime: float,
+      relative_effect_baseline: float,
       alternative_hypothesis: str,
       alpha: float,
       metric: Metric
@@ -1119,14 +1132,14 @@ class TBRMM(_base.Methodology):
     summary statistics in a different format so conversion is required.
 
     Args:
-      original_summary_row: The original TBR summary row.
-      control_total_runtime: The total runtime of the control group.
-      alternative_hypothesis: The alternative hypothesis.
-      alpha: The significance level.
-      metric: The metric object that was analyzed.
+      original_summary_row: A Series containing the original TBR summary.
+      relative_effect_baseline: The baseline for calculating relative effect.
+      alternative_hypothesis: The alternative hypothesis for the TBR analysis.
+      alpha: The significance level for the TBR analysis.
+      metric: The metric for which the summary is being returned.
 
     Returns:
-      A dictionary of the adapted summary.
+      A dictionary containing the adapted summary statistics.
     """
     metric_name = metric.name
     logger.debug(
@@ -1165,22 +1178,34 @@ class TBRMM(_base.Methodology):
 
       elif alternative_hypothesis == "less":
         p_value = stats.t.cdf(t_stat, df=df_resid_approx)
+        # for 'less', the original library with tails=1 gives the wrong bound
+        dist = stats.t(
+            df=df_resid_approx,
+            loc=point_estimate,
+            scale=standard_error
+            )
+        lower_bound = -np.inf
+        upper_bound = dist.ppf(1.0 - alpha)
       p_value = min(p_value, 1.0) if pd.notna(p_value) else pd.NA
 
     is_significant = pd.notna(p_value) and p_value < alpha
 
-    if metric.cost_column:
-      # for iROAS, estimate is already ratio
-      # no need to calculate relative metrics
-      pe_rel, lb_rel, ub_rel = point_estimate, lower_bound, upper_bound
-    else:
+    # for iROAS, relative metrics are not meaningful
+    # absolute estimates are returned since they are already relative
+    pe_rel, lb_rel, ub_rel = (pd.NA, pd.NA, pd.NA)
+    if not metric.cost_column:
       pe_rel, lb_rel, ub_rel = self._get_relative_metrics(
           point_estimate,
           lower_bound,
           upper_bound,
-          control_total_runtime,
-          alternative_hypothesis
+          relative_effect_baseline
           )
+    elif metric.metric_per_cost:
+      # For iROAS, return absolute estimates which are already relative
+      pe_rel = point_estimate
+      lb_rel = lower_bound
+      ub_rel = upper_bound
+
     return {
         "point_estimate": point_estimate,
         "lower_bound": lower_bound,
@@ -1199,62 +1224,100 @@ class TBRMM(_base.Methodology):
       point_estimate: float,
       lower_bound: float,
       upper_bound: float,
-      control_total_runtime: float,
-      alternative_hypothesis: str
+      relative_effect_baseline: float,
   ) -> tuple[Any, Any, Any]:
-    """Calculates relative metrics based on the control total runtime.
+    """Calculates relative metrics based on the provided baseline.
 
     Args:
         point_estimate: The point estimate.
         lower_bound: The lower bound.
         upper_bound: The upper bound.
-        control_total_runtime: The total runtime of the control group.
-        alternative_hypothesis: The alternative hypothesis (unused in this
-          specific calculation but often part of such method signatures).
+        relative_effect_baseline: The baseline for calculating relative effect.
 
     Returns:
         A tuple containing the relative point estimate, lower bound, and upper
-        bound. Returns (pd.NA, pd.NA, pd.NA) if control_total_runtime is zero
+        bound. Returns (pd.NA, pd.NA, pd.NA) if relative_effect_baseline is zero
         or NA.
     """
-    if pd.isna(control_total_runtime) or control_total_runtime == 0:
+    if pd.isna(relative_effect_baseline) or relative_effect_baseline == 0:
       logger.warning(
-          "Cannot calculate relative metrics with zero or NA control total"
-          " runtime. Returning NA for relative metrics."
+          "Cannot calculate relative metrics with zero or NA baseline for"
+          " relative effect. Returning NA for relative metrics."
       )
       return pd.NA, pd.NA, pd.NA
 
     pe_rel = (
-        point_estimate / control_total_runtime
+        point_estimate / relative_effect_baseline
         if pd.notna(point_estimate)
         else pd.NA
     )
     lb_rel = (
-        lower_bound / control_total_runtime
+        lower_bound / relative_effect_baseline
         if pd.notna(lower_bound)
         else pd.NA
     )
     ub_rel = (
-        upper_bound / control_total_runtime
+        upper_bound / relative_effect_baseline
         if pd.notna(upper_bound)
         else pd.NA
     )
     return pe_rel, lb_rel, ub_rel
 
-  def _get_control_total_for_relative(
+  def _calculate_fallback_baseline(
       self,
-      adapted_long_format_df,
-      metric_column_name,
-      semantic_kwargs
+      adapted_long_format_df: pd.DataFrame,
+      metric_column_name: str,
+      semantic_kwargs: dict[str, Any],
   ) -> float:
-    """Calculates total runtime of the control group for relative metrics."""
-    control_df = adapted_long_format_df[
-        (adapted_long_format_df[semantic_kwargs["key_group"]] ==
-         semantic_kwargs["group_control"]) & (
-             adapted_long_format_df[semantic_kwargs["key_period"]] ==
-             semantic_kwargs["period_test"])]
+    """Calculates a scaled baseline for relative effects.
 
-    return control_df[metric_column_name].sum()
+    This is a fallback for when the TBR model doesn't provide a prediction.
+    It scales the control group's test period total by the ratio of
+    treatment-to-control totals from the pre-test period.
+
+    Args:
+      adapted_long_format_df: The data prepared for the TBR model.
+      metric_column_name: The name of the metric column.
+      semantic_kwargs: Dictionary with keys for period, group, etc.
+
+    Returns:
+      The calculated baseline value.
+    """
+    pretest_df = adapted_long_format_df[
+        adapted_long_format_df[semantic_kwargs["key_period"]]
+        == semantic_kwargs["period_pre"]
+    ]
+    pretest_control_sum = pretest_df[
+        pretest_df[semantic_kwargs["key_group"]]
+        == semantic_kwargs["group_control"]
+    ][metric_column_name].sum()
+    pretest_treatment_sum = pretest_df[
+        pretest_df[semantic_kwargs["key_group"]]
+        == semantic_kwargs["group_treatment"]
+    ][metric_column_name].sum()
+
+    # scaling is done to account for difference in size of groups
+    scaling_factor = 1.0
+    if pretest_control_sum > 1e-9:
+      # look at pre-test period and calculate ratio
+      scaling_factor = pretest_treatment_sum / pretest_control_sum
+    else:
+      logger.warning(
+          "Pre-test control sum for metric '%s' is near zero. Cannot compute"
+          " scaling factor, using 1.0.",
+          metric_column_name,
+      )
+
+    test_df = adapted_long_format_df[
+        adapted_long_format_df[semantic_kwargs["key_period"]]
+        == semantic_kwargs["period_test"]
+    ]
+    test_control_sum = test_df[
+        test_df[semantic_kwargs["key_group"]]
+        == semantic_kwargs["group_control"]
+    ][metric_column_name].sum()
+
+    return test_control_sum * scaling_factor
 
   def _get_empty_analysis_result_row(
       self,
