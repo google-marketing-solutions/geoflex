@@ -40,10 +40,33 @@ automatic_scaling:
 #   B - 24 hours
 app_engine_apis: true
 
+handlers:
+  - url: /(assets|icons|fonts)/(.*)
+    static_files: dist/\1/\2
+    upload: dist/.*
+    secure: always
+    http_headers:
+      Cache-Control: "no-store, max-age=0"
+      Pragma: "no-cache"
+      Expires: "0"
+      X-Static-Handler: "1"
+  - url: /
+    static_files: dist/index.html
+    upload: dist/index.html
+    secure: always
+    expiration: 0s
+    http_headers:
+      Cache-Control: "no-store, max-age=0"
+      Pragma: "no-cache"
+      Expires: "0"
+      X-Static-Handler: "1"
+  - url: /.*
+    script: auto
+
 env_variables:
   CONFIG: gs://$PROJECT_ID/geoflex/config.json
-  GIT_COMMIT: 
+  GIT_COMMIT: 8e0430c0f09ad456007773323675d0594a4d6125
   LOG_LEVEL: DEBUG
   PYTHONPATH: server
 
-entrypoint: gunicorn -b :$PORT -k uvicorn.workers.UvicornWorker server:app --timeout 0 --workers 2
+entrypoint: gunicorn -b :$PORT -k uvicorn.workers.UvicornWorker server:app --timeout 0 --workers 3
