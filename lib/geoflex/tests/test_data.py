@@ -312,6 +312,31 @@ def test_geo_performance_dataset_from_pivoted_data_returns_correct_data(
   )
 
 
+def test_remove_small_geos(raw_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data, allow_missing_dates=True)
+  # Total revenue for US is 300, for CA is 700.
+  # With a threshold of 500, US should be removed.
+  filtered_dataset = geo_dataset.remove_small_geos("revenue", 500)
+  assert filtered_dataset.geos == ["CA"]
+  assert "US" not in filtered_dataset.geos
+  pd.testing.assert_frame_equal(
+      filtered_dataset.data, raw_data[raw_data["geo_id"] == "CA"]
+  )
+  assert filtered_dataset.allow_missing_dates
+
+
+def test_remove_small_geos_raises_error_for_missing_metric(raw_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
+  with pytest.raises(ValueError, match="Metric column not_a_metric not found"):
+    geo_dataset.remove_small_geos("not_a_metric", 500)
+
+
+def test_remove_small_geos_raises_error_if_no_geos_left(raw_data):
+  geo_dataset = GeoPerformanceDataset(data=raw_data)
+  with pytest.raises(ValueError, match="No geos left after filtering"):
+    geo_dataset.remove_small_geos("revenue", 1000)
+
+
 @pytest.fixture(name="default_design")
 def default_design_fixture():
   """Fixture for a default experiment design."""

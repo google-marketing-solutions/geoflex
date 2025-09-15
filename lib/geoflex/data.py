@@ -336,6 +336,59 @@ class GeoPerformanceDataset(pydantic.BaseModel):
         date_column=date_column,
     )
 
+  def remove_small_geos(
+      self, metric_column: str, threshold: float
+  ) -> "GeoPerformanceDataset":
+    """Removes geos with low total values for a given metric.
+
+    Args:
+      metric_column: The name of the metric column to use for filtering.
+      threshold: The minimum total value for a geo to be included.
+
+    Returns:
+      A new GeoPerformanceDataset with the small geos removed.
+
+    Raises:
+      ValueError: If the metric_column is not in the data.
+    """
+    if metric_column not in self.parsed_data.columns:
+      error_message = f"Metric column {metric_column} not found in the data."
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    geo_totals = self.parsed_data.groupby(self.geo_id_column)[
+        metric_column
+    ].sum()
+    geos_to_keep = geo_totals[geo_totals >= threshold].index.tolist()
+
+    geos_to_remove = sorted(list(set(self.geos) - set(geos_to_keep)))
+    logger.info(
+        "Initial number of geos: %d. Threshold: %.2f.",
+        len(self.geos),
+        threshold,
+    )
+    if geos_to_remove:
+      removed_geos_values = geo_totals[geos_to_remove].to_dict()
+      logger.info(
+          "Removing %d geos: %s", len(geos_to_remove), removed_geos_values
+      )
+
+    if not geos_to_keep:
+      error_message = "No geos left after filtering."
+      logger.error(error_message)
+      raise ValueError(error_message)
+
+    filtered_data = self.data[
+        self.data[self.geo_id_column].astype(str).isin(geos_to_keep)
+    ].copy()
+
+    return GeoPerformanceDataset(
+        data=filtered_data,
+        geo_id_column=self.geo_id_column,
+        date_column=self.date_column,
+        allow_missing_dates=self.allow_missing_dates,
+    )
+
   def get_pivoted_treatment_data(
       self, design: ExperimentDesign, experiment_start_date: dt.date
   ) -> list[pd.DataFrame]:

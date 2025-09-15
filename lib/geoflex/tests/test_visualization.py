@@ -70,3 +70,43 @@ def test_display_analysis_results_works(experiment_design, performance_data):
   )
   assert isinstance(visualization, pd.io.formats.style.Styler)
   assert visualization.to_html()  # Check that the html can be generated
+
+
+def test_plot_geo_timeseries_returns_correct_plot(performance_data):
+  ax = geoflex.visualization.plot_geo_timeseries(
+      performance_data, "revenue", geos=["geo_1", "geo_2"]
+  )
+  assert isinstance(ax, geoflex.visualization.plt.Axes)
+  assert ax.get_title() == "Timeseries for revenue"
+  assert ax.get_xlabel() == "Date"
+  assert ax.get_ylabel() == "revenue"
+
+
+def test_plot_geo_timeseries_with_no_geos(performance_data):
+  ax = geoflex.visualization.plot_geo_timeseries(performance_data, "revenue")
+  assert isinstance(ax, geoflex.visualization.plt.Axes)
+  assert len(ax.lines) == 20  # 20 geos in the performance_data fixture
+
+
+def test_plot_geo_timeseries_raises_error_for_invalid_metric(performance_data):
+  with pytest.raises(
+      ValueError, match="Metric column invalid_metric not found"
+  ):
+    geoflex.visualization.plot_geo_timeseries(
+        performance_data, "invalid_metric"
+    )
+
+
+def test_plot_geo_timeseries_raises_error_for_invalid_geos(performance_data):
+  with pytest.raises(ValueError, match="Geos {'invalid_geo'} not found"):
+    geoflex.visualization.plot_geo_timeseries(
+        performance_data, "revenue", geos=["invalid_geo"]
+    )
+
+
+def test_plot_geo_timeseries_uses_provided_ax(performance_data):
+  _, ax = geoflex.visualization.plt.subplots()
+  returned_ax = geoflex.visualization.plot_geo_timeseries(
+      performance_data, "revenue", ax=ax
+  )
+  assert ax is returned_ax

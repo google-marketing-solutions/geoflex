@@ -14,8 +14,15 @@
 
 """Module containing functions for visualizing experiment analysis results."""
 
+import logging
+from geoflex import data
+import matplotlib.pyplot as plt
 import pandas as pd
 from pandas.io.formats import style
+
+
+logger = logging.getLogger(__name__)
+GeoPerformanceDataset = data.GeoPerformanceDataset
 
 
 def _format_relative_effect_ci_string(
@@ -184,3 +191,57 @@ def display_analysis_results(
       )
       .apply(_highlight_significant, axis=1)
   )
+
+
+def plot_geo_timeseries(
+    dataset: GeoPerformanceDataset,
+    metric_column: str,
+    geos: list[str] | None = None,
+    ax: plt.Axes | None = None,
+    show_legend: bool = True,
+) -> plt.Axes:
+  """Plots the timeseries for a given metric for a set of geos.
+
+  Args:
+    dataset: The GeoPerformanceDataset.
+    metric_column: The name of the metric column to plot.
+    geos: An optional list of geos to plot. If not provided, all geos will be
+      plotted.
+    ax: An optional matplotlib axes object to plot on. If not provided, a new
+      figure and axes will be created.
+    show_legend: Whether to show the legend.
+
+  Returns:
+    The matplotlib axes object.
+
+  Raises:
+    ValueError: If the metric_column is not in the data or if any of the geos
+      are not in the data.
+  """
+  if metric_column not in dataset.pivoted_data.columns.levels[0]:
+    error_message = f"Metric column {metric_column} not found in the data."
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  plot_data = dataset.pivoted_data[metric_column]
+  if geos is not None:
+    invalid_geos = set(geos) - set(dataset.geos)
+    if invalid_geos:
+      error_message = f"Geos {invalid_geos} not found in the data."
+      logger.error(error_message)
+      raise ValueError(error_message)
+    plot_data = plot_data[geos]
+
+  if ax is None:
+    fig, ax = plt.subplots(figsize=(12, 6), constrained_layout=True)
+
+  for geo in plot_data.columns:
+    ax.plot(plot_data.index, plot_data[geo], label=geo)
+
+  ax.set_title(f"Timeseries for {metric_column}")
+  ax.set_xlabel("Date")
+  ax.set_ylabel(metric_column)
+  if show_legend:
+    ax.legend()
+  plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+  return ax
