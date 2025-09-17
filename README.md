@@ -1,6 +1,6 @@
 # GeoFleX: A flexible and unified geo-experiment solution
 
-**Disclaimer: This is not an official Google product.**
+**Disclaimer: This is not an officially supported Google product. This project is not eligible for the Google Open Source Software Vulnerability Rewards Program.**
 
 ## What is GeoFleX?
 
