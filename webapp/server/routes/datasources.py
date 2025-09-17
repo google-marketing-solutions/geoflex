@@ -14,9 +14,11 @@
 """API routes for working with data sources."""
 
 # pylint: disable=C0330, g-bad-import-order, g-multiple-import, g-importing-member
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from pydantic import BaseModel
 from typing import Any
+import csv
+import io
 from models.datasources import DataSource, ColumnSchema
 from services.datasources import DataSourceService
 from logger import logger
@@ -109,6 +111,42 @@ async def get_datasource_data(
   if not data:
     raise HTTPException(status_code=404, detail='Data not found')
   return data
+
+
+@router.get('/{id}/download')
+# pylint: disable=W0622
+async def download_datasource_data(
+    id: str, service: DataSourceService = Depends(get_datasource_service)
+) -> Response:
+  """Download the data source's data as a CSV file."""
+  logger.debug('downloading data for data source %s', id)
+  data = await service.load_datasource_data(id)
+  if not data:
+    raise HTTPException(status_code=404, detail='Data not found')
+
+  # Create a string buffer to hold the CSV data
+  output = io.StringIO()
+  writer = csv.writer(output)
+
+  # Write the header row
+  if data:
+    writer.writerow(data[0].keys())
+    # Write the data rows
+    for row in data:
+      writer.writerow(row.values())
+
+  # Get the CSV data as a string
+  csv_data = output.getvalue()
+
+  # Return the CSV data as a response
+  filename = f'{id}.csv'
+  return Response(
+      content=csv_data,
+      media_type='text/csv',
+      headers={
+          'Content-Disposition': f'attachment; filename={filename}',
+          'filename': filename
+      })
 
 
 @router.get('/preview')
