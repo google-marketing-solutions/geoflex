@@ -49,8 +49,6 @@ def capture_warnings(warning_prefix: str = "") -> None:
     warning_prefix: A prefix to add to the warning message.
   """
   with warnings.catch_warnings(record=True) as warning_list:
-    warnings.simplefilter("always")
-
     yield
 
     for item in warning_list:
