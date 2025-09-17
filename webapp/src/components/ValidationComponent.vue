@@ -41,10 +41,12 @@
         <q-banner v-else class="bg-negative text-white">
           <div class="text-weight-bold">Date Range Mismatch:</div>
           <div>
-            Experiment time frame: {{ validation.dates.required.start }} - {{ validation.dates.required.end }}
+            Experiment time frame: {{ validation.dates.required.start }} -
+            {{ validation.dates.required.end }}
           </div>
           <div>
-            Data source time frame: {{ validation.dates.actual.start }} - {{ validation.dates.actual.end }}
+            Data source time frame: {{ validation.dates.actual.start }} -
+            {{ validation.dates.actual.end }}
           </div>
         </q-banner>
       </div>

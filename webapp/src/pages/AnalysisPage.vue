@@ -77,6 +77,11 @@
               :loading="dataSourcesStore.loading"
               @popup-show="loadDataSourcesOnOpen"
               @update:model-value="handleDataSourceChange"
+              use-input
+              fill-input
+              hide-selected
+              input-debounce="0"
+              @filter="filterFn"
             >
               <template v-slot:option="scope">
                 <q-item v-bind="scope.itemProps">
@@ -387,13 +392,16 @@ interface AnalysisResult {
 }
 
 const selectedDesign = ref<SavedDesign | null>(null);
-const selectedDataSource = ref<DataSource | null>(null);
 const experimentStartDate = ref<string | null>(null);
 const experimentEndDate = ref<string | null>(null);
 const analysisResults = ref<AnalysisResult[] | null>(null);
 const analysisLogs = ref<LogEntry[]>([]);
+
+const selectedDataSource = ref<DataSource | null>(null);
 const dataSourceLoaded = ref(false);
-const dataSourceOptions = computed(() => dataSourcesStore.datasources);
+const allDataSourceOptions = computed(() => dataSourcesStore.datasources);
+const dataSourceOptions = ref<DataSource[]>(allDataSourceOptions.value);
+
 const validationResult = ref<ValidationResult | null>(null);
 const validationComponent = ref<InstanceType<typeof ValidationComponent> | null>(null);
 const startDateProxy = ref<QPopupProxy | null>(null);
@@ -433,6 +441,22 @@ async function loadDataSourcesOnOpen() {
     await dataSourcesStore.loadDataSources();
   }
 }
+watch(allDataSourceOptions, (newVal) => {
+  dataSourceOptions.value = newVal;
+});
+
+const filterFn = (val: string, update: (callback: () => void) => void) => {
+  update(() => {
+    if (val === '') {
+      dataSourceOptions.value = allDataSourceOptions.value;
+    } else {
+      const needle = val.toLowerCase();
+      dataSourceOptions.value = allDataSourceOptions.value.filter(
+        (v) => v.name.toLowerCase().indexOf(needle) > -1,
+      );
+    }
+  });
+};
 
 // Data source handling
 const handleDataSourceChange = async (dataSource: DataSource) => {
