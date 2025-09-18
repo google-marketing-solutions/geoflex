@@ -19,7 +19,7 @@
     <q-stepper v-model="step" vertical color="primary" animated>
       <!-- Step 1: Basic Information -->
       <q-step :name="1" title="Basic Information" icon="settings" :done="step > 1">
-        <q-card flat bordered>
+        <q-card flat>
           <q-card-section>
             <div class="row q-col-gutter-md">
               <div class="col-12 col-md-6">
@@ -54,23 +54,7 @@
               </div>
             </div>
           </q-card-section>
-        </q-card>
-
-        <q-stepper-navigation>
-          <q-btn
-            color="primary"
-            label="Continue"
-            @click="step = isEditing ? 3 : 2"
-            :disable="!currentDataSource.name"
-          />
-          <q-btn flat color="primary" label="Cancel" class="q-ml-sm" @click="onCancel" />
-        </q-stepper-navigation>
-      </q-step>
-
-      <!-- Step 2: Data Import (only for new data sources) -->
-      <q-step v-if="!isEditing" :name="2" title="Data Import" icon="cloud_upload" :done="step > 2">
-        <q-card flat bordered>
-          <q-card-section>
+          <q-card-section v-if="!isEditing">
             <div v-if="currentDataSource.sourceType === DataSourceType.Internal">
               <p class="text-body1 q-mb-md">
                 Upload a CSV file containing your geo-attributed time series data.
@@ -131,22 +115,21 @@
           <q-btn
             color="primary"
             label="Continue"
-            @click="step = 3"
+            @click="step = 2"
             :disable="!canContinueFromImport"
           />
-          <q-btn flat color="primary" label="Back" class="q-mr-sm" @click="step = 1" />
           <q-btn flat color="primary" label="Cancel" class="q-ml-sm" @click="onCancel" />
         </q-stepper-navigation>
       </q-step>
 
-      <!-- Step 3: Data Preview and Column Configuration -->
-      <q-step :name="3" title="Data Preview and Column Configuration" icon="tune" :done="step > 3">
-        <q-card flat bordered>
+      <!-- Step 2: Data Preview and Column Configuration -->
+      <q-step :name="2" title="Data Preview and Column Configuration" icon="tune" :done="step > 2">
+        <q-card flat>
           <q-card-section>
             <div v-if="rawData.length && columns.length">
               <div class="row q-col-gutter-md">
                 <!-- Column Configuration -->
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-6">
                   <div class="text-h6 q-mb-md">Column Configuration</div>
                   <q-list bordered separator>
                     <q-item v-for="col in columns" :key="col.name">
@@ -170,48 +153,20 @@
                   </div>
                 </div>
 
-                <!-- Data Preview -->
-                <div class="col-12 col-md-8">
-                  <div class="text-h6 q-mb-md">Data Preview</div>
-                  <q-table
-                    :rows="rawData"
-                    :columns="dataPreviewColumns"
-                    row-key="__index"
-                    dense
-                    :pagination="{ rowsPerPage: 10 }"
-                  >
-                    <template v-slot:top>
-                      <q-input v-model="search" debounce="300" placeholder="Search" dense filled>
-                        <template v-slot:append>
-                          <q-icon name="search" />
-                        </template>
-                      </q-input>
-                    </template>
-                  </q-table>
-                </div>
-              </div>
-
-              <div class="row q-col-gutter-md q-mt-lg">
-                <div class="col-12 col-md-4">
-                  <q-card class="bg-primary text-white">
+                <div class="col-12 col-md-4 offset-md-1">
+                  <q-card class="bg-primary text-white q-mt-lg">
                     <q-card-section>
                       <div class="text-h6">Total Rows</div>
                       <div class="text-h4">{{ rawData.length }}</div>
                     </q-card-section>
                   </q-card>
-                </div>
-
-                <div class="col-12 col-md-4">
-                  <q-card class="bg-secondary text-white">
+                  <q-card class="bg-secondary text-white q-mt-lg">
                     <q-card-section>
                       <div class="text-h6">Geo Units</div>
                       <div class="text-h4">{{ geoUnits.length }}</div>
                     </q-card-section>
                   </q-card>
-                </div>
-
-                <div class="col-12 col-md-4">
-                  <q-card class="bg-accent text-white">
+                  <q-card class="bg-accent text-white q-mt-lg">
                     <q-card-section>
                       <div class="text-h6">Date Range</div>
                       <div class="text-h4">
@@ -226,6 +181,62 @@
                 </div>
               </div>
 
+              <div class="row q-col-gutter-md q-mt-lg">
+                <div class="col-12 col-md-4"></div>
+
+                <div class="col-12 col-md-4"></div>
+
+                <div class="col-12 col-md-4"></div>
+              </div>
+              <div class="row">
+                <!-- Data Preview -->
+                <div class="col">
+                  <div class="text-h6 q-mb-md">Data Preview</div>
+                  <q-table
+                    ref="dataPreviewTable"
+                    :rows="processedRawData"
+                    :columns="dataPreviewColumns"
+                    row-key="__index"
+                    dense
+                    :pagination="{ rowsPerPage: 10 }"
+                  >
+                    <template v-slot:top>
+                      <q-input v-model="search" debounce="300" placeholder="Search" dense filled>
+                        <template v-slot:append>
+                          <q-icon name="search" />
+                        </template>
+                      </q-input>
+                    </template>
+                    <template v-slot:body="props">
+                      <q-tr
+                        :props="props"
+                        :class="{ 'highlighted-row': props.row.__index === highlightedRow }"
+                      >
+                        <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                          <div v-if="col.name === 'status'">
+                            <q-icon
+                              v-if="props.row.errors && props.row.errors.length > 0"
+                              name="warning"
+                              color="warning"
+                            >
+                              <q-tooltip>
+                                <div v-for="(error, index) in props.row.errors" :key="index">
+                                  {{ error }}
+                                </div>
+                              </q-tooltip>
+                            </q-icon>
+                          </div>
+                          <div v-else>
+                            {{ col.value }}
+                          </div>
+                        </q-td>
+                      </q-tr>
+                    </template>
+                  </q-table>
+                </div>
+              </div>
+
+              <!-- Validation Errors (Data Quality Issues) -->
               <div class="q-my-md">
                 <q-btn
                   label="Validate Data"
@@ -237,52 +248,100 @@
               </div>
 
               <div v-if="dataQualityIssues.length > 0" class="q-mt-md">
-                <q-banner class="bg-warning text-white">
-                  <template v-slot:avatar>
-                    <q-icon name="warning" />
-                  </template>
-                  <div class="text-subtitle1 q-mb-sm">Data Quality Issues</div>
-                  <ul class="q-mt-none q-mb-none">
-                    <li v-for="(issue, index) in dataQualityIssues" :key="index">
-                      {{ issue.message }}
-                    </li>
-                  </ul>
-                  <div class="q-mt-sm">
-                    <q-btn
-                      label="Attempt to Fix Issues"
-                      color="primary"
-                      @click="openFixDialog"
-                      :loading="isFixingIssues"
-                      icon="auto_fix_high"
-                    />
-                  </div>
-                </q-banner>
+                <q-card flat bordered>
+                  <q-card-section>
+                    <div class="text-h6 q-mb-sm">Data Quality Issues</div>
+                    <q-banner class="bg-info text-white">
+                      Please fix validation errors before continue. Found
+                      {{ dataQualityIssues.filter((i) => i.isFixable).length }} fixable and
+                      {{ dataQualityIssues.filter((i) => !i.isFixable).length }} unfixable errors.
+                    </q-banner>
+                    <q-table
+                      :rows="dataQualityIssues"
+                      :columns="issueColumns"
+                      row-key="rowIndex"
+                      dense
+                      flat
+                      :pagination="{ rowsPerPage: 10 }"
+                      :filter="issueFilter"
+                      :filter-method="filterIssues"
+                    >
+                      <template v-slot:top>
+                        <div class="q-gutter-sm row">
+                          <q-select
+                            v-model="issueFilter.type"
+                            :options="issueTypeOptions"
+                            label="Filter by Type"
+                            emit-value
+                            map-options
+                            clearable
+                            dense
+                            outlined
+                            style="min-width: 200px"
+                          />
+                          <q-select
+                            v-model="issueFilter.fixable"
+                            :options="[
+                              { label: 'All', value: null },
+                              { label: 'Fixable', value: true },
+                              { label: 'Not Fixable', value: false },
+                            ]"
+                            label="Filter by Fixable"
+                            emit-value
+                            map-options
+                            clearable
+                            dense
+                            outlined
+                            style="min-width: 200px"
+                          />
+                        </div>
+                      </template>
+                      <template v-slot:body-cell-rowIndex="props">
+                        <q-td :props="props" v-if="props.row.row">
+                          <q-btn
+                            flat
+                            dense
+                            color="primary"
+                            @click="scrollToRow(props.row.rowIndex)"
+                            :label="props.row.rowIndex + 1"
+                          >
+                            <q-tooltip v-if="props.row.row">
+                              <div v-for="(value, key) in props.row.row" :key="key">
+                                <strong>{{ key }}</strong
+                                >: {{ value }}
+                              </div>
+                            </q-tooltip>
+                          </q-btn>
+                        </q-td>
+                        <q-td v-else class="text-right">---</q-td>
+                      </template>
+                    </q-table>
+                    <div class="q-mt-sm">
+                      <q-btn
+                        label="Attempt to Fix Issues"
+                        color="primary"
+                        @click="openFixDialog"
+                        :loading="isFixingIssues"
+                        icon="auto_fix_high"
+                      />
+                    </div>
+                  </q-card-section>
+                </q-card>
               </div>
             </div>
           </q-card-section>
         </q-card>
 
         <q-stepper-navigation>
-          <q-btn
-            color="primary"
-            label="Continue"
-            @click="step = 4"
-            :disable="!isColumnConfigValid"
-          />
-          <q-btn
-            flat
-            color="primary"
-            label="Back"
-            class="q-mr-sm"
-            @click="step = isEditing ? 1 : 2"
-          />
+          <q-btn color="primary" label="Continue" @click="step = 3" :disable="!isFormValid" />
+          <q-btn flat color="primary" label="Back" class="q-mr-sm" @click="step = 1" />
           <q-btn flat color="primary" label="Cancel" class="q-ml-sm" @click="onCancel" />
         </q-stepper-navigation>
       </q-step>
 
-      <!-- Step 4: Save -->
-      <q-step :name="4" title="Save" icon="save">
-        <q-card flat bordered>
+      <!-- Step 3: Save -->
+      <q-step :name="3" title="Save" icon="save">
+        <q-card flat>
           <q-card-section>
             <div class="text-h6 q-mb-md">Review and Save</div>
             <p class="text-body1">
@@ -297,6 +356,7 @@
               <li v-if="currentDataSource.columns.costColumn">
                 Cost Column: {{ currentDataSource.columns.costColumn }}
               </li>
+              <li>Data: {{ rawData.length }} rows</li>
             </ul>
           </q-card-section>
         </q-card>
@@ -359,13 +419,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { useQuasar } from 'quasar';
+import { ref, computed, onMounted, nextTick } from 'vue';
+import { QTable, useQuasar } from 'quasar';
 import { formatDate } from 'src/helpers/utils';
 
 enum DataQualityIssueType {
   MissingGeo = 'MissingGeo',
   MissingDate = 'MissingDate',
+  MissingCost = 'MissingCost',
   MissingMetric = 'MissingMetric',
   InvalidDateFormat = 'InvalidDateFormat',
   NonNumericMetric = 'NonNumericMetric',
@@ -376,7 +437,10 @@ enum DataQualityIssueType {
 interface DataQualityIssue {
   type: DataQualityIssueType;
   message: string;
-  isUnfixableFormatError?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  row?: any;
+  rowIndex?: number;
+  isFixable: boolean;
 }
 import { parse } from 'csv-parse/browser/esm';
 import type { DataSource } from 'stores/datasources';
@@ -416,6 +480,8 @@ const errorMessage = ref('');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const rawData = ref<any[]>([]);
 const columns = ref<{ name: string; label: string; field: string }[]>([]);
+const dataPreviewTable = ref<QTable | null>(null);
+const highlightedRow = ref<number | null>(null);
 const search = ref('');
 const loadingExternalData = ref(false);
 const externalSourceUrl = ref('');
@@ -443,14 +509,14 @@ const fixSelectionArray = computed({
     if (fixSelection.value.removeMissingCritical) arr.push('removeMissingCritical');
     if (fixSelection.value.fillMissingMetrics) arr.push('fillMissingMetrics');
     if (fixSelection.value.fillDateGaps) arr.push('fillDateGaps');
-    if (fixSelection.value.deduplicateRows) arr.push('deduplicateRows'); // Added deduplicateRows
+    if (fixSelection.value.deduplicateRows) arr.push('deduplicateRows');
     return arr;
   },
   set: (val: string[]) => {
     fixSelection.value.removeMissingCritical = val.includes('removeMissingCritical');
     fixSelection.value.fillMissingMetrics = val.includes('fillMissingMetrics');
     fixSelection.value.fillDateGaps = val.includes('fillDateGaps');
-    fixSelection.value.deduplicateRows = val.includes('deduplicateRows'); // Added deduplicateRows
+    fixSelection.value.deduplicateRows = val.includes('deduplicateRows');
   },
 });
 
@@ -468,7 +534,8 @@ const availableFixTypes = computed(() => {
     currentIssues.some(
       (issue) =>
         issue.type === DataQualityIssueType.MissingGeo ||
-        issue.type === DataQualityIssueType.MissingDate,
+        issue.type === DataQualityIssueType.MissingDate ||
+        issue.type === DataQualityIssueType.MissingCost,
     )
   ) {
     types.removeMissingCritical = true;
@@ -486,7 +553,7 @@ const availableFixTypes = computed(() => {
     types.deduplicateRows = true;
   }
 
-  if (currentIssues.some((issue) => issue.isUnfixableFormatError === true)) {
+  if (currentIssues.some((issue) => !issue.isFixable)) {
     types.removeMissingCritical = false;
     types.fillMissingMetrics = false;
     types.fillDateGaps = false;
@@ -498,7 +565,7 @@ const availableFixTypes = computed(() => {
 
 const fixSelectionOptions = computed(() => [
   {
-    label: 'Remove rows with missing Geo/Date',
+    label: 'Remove rows with missing Geo/Date/Cost',
     value: 'removeMissingCritical',
     disable: !availableFixTypes.value.removeMissingCritical,
   },
@@ -508,7 +575,7 @@ const fixSelectionOptions = computed(() => [
     disable: !availableFixTypes.value.fillMissingMetrics,
   },
   {
-    label: 'Fill date gaps with 0-value entries',
+    label: 'Fill date gaps with empty entries',
     value: 'fillDateGaps',
     disable: !availableFixTypes.value.fillDateGaps,
   },
@@ -544,71 +611,70 @@ const columnRoleOptions = [
 ];
 
 const dataPreviewColumns = computed(() => {
-  return columns.value.map((col) => ({
-    ...col,
-    sortable: true,
+  return [
+    { name: 'status', label: 'Status', field: 'status' },
+    ...columns.value.map((col) => ({
+      ...col,
+      sortable: true,
+    })),
+  ];
+});
+
+// extended datasource rows array with validation errors grouped by row
+const processedRawData = computed(() => {
+  const issuesByRow = new Map<number, string[]>();
+  dataQualityIssues.value.forEach((issue) => {
+    if (issue.rowIndex !== undefined) {
+      if (!issuesByRow.has(issue.rowIndex)) {
+        issuesByRow.set(issue.rowIndex, []);
+      }
+      issuesByRow.get(issue.rowIndex)?.push(issue.message);
+    }
+  });
+
+  return rawData.value.map((row, index) => ({
+    ...row,
+    errors: issuesByRow.get(index) || [],
   }));
 });
+
 const geoUnits = ref<string[]>([]);
 const uniqueDates = ref<string[]>([]);
 
 const dataQualityIssues = computed((): DataQualityIssue[] => {
-  const collectedIssues: DataQualityIssue[] = [];
-  if (rawData.value.length === 0) return collectedIssues;
+  const issues: DataQualityIssue[] = [];
+  if (rawData.value.length === 0) return issues;
 
-  const { dateColumn, geoColumn, metricColumns } = currentDataSource.value.columns;
-  let hasUnfixableFormatErrorFlag = false;
-  const encounteredGenericIssueMessages = new Set<string>();
+  const { dateColumn, geoColumn, metricColumns, costColumn } = currentDataSource.value.columns;
 
-  // --- Phase 1: Identify All Potential Issues (Missing, Malformed) ---
+  // Phase 1: Row-level validation
   for (let i = 0; i < rawData.value.length; i++) {
     const row = rawData.value[i];
-    const rowIndexStr = `Row ${i + 1}`;
 
     // Date Column
     if (dateColumn) {
       const dateVal = row[dateColumn];
       if (dateVal === undefined || dateVal === null || String(dateVal).trim() === '') {
-        const msg = `Missing values in Date Column '${dateColumn}'. Fixable by removing rows.`;
-        if (!encounteredGenericIssueMessages.has(msg)) {
-          collectedIssues.push({ type: DataQualityIssueType.MissingDate, message: msg });
-          encounteredGenericIssueMessages.add(msg);
-        }
+        issues.push({
+          type: DataQualityIssueType.MissingDate,
+          message: `Missing date value.`,
+          row,
+          rowIndex: i,
+          isFixable: true,
+        });
       } else {
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (
           !dateRegex.test(String(dateVal)) ||
           isNaN(new Date(dateVal as string | number | Date).getTime())
         ) {
-          collectedIssues.push({
+          issues.push({
             type: DataQualityIssueType.InvalidDateFormat,
-            message: `${rowIndexStr}: Invalid date format in '${dateColumn}' column: '${String(
-              dateVal,
-            )}'. Expected YYYY-MM-DD.`,
-            isUnfixableFormatError: true,
+            message: `Invalid date format: '${String(dateVal)}'. Expected YYYY-MM-DD.`,
+            row,
+            rowIndex: i,
+            isFixable: false,
           });
-          hasUnfixableFormatErrorFlag = true;
-        }
-      }
-    }
-
-    // Metric Columns
-    if (metricColumns.length > 0) {
-      for (const metric of metricColumns) {
-        const metricVal = row[metric];
-        if (metricVal === undefined || metricVal === null) {
-          const msg = `Missing values in Metric Column '${metric}'. Fixable by filling with 0.`;
-          if (!encounteredGenericIssueMessages.has(msg)) {
-            collectedIssues.push({ type: DataQualityIssueType.MissingMetric, message: msg });
-            encounteredGenericIssueMessages.add(msg);
-          }
-        } else if (typeof metricVal !== 'number') {
-          collectedIssues.push({
-            type: DataQualityIssueType.NonNumericMetric,
-            message: `${rowIndexStr}: Non-numeric value in Metric column '${metric}': '${metricVal}'.`,
-            isUnfixableFormatError: true,
-          });
-          hasUnfixableFormatErrorFlag = true;
         }
       }
     }
@@ -617,186 +683,193 @@ const dataQualityIssues = computed((): DataQualityIssue[] => {
     if (geoColumn) {
       const geoVal = row[geoColumn];
       if (geoVal === undefined || geoVal === null || String(geoVal).trim() === '') {
-        const msg = `Missing values in Geo Column '${geoColumn}'. Fixable by removing rows.`;
-        if (!encounteredGenericIssueMessages.has(msg)) {
-          collectedIssues.push({ type: DataQualityIssueType.MissingGeo, message: msg });
-          encounteredGenericIssueMessages.add(msg);
-        }
-      }
-    }
-  }
-
-  if (hasUnfixableFormatErrorFlag) {
-    const displayIssuesWhenCritical: DataQualityIssue[] = [];
-    displayIssuesWhenCritical.push({
-      type: DataQualityIssueType.InvalidDateFormat,
-      message:
-        'Critical data format errors found (e.g., unparsable dates, non-numeric metrics). These must be corrected. Other checks are paused.',
-      isUnfixableFormatError: true,
-    });
-
-    collectedIssues.forEach((issue) => {
-      if (issue.isUnfixableFormatError && issue.message !== displayIssuesWhenCritical[0].message) {
-        displayIssuesWhenCritical.push(issue);
-      }
-    });
-
-    if (
-      dateColumn &&
-      encounteredGenericIssueMessages.has(
-        `Missing values in Date Column '${dateColumn}'. Fixable by removing rows.`,
-      )
-    ) {
-      displayIssuesWhenCritical.push({
-        type: DataQualityIssueType.MissingDate,
-        message: `Missing values in Date Column '${dateColumn}'. Fixable by removing rows.`,
-      });
-    }
-    if (
-      geoColumn &&
-      encounteredGenericIssueMessages.has(
-        `Missing values in Geo Column '${geoColumn}'. Fixable by removing rows.`,
-      )
-    ) {
-      displayIssuesWhenCritical.push({
-        type: DataQualityIssueType.MissingGeo,
-        message: `Missing values in Geo Column '${geoColumn}'. Fixable by removing rows.`,
-      });
-    }
-    metricColumns.forEach((metric) => {
-      if (
-        encounteredGenericIssueMessages.has(
-          `Missing values in Metric Column '${metric}'. Fixable by filling with 0.`,
-        )
-      ) {
-        displayIssuesWhenCritical.push({
-          type: DataQualityIssueType.MissingMetric,
-          message: `Missing values in Metric Column '${metric}'. Fixable by filling with 0.`,
+        issues.push({
+          type: DataQualityIssueType.MissingGeo,
+          message: `Missing geo value.`,
+          row,
+          rowIndex: i,
+          isFixable: true,
         });
       }
-    });
-
-    const finalDisplayMessages = new Set<string>();
-    return displayIssuesWhenCritical.filter((issue) => {
-      if (finalDisplayMessages.has(issue.message)) return false;
-      finalDisplayMessages.add(issue.message);
-      return true;
-    });
-  }
-
-  // --- Phase 2: Integrity Checks (Date Gaps, Duplicates) ---
-  const phase2IntegrityIssues: DataQualityIssue[] = [];
-
-  // Date Gaps
-  if (dateColumn && rawData.value.length > 1) {
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    const validDateRows = rawData.value.filter((row) => {
-      const dateVal = row[dateColumn];
-      return (
-        dateVal !== undefined &&
-        dateVal !== null &&
-        String(dateVal).trim() !== '' &&
-        dateRegex.test(String(dateVal)) &&
-        !isNaN(new Date(dateVal as string | number | Date).getTime())
-      );
-    });
-
-    if (validDateRows.length > 1) {
-      const dataSorted = [...validDateRows].sort((a, b) => {
-        if (geoColumn && a[geoColumn] !== b[geoColumn]) {
-          if (a[geoColumn] == null && b[geoColumn] != null) return 1;
-          if (a[geoColumn] != null && b[geoColumn] == null) return -1;
-          if (a[geoColumn] == null && b[geoColumn] == null) return 0;
-          return String(a[geoColumn]).localeCompare(String(b[geoColumn]));
-        }
-        return (
-          new Date(a[dateColumn] as string | number | Date).getTime() -
-          new Date(b[dateColumn] as string | number | Date).getTime()
-        );
-      });
-
-      let lastDateObj: Date | null = null;
-      let lastGeoVal: string | null = null;
-      const dateGapMessages = new Set<string>();
-      for (const currentRow of dataSorted) {
-        const currentDateObj = new Date(currentRow[dateColumn] as string | number | Date);
-        const currentGeoVal = geoColumn
-          ? String(currentRow[geoColumn] ?? '__NULL_GEO__')
-          : '__NO_GEO__';
-        if (lastDateObj && (geoColumn ? currentGeoVal === lastGeoVal : true)) {
-          const diffTime = currentDateObj.getTime() - lastDateObj.getTime();
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays > 1) {
-            dateGapMessages.add(
-              `Date gap detected${geoColumn && lastGeoVal !== '__NULL_GEO__' ? ` for Geo: '${lastGeoVal}'` : ''} between ${lastDateObj.toISOString().split('T')[0]} and ${currentDateObj.toISOString().split('T')[0]} (${diffDays - 1} missing day(s)).`,
-            );
-          }
-        }
-        lastDateObj = currentDateObj;
-        lastGeoVal = currentGeoVal;
-      }
-      dateGapMessages.forEach((msg) =>
-        phase2IntegrityIssues.push({ type: DataQualityIssueType.DateGap, message: msg }),
-      );
     }
-  }
 
-  // Duplicate Geo/Date
-  if (dateColumn && geoColumn && rawData.value.length > 0) {
-    const seenCombinations = new Set<string>();
-    const duplicateRowMessages = new Set<string>();
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    const validRowsForDuplicateCheck = rawData.value.filter((row) => {
-      const dateVal = row[dateColumn];
-      const geoVal = row[geoColumn];
-      return (
-        dateVal !== undefined &&
-        dateVal !== null &&
-        String(dateVal).trim() !== '' &&
-        geoVal !== undefined &&
-        geoVal !== null &&
-        String(geoVal).trim() !== '' &&
-        dateRegex.test(String(dateVal)) &&
-        !isNaN(new Date(dateVal as string | number | Date).getTime())
-      );
-    });
-
-    for (const row of validRowsForDuplicateCheck) {
-      const dateVal = row[dateColumn];
-      const geoVal = row[geoColumn];
-      const formattedDate = new Date(dateVal as string | number | Date).toISOString().split('T')[0];
-      const sGeoVal = String(geoVal);
-      const combination = `${sGeoVal}|${formattedDate}`;
-      if (seenCombinations.has(combination)) {
-        duplicateRowMessages.add(
-          `Duplicate entry found for Geo: '${sGeoVal}', Date: '${formattedDate}'.`,
-        );
-      } else {
-        seenCombinations.add(combination);
+    // Metric Columns
+    if (metricColumns.length > 0) {
+      for (const metric of metricColumns) {
+        const metricVal = row[metric];
+        if (metricVal === undefined || metricVal === null || metricVal === '') {
+          issues.push({
+            type: DataQualityIssueType.MissingMetric,
+            message: `Missing value in metric column '${metric}'.`,
+            row,
+            rowIndex: i,
+            isFixable: true,
+          });
+        } else if (
+          typeof metricVal !== 'number' &&
+          (typeof metricVal !== 'string' || isNaN(Number(metricVal)))
+        ) {
+          issues.push({
+            type: DataQualityIssueType.NonNumericMetric,
+            message: `Non-numeric value in metric column '${metric}': '${metricVal}'.`,
+            row,
+            rowIndex: i,
+            isFixable: false,
+          });
+        }
       }
     }
-    duplicateRowMessages.forEach((msg) =>
-      phase2IntegrityIssues.push({ type: DataQualityIssueType.DuplicateGeoDate, message: msg }),
-    );
+
+    // Cost Column
+    if (costColumn) {
+      const costVal = row[costColumn];
+      if (!costVal) {
+        issues.push({
+          type: DataQualityIssueType.MissingCost,
+          message: `Missing value in Cost column '${costColumn}'.`,
+          row,
+          rowIndex: i,
+          isFixable: true,
+        });
+      } else if (
+        typeof costVal !== 'number' &&
+        (typeof costVal !== 'string' || isNaN(Number(costVal)))
+      ) {
+        issues.push({
+          type: DataQualityIssueType.NonNumericMetric,
+          message: `Non-numeric value in Cost column '${costColumn}': '${costVal}'.`,
+          row,
+          rowIndex: i,
+          isFixable: false,
+        });
+      }
+    }
   }
 
-  const allDetectedIssues = [
-    ...collectedIssues.filter((issue) => !issue.isUnfixableFormatError),
-    ...phase2IntegrityIssues,
-  ];
+  // If there are unfixable format errors, return only those.
+  const unfixableIssues = issues.filter((issue) => !issue.isFixable);
+  if (unfixableIssues.length > 0) {
+    return unfixableIssues;
+  }
 
-  const finalUniqueMessages = new Set<string>();
-  return allDetectedIssues.filter((issue) => {
-    if (finalUniqueMessages.has(issue.message)) {
-      return false;
+  // Phase 2: Dataset-level validation (gaps, duplicates)
+  if (dateColumn && geoColumn) {
+    const uniqueDates = [...new Set(rawData.value.map((row) => row[dateColumn]))]
+      .map((d) => new Date(d))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    // Date Gap check
+    if (uniqueDates.length > 1) {
+      const firstDate = new Date(uniqueDates[0]);
+      const lastDate = new Date(uniqueDates[uniqueDates.length - 1]);
+
+      // Create a Set for O(1) lookup of existing dates
+      const existingDates = new Set(uniqueDates.map((date) => date.toDateString()));
+
+      const missingDates: Date[] = [];
+      const currentDate = new Date(firstDate);
+      while (currentDate <= lastDate) {
+        if (!existingDates.has(currentDate.toDateString())) {
+          missingDates.push(new Date(currentDate)); // it's important to clone the object
+        }
+        // Move to next day
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      if (missingDates.length) {
+        issues.push({
+          type: DataQualityIssueType.DateGap,
+          message: `Date gaps detected. ${missingDates.length} day(s) missing: ${missingDates
+            .slice(0, 11)
+            .map((d) => d.toDateString())
+            .join(', ')}`,
+          isFixable: true,
+        });
+      }
     }
-    finalUniqueMessages.add(issue.message);
-    return true;
-  });
+
+    // Duplicate Geo-Date check
+    const geoDateCounts = new Map<string, number[]>();
+    for (let i = 0; i < rawData.value.length; i++) {
+      const row = rawData.value[i];
+      const key = `${row[geoColumn]}|${row[dateColumn]}`;
+      if (!geoDateCounts.has(key)) {
+        geoDateCounts.set(key, []);
+      }
+      geoDateCounts.get(key)?.push(i);
+    }
+
+    for (const [key, indices] of geoDateCounts.entries()) {
+      if (indices.length > 1) {
+        const [geo, date] = key.split('|');
+        issues.push({
+          type: DataQualityIssueType.DuplicateGeoDate,
+          message: `Duplicate geo-date combination found for Geo '${geo}' on Date '${date}'.`,
+          row: rawData.value[indices[0]], // Show the first occurrence
+          rowIndex: indices[0],
+          isFixable: true,
+        });
+      }
+    }
+  }
+
+  return issues;
 });
 
+const issueColumns = [
+  {
+    name: 'rowIndex',
+    label: 'Row',
+    field: 'rowIndex',
+    sortable: true,
+    format: (val: number) => val + 1,
+  },
+  { name: 'type', label: 'Issue Type', field: 'type', sortable: true },
+  {
+    name: 'message',
+    label: 'Message',
+    field: 'message',
+    sortable: true,
+    style: 'white-space: normal;',
+  },
+  {
+    name: 'isFixable',
+    label: 'Fixable',
+    field: 'isFixable',
+    sortable: true,
+    format: (val: boolean) => (val ? 'Yes' : 'No'),
+  },
+];
+
+const issueFilter = ref({
+  type: null,
+  fixable: null,
+});
+
+const issueTypeOptions = Object.values(DataQualityIssueType).map((type) => ({
+  label: type,
+  value: type,
+}));
+
+function filterIssues(
+  rows: readonly DataQualityIssue[],
+  terms: { type: DataQualityIssueType | null; fixable: boolean | null },
+) {
+  let filteredRows = rows;
+
+  if (terms.type) {
+    filteredRows = filteredRows.filter((row) => row.type === terms.type);
+  }
+
+  if (terms.fixable !== null) {
+    filteredRows = filteredRows.filter((row) => row.isFixable === terms.fixable);
+  }
+
+  return filteredRows;
+}
+
 const canContinueFromImport = computed(() => {
-  return rawData.value.length > 0;
+  return currentDataSource.value.name && rawData.value.length > 0;
 });
 
 const isColumnConfigValid = computed(() => {
@@ -808,8 +881,36 @@ const isColumnConfigValid = computed(() => {
 });
 
 const isFormValid = computed(() => {
-  return !!currentDataSource.value.name && isColumnConfigValid.value;
+  return (
+    !!currentDataSource.value.name &&
+    rawData.value.length > 0 &&
+    isColumnConfigValid.value &&
+    dataQualityIssues.value.length === 0
+  );
 });
+
+async function triggerValidation() {
+  validateDataLoading.value = true;
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const issuesCount = dataQualityIssues.value.length;
+
+  if (issuesCount > 0) {
+    $q.notify({
+      type: 'warning',
+      message: `Validation complete. ${issuesCount} issue(s) found. Please review the Data Quality Issues section.`,
+      position: 'top',
+      timeout: 3000,
+    });
+  } else {
+    $q.notify({
+      type: 'positive',
+      message: 'Validation complete. No data quality issues detected.',
+      position: 'top',
+      timeout: 3000,
+    });
+  }
+  validateDataLoading.value = false;
+}
 
 onMounted(async () => {
   // If editing, load existing data source
@@ -884,7 +985,7 @@ function showError(message: string) {
   errorDialog.value = true;
 }
 
-function processData(data: Record<string, unknown>[]) {
+async function processData(data: Record<string, unknown>[]) {
   if (!data || data.length === 0) {
     throw new Error('No data found');
   }
@@ -908,7 +1009,7 @@ function processData(data: Record<string, unknown>[]) {
     columnRoles.value[col.name] = ColumnRole.Ignore;
   });
 
-  autoDetectColumns();
+  await autoDetectColumns();
 }
 
 async function handleFileUpload() {
@@ -943,7 +1044,7 @@ async function handleFileUpload() {
       throw new Error('The CSV file appears to be empty or has invalid format');
     }
 
-    processData(parsedData);
+    await processData(parsedData);
 
     // Set data source name from file if not already set
     if (!currentDataSource.value.name && file.value.name) {
@@ -972,7 +1073,7 @@ function clearFile() {
   columns.value = [];
 }
 
-function autoDetectColumns() {
+async function autoDetectColumns() {
   // Reset previous selections
   Object.keys(columnRoles.value).forEach((colName) => {
     columnRoles.value[colName] = ColumnRole.Ignore;
@@ -1046,7 +1147,7 @@ function autoDetectColumns() {
     });
   }
 
-  handleColumnRoleChange('', ColumnRole.Ignore);
+  await handleColumnRoleChange('', ColumnRole.Ignore);
 }
 
 async function fetchExternalData() {
@@ -1069,7 +1170,7 @@ async function fetchExternalData() {
       return;
     }
 
-    processData(res.data as Record<string, unknown>[]);
+    await processData(res.data as Record<string, unknown>[]);
 
     // Auto-set data source name from URL if not set
     if (!currentDataSource.value.name) {
@@ -1123,13 +1224,52 @@ async function saveDataSource() {
     saving.value = false;
   }
 }
+const scrollToRow = async (rowIndex: number) => {
+  if (!dataPreviewTable.value) {
+    return;
+  }
+  highlightedRow.value = rowIndex;
+  const { rowsPerPage, sortBy, descending } = dataPreviewTable.value.pagination;
+
+  // Use processedRawData to get all rows, not just the visible ones
+  const allRows = processedRawData.value;
+  const rowIndexInAllData = allRows.findIndex((row) => row.__index === rowIndex);
+
+  if (rowIndexInAllData !== -1) {
+    const page = Math.ceil((rowIndexInAllData + 1) / rowsPerPage);
+    dataPreviewTable.value.setPagination({
+      page,
+      rowsPerPage,
+      sortBy,
+      descending,
+    });
+
+    await nextTick();
+
+    const tableBody = dataPreviewTable.value.$el.querySelector('.q-table tbody');
+    if (tableBody) {
+      // Find the row within the newly rendered page
+      const rowsOnPage = dataPreviewTable.value.computedRows;
+      const rowIndexOnPage = rowsOnPage.findIndex((row) => row.__index === rowIndex);
+      if (rowIndexOnPage !== -1) {
+        const rowElement = tableBody.children[rowIndexOnPage];
+        if (rowElement) {
+          rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => {
+            highlightedRow.value = null;
+          }, 3000); // Remove highlight after animation
+        }
+      }
+    }
+  }
+};
 
 function onCancel() {
   emit('canceled');
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function handleColumnRoleChange(columnName: string, newRole: any) {
+async function handleColumnRoleChange(columnName: string, newRole: any) {
   const roleValue = typeof newRole === 'object' && newRole !== null ? newRole.value : newRole;
 
   if (columnName) {
@@ -1170,6 +1310,7 @@ function handleColumnRoleChange(columnName: string, newRole: any) {
     }
   });
   updateDataStats();
+  await triggerValidation();
 }
 
 function updateDataStats() {
@@ -1222,7 +1363,7 @@ function executeFixes(selection: FixSelection) {
   let dateGapsFilledCount = 0;
   let deduplicatedRowsCount = 0;
 
-  const { geoColumn, dateColumn, metricColumns } = currentDataSource.value.columns;
+  const { geoColumn, dateColumn, metricColumns, costColumn } = currentDataSource.value.columns;
 
   let currentProcessedData: Record<string, unknown>[] = [...rawData.value];
 
@@ -1235,6 +1376,9 @@ function executeFixes(selection: FixSelection) {
           rowIsValid = false;
         }
         if (dateColumn && !row[dateColumn]) {
+          rowIsValid = false;
+        }
+        if (costColumn && !row[costColumn]) {
           rowIsValid = false;
         }
         return rowIsValid ? row : null;
@@ -1255,6 +1399,12 @@ function executeFixes(selection: FixSelection) {
             metricsFilledCount++;
           }
         });
+      }
+      if (costColumn) {
+        if (!newRow[costColumn] && newRow[costColumn] !== 0) {
+          newRow[costColumn] = 0;
+          metricsFilledCount++;
+        }
       }
       return newRow;
     });
@@ -1474,27 +1624,19 @@ function executeFixes(selection: FixSelection) {
 
   isFixingIssues.value = false;
 }
-
-async function triggerValidation() {
-  validateDataLoading.value = true;
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  const issuesCount = dataQualityIssues.value.length;
-
-  if (issuesCount > 0) {
-    $q.notify({
-      type: 'warning',
-      message: `Validation complete. ${issuesCount} issue(s) found. Please review the Data Quality Issues section.`,
-      position: 'top',
-      timeout: 3000,
-    });
-  } else {
-    $q.notify({
-      type: 'positive',
-      message: 'Validation complete. No data quality issues detected.',
-      position: 'top',
-      timeout: 3000,
-    });
-  }
-  validateDataLoading.value = false;
-}
 </script>
+
+<style lang="scss" scoped>
+@keyframes highlight-fade {
+  from {
+    background-color: #f0f8ff;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.highlighted-row {
+  animation: highlight-fade 3s ease-out forwards;
+}
+</style>
