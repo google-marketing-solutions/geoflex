@@ -170,15 +170,15 @@ export const useDataSourcesStore = defineStore('datasources', () => {
 
         // Transform from API format
         const updatedDataSource = response.data ? transformFromApi(response.data) : dataSource;
-        updatedDataSource.data = normalizeRawData(
-          updatedDataSource.data.rawRows,
-          updatedDataSource.columns,
-        );
-        // Preserve data if not included in response
-        if (!updatedDataSource.data && datasources.value[existingIndex].data) {
+        if (updatedDataSource.data) {
+          updatedDataSource.data = normalizeRawData(
+            updatedDataSource.data.rawRows,
+            updatedDataSource.columns,
+          );
+        } else if (datasources.value[existingIndex]) {
+          // Preserve data if not included in response
           updatedDataSource.data = datasources.value[existingIndex].data;
         }
-
         datasources.value[existingIndex] = updatedDataSource;
         return updatedDataSource;
       } else {
@@ -259,7 +259,12 @@ export const useDataSourcesStore = defineStore('datasources', () => {
     }
   }
 
-  // Load data for an external data source
+  /**
+   * Load data for an external data source
+   * @param dataSource
+   * @param forceReload
+   * @returns
+   */
   async function loadDataSourceData(
     dataSource: DataSource,
     forceReload = false,

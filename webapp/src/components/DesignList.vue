@@ -133,45 +133,29 @@
 
             <div class="q-mt-md">
               <div class="text-subtitle2">Groups</div>
-              <div class="row q-col-gutter-md">
-                <div
-                  v-for="(geos, groupName) in getDesignGroups(design.design)"
-                  :key="groupName"
-                  class="col-12 col-md-4"
-                >
-                  <q-card flat bordered>
-                    <q-card-section class="q-py-sm bg-primary text-white row items-center">
-                      <div class="text-subtitle2 col">{{ groupName }} ({{ geos.length }} geos)</div>
-                      <div class="col-auto">
-                        <q-btn
-                          flat
-                          dense
-                          round
-                          icon="file_download"
-                          color="white"
-                          @click="exportDesignGroupToCsv(design.design, String(groupName))"
-                        >
-                          <q-tooltip>Export {{ groupName }} geos as CSV</q-tooltip>
-                        </q-btn>
-                      </div>
-                    </q-card-section>
-                    <q-card-section class="q-pa-sm">
-                      <div class="geo-chips-container" style="max-height: 200px; overflow-y: auto">
-                        <q-chip
-                          v-for="geo in geos"
-                          :key="geo"
-                          :color="isFixedGeo(geo, String(groupName)) ? 'orange' : 'primary'"
-                          text-color="white"
-                          size="sm"
-                          class="q-ma-xs"
-                        >
-                          {{ geo }}
-                        </q-chip>
-                      </div>
-                    </q-card-section>
-                  </q-card>
-                </div>
-              </div>
+              <q-table
+                :rows="getGroupStats(design)"
+                :columns="groupColumns"
+                row-key="name"
+                dense
+                flat
+                bordered
+                :hide-pagination="true"
+              >
+                <template v-slot:body-cell-actions="props">
+                  <q-td :props="props">
+                    <q-btn
+                      flat
+                      dense
+                      round
+                      icon="file_download"
+                      @click="exportDesignGroupToCsv(design.design, props.row.name)"
+                    >
+                      <q-tooltip>Export {{ props.row.name }} geos as CSV</q-tooltip>
+                    </q-btn>
+                  </q-td>
+                </template>
+              </q-table>
             </div>
           </q-card-section>
         </q-card>
@@ -203,11 +187,11 @@
     </q-dialog>
 
     <!-- Design Detail Dialog -->
-    <q-dialog v-model="designDetailDialog" maximized persistent>
-      <q-card>
+    <q-dialog v-model="designDetailDialog" maximized>
+      <q-card v-if="selectedDesign">
         <q-card-section class="row items-center">
           <div class="text-h6">
-            {{ selectedDesign?.name || 'Design Details' }} ({{ selectedDesign?.design.design_id }})
+            {{ selectedDesign.name || 'Design Details' }} ({{ selectedDesign.design.design_id }})
           </div>
           <q-space />
           <q-btn icon="close" flat round dense v-close-popup />
@@ -215,10 +199,10 @@
 
         <q-separator />
 
-        <q-card-section v-if="selectedDesign" class="q-pa-md">
+        <q-card-section class="q-pa-md">
           <div class="row q-col-gutter-md">
             <!-- Design metadata -->
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-5">
               <q-card class="q-pa-md">
                 <div class="text-subtitle1">Design Summary</div>
                 <q-list dense>
@@ -275,7 +259,7 @@
                   <q-item>
                     <q-item-section>
                       <q-item-label caption>Methodology Parameters</q-item-label>
-                      <q-markup-table flat bordered dense>
+                      <q-markup-table flat dense>
                         <tbody>
                           <tr
                             v-for="(val, key) in selectedDesign.design.methodology_parameters"
@@ -303,10 +287,10 @@
                   <q-item>
                     <q-item-section>
                       <q-item-label caption>Cell Volume Constraint</q-item-label>
-                      <q-item-label>
-                        <pre>{{
-                          JSON.stringify(selectedDesign.design.cell_volume_constraint, null, 2)
-                        }}</pre>
+                      <q-item-label v-if="selectedDesign.design.cell_volume_constraint">
+                        Type: {{ selectedDesign.design.cell_volume_constraint.constraint_type }},
+                        Column: {{ selectedDesign.design.cell_volume_constraint.metric_column }},
+                        Values: {{ selectedDesign.design.cell_volume_constraint.values }}
                       </q-item-label>
                     </q-item-section>
                   </q-item>
@@ -314,8 +298,8 @@
               </q-card>
             </div>
 
-            <!-- Statistics -->
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-5">
+              <!-- Statistics -->
               <q-card class="q-pa-md">
                 <div class="text-subtitle1">Statistical Properties</div>
                 <q-list dense>
@@ -326,8 +310,8 @@
                           getMetricName(selectedDesign.design.primary_metric) || 'Primary Metric'
                         }})</q-item-label
                       >
-                      <q-item-label class="text-h5">{{
-                        selectedDesign.mde ? selectedDesign.mde.toFixed(1) + '%' : 'N/A'
+                      <q-item-label class="text-h5 text-primary text-weight-bold">{{
+                        selectedDesign.mde ? selectedDesign.mde.toFixed(2) + '%' : 'N/A'
                       }}</q-item-label>
                     </q-item-section>
                   </q-item>
@@ -341,11 +325,8 @@
                   </q-item>
                 </q-list>
               </q-card>
-            </div>
-
-            <!-- Evaluation Results -->
-            <div class="col-12 col-md-4">
-              <q-card class="q-pa-md">
+              <!-- Evaluation Results -->
+              <q-card class="q-pa-md q-mt-lg">
                 <div class="text-subtitle1">Evaluation Results</div>
                 <q-list dense v-if="selectedDesign.design.evaluation_results">
                   <q-item>
@@ -441,6 +422,54 @@
                 </q-list>
               </q-card>
             </div>
+
+            <!-- Geo Groups -->
+            <div class="col-12">
+              <q-card class="q-pa-md">
+                <div class="text-subtitle1">Geo Groups</div>
+                <div class="row q-col-gutter-md">
+                  <div
+                    v-for="(geos, groupName) in getDesignGroups(selectedDesign.design)"
+                    :key="groupName"
+                    class="col-12 col-md-5"
+                  >
+                    <q-card flat bordered>
+                      <q-card-section class="q-py-sm q-pr-sm bg-primary text-white">
+                        <div class="float-right">
+                          <q-btn
+                            flat
+                            dense
+                            round
+                            icon="file_download"
+                            @click="exportDesignGroupToCsv(selectedDesign.design, groupName)"
+                          >
+                            <q-tooltip>Export {{ groupName }} geos as CSV</q-tooltip>
+                          </q-btn>
+                        </div>
+                        <div class="text-subtitle2">{{ groupName }} ({{ geos.length }} geos)</div>
+                      </q-card-section>
+                      <q-card-section class="q-pa-sm">
+                        <div
+                          class="geo-chips-container"
+                          style="max-height: 300px; overflow-y: auto"
+                        >
+                          <q-chip
+                            v-for="geo in geos"
+                            :key="geo"
+                            :color="isFixedGeo(geo, String(groupName)) ? 'orange' : 'primary'"
+                            text-color="white"
+                            size="sm"
+                            class="q-ma-xs"
+                          >
+                            {{ geo }}
+                          </q-chip>
+                        </div>
+                      </q-card-section>
+                    </q-card>
+                  </div>
+                </div>
+              </q-card>
+            </div>
           </div>
         </q-card-section>
 
@@ -457,6 +486,7 @@
 import type { PropType } from 'vue';
 import { ref, computed, watch } from 'vue';
 import { useQuasar, exportFile } from 'quasar';
+import type { QTableColumn } from 'quasar';
 import type { ExperimentDesign, AnyMetric, SavedDesign } from 'src/components/models';
 import { formatDate } from 'src/helpers/utils';
 
@@ -533,6 +563,27 @@ const sortedDesigns = computed<SavedDesign[]>(() => {
 const designDetailDialog = ref(false);
 const selectedDesign = ref<SavedDesign | null>(null);
 
+const groupColumns: QTableColumn[] = [
+  {
+    name: 'name',
+    required: true,
+    label: 'Group Name',
+    align: 'left',
+    field: 'name',
+    sortable: true,
+  },
+  { name: 'geoCount', align: 'right', label: 'Geo Count', field: 'geoCount', sortable: true },
+  {
+    name: 'percentage',
+    align: 'right',
+    label: 'Percentage',
+    field: 'percentage',
+    sortable: true,
+    format: (val: number) => `${val.toFixed(2)}%`,
+  },
+  { name: 'actions', label: 'Actions', align: 'right', field: '' },
+];
+
 function viewDesign(design: SavedDesign) {
   selectedDesign.value = design;
   designDetailDialog.value = true;
@@ -563,7 +614,7 @@ function saveNewName() {
   }
 }
 
-function getDesignGroups(design: ExperimentDesign) {
+function getDesignGroups(design: ExperimentDesign): Record<string, string[]> {
   const groups: { [key: string]: string[] } = {
     Control: design.geo_assignment.control,
   };
@@ -572,6 +623,23 @@ function getDesignGroups(design: ExperimentDesign) {
     groups[groupName] = treatmentGroup;
   });
   return groups;
+}
+
+function getGroupStats(savedDesign: SavedDesign) {
+  const design = savedDesign.design;
+  const groups = getDesignGroups(design);
+  const totalGeos = Object.values(groups).reduce((acc, geos) => acc + geos.length, 0);
+
+  return Object.entries(groups).map(([groupName, geos]) => {
+    const geoCount = geos.length;
+    const percentage = totalGeos > 0 ? (geoCount / totalGeos) * 100 : 0;
+
+    return {
+      name: groupName,
+      geoCount,
+      percentage,
+    };
+  });
 }
 
 function exportDesignGroupToCsv(design: ExperimentDesign, groupName: string) {

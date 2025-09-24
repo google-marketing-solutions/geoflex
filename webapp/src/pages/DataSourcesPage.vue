@@ -106,6 +106,16 @@
             >
               <q-tooltip>Delete</q-tooltip>
             </q-btn>
+            <q-btn
+              flat
+              round
+              dense
+              icon="download"
+              color="secondary"
+              @click="downloadDataSource(props.row)"
+            >
+              <q-tooltip>Download CSV</q-tooltip>
+            </q-btn>
           </q-td>
         </template>
       </q-table>
@@ -162,6 +172,7 @@ import { useUiSettingsStore } from 'stores/ui-settings';
 import DataSourceViewer from 'components/DataSourceViewer.vue';
 import DataSourceEditor from 'components/DataSourceEditor.vue';
 import { formatDate } from 'src/helpers/utils';
+import { getFile } from 'src/boot/axios';
 
 const $q = useQuasar();
 const dataSourcesStore = useDataSourcesStore();
@@ -235,7 +246,6 @@ const columns = [
     align: 'center',
   },
 ] as QTableColumn[];
-
 
 onMounted(() => {
   // Load saved UI settings
@@ -323,6 +333,11 @@ function openEditor(dataSource?: DataSource) {
 // Open the data source viewer
 function openViewer(dataSource: DataSource) {
   void router.push(`/datasources/${dataSource.id}/view`);
+}
+
+// Download a data source
+async function downloadDataSource(dataSource: DataSource) {
+  await getFile(`datasources/${dataSource.id}/download`);
 }
 
 // Close all dialogs and navigate to the base URL

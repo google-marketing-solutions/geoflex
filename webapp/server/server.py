@@ -116,6 +116,7 @@ async def catch_all(full_path: str) -> Response:
   if os.path.isfile(file_path):
     # Serve the file directly
     response = FileResponse(file_path)
+    response.headers['X-Dynamic-Response'] = '1'
 
     # Handle GAE timestamp issues
     if IS_GAE:
@@ -134,6 +135,7 @@ async def catch_all(full_path: str) -> Response:
         })
 
   response = FileResponse(index_path)
+  response.headers['X-Dynamic-Response'] = '1'
 
   safe_remove_header(response.headers, 'etag')
   response.headers['Cache-Control'] = 'no-cache, no-store'
