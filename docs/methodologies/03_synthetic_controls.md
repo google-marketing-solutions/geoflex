@@ -4,6 +4,8 @@ The **Synthetic Controls** methodology is a quasi-experimental approach used in 
 
 This method is particularly powerful when it's difficult to find a single control geo or a simple random group of geos that provides a good comparison for the treatment group, but a weighted combination of them does.
 
+For a more detailed explanation of the methodology, see the original paper: [The Economic Costs of Conflict: A Case Study of the Basque Country (Abadie and Gardeazabal, 2003)](https://business.baylor.edu/scott_cunningham/teaching/abadie-and-gardeazabal-2003.pdf).
+
 ---
 ## How Synthetic Controls Work
 
