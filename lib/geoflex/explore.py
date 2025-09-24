@@ -515,6 +515,8 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
         ab_simulations_per_trial=ab_simulations_per_trial,
     )
 
+    max_feasible_trials = sum(self.count_all_eligible_designs().values())
+
     if warm_start and self.study is None and self.explored_designs:
       error_message = (
           "Warm start is not supported when there are existing experiment"
@@ -563,6 +565,7 @@ class ExperimentDesignExplorer(pydantic.BaseModel):
 
     existing_trials = MaxTrialsCallback.get_n_completed_trials(self.study)
     target_trials = existing_trials + max_trials
+    target_trials = min(target_trials, max_feasible_trials)
 
     if existing_trials:
       logger.info(
