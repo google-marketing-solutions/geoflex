@@ -1,4 +1,4 @@
-# Guide: Analysing an experiment with GeoFleX
+# Analysing an experiment with GeoFleX
 
 Once your geo-experiment has concluded, the final step is to analyze the collected data to measure the impact of your intervention. GeoFleX provides a straightforward analysis workflow that uses the same `ExperimentDesign` object you created for the design and evaluation phases.
 

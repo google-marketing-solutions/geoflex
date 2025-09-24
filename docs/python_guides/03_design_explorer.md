@@ -1,4 +1,4 @@
-# Guide: Selecting the Best Experiment Design with the GeoFleX Explorer
+# Selecting the Best Experiment Design with the GeoFleX Explorer
 
 Finding the optimal design for a geo-experiment can be a complex task. There are many interacting parameters to consider, from the choice of statistical methodology to the experiment's runtime. The GeoFleX Explorer simplifies this process by treating design selection as an optimization problem. It intelligently searches through a wide range of possible configurations to find the design that is best suited for your specific data and goals.
 

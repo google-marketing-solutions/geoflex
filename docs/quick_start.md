@@ -5,12 +5,10 @@
 This guide will walk you through an end-to-end example, from loading your data to analyzing the results of your experiment.
 
 ### 1. Installation
-First, make sure you have GeoFleX installed. To do that you need to authenticate with Git-on-Borg, instructions **[here](https://professional-services.googlesource.com/new-password)**.
+First, make sure you have GeoFleX installed. You can install with pip using the command below:
 
-Then you can install it using pip:
-
-```
-pip install "git+https://professional-services.googlesource.com/solutions/geoflex#egg=geoflex&subdirectory=lib"
+```bash
+pip install "git+https://github.com/google-marketing-solutions/geoflex#egg=geoflex&subdirectory=lib"
 ```
 
 ### 2. Loading Your Data

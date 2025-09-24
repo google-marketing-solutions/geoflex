@@ -1,4 +1,4 @@
-# Guide: Creating an Experiment Design
+# Defining an Experiment Design with GeoFleX
 
 At the heart of any geo-experiment in GeoFleX is the `ExperimentDesign` object. This class acts as a comprehensive blueprint, defining all the essential parameters of your test, from the metrics you want to measure to the methodology used for the analysis.
 

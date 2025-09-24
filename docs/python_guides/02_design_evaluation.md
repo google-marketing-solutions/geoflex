@@ -1,4 +1,4 @@
-# Guide: Evaluating Experiment Designs
+# Evaluating Experiment Designs with the GeoFleX Evaluator
 
 After defining your `ExperimentDesign`, the next crucial step is to evaluate it. This pre-experiment analysis is a cornerstone of the GeoFleX library, allowing you to understand the statistical power and robustness of your setup before committing to a live test. This guide will walk you through the methodology behind GeoFleX's evaluation engine and demonstrate how to use it.
 
