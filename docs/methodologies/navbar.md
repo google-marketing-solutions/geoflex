@@ -19,6 +19,7 @@
 * **Methodologies:**
 * [Methodologies Overview](/docs/methodologies/01_overview.md)
 * [Geo Based Regression (GBR)](/docs/methodologies/02_gbr.md)
+* [Synthetic Controls](/docs/methodologies/03_synthetic_controls.md)
 
 #####
 
