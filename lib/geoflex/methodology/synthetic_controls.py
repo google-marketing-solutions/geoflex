@@ -39,7 +39,8 @@ CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 register_methodology = _base.register_methodology
 
 
-@register_methodology
+@register_methodology(default=True, alias="SC")
+@register_methodology()
 class SyntheticControls(_base.Methodology):
   """The Synthetic Control methodology for GeoFleX.
 

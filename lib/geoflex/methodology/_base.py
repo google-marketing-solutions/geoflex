@@ -18,7 +18,7 @@ import abc
 import contextlib
 import datetime as dt
 import logging
-from typing import Any
+from typing import Any, Callable
 import warnings
 import geoflex.data
 import geoflex.experiment_design
@@ -35,7 +35,15 @@ GeoPerformanceDataset = geoflex.data.GeoPerformanceDataset
 GeoAssignment = geoflex.experiment_design.GeoAssignment
 ExperimentBudgetType = geoflex.experiment_design.ExperimentBudgetType
 
-_METHODOLOGIES = {}
+# These are all populated using the register_methodology() decorator.
+_METHODOLOGIES = {}  # A lookup for methodology names to methodology objects.
+_DEFAULT_METHODOLOGIES = (
+    []
+)  # Methodology names that are used by explore_spec by default.
+_HIDDEN_METHODOLOGIES = (
+    []
+)  # Methodology names that should not be listed with list_methodologies().
+
 logger = logging.getLogger(__name__)
 
 
@@ -676,12 +684,70 @@ class Methodology(abc.ABC):
 
 
 def register_methodology(
-    methodology_class: type[Methodology],
-) -> type[Methodology]:
-  """Registers a methodology so it can be retrieved by name."""
-  logger.info("Registering methodology: %s", methodology_class.__name__)
-  _METHODOLOGIES[methodology_class.__name__] = methodology_class
-  return methodology_class
+    alias: str | None = None,
+    hidden: bool = False,
+    default: bool = False,
+    overwrite: bool = False,
+) -> Callable[[type[Methodology]], type[Methodology]]:
+  """Decorator to register a methodology so it can be retrieved by name.
+
+  Args:
+    alias: An alias used instead of the class name to retrieve the methodology.
+      If not specified, the class name will be used.
+    hidden: Whether the methodology is hidden. Hidden methodologies will not be
+      returned by list_methodologies().
+    default: Whether the methodology is a default methodology. If true, this
+      methodology will be included in the default list of methodologies used by
+      explore_spec.
+    overwrite: Whether to overwrite an existing methodology with the same name.
+      If False, an error will be raised if a methodology with the same name is
+      already registered.
+
+  Returns:
+    A decorator that can be applied to a methodology class to register it.
+  """
+  if hidden and default:
+    error_message = (
+        "A methodology cannot be both hidden and default. Please specify only"
+        " one of hidden or default."
+    )
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+  def _register_methodology(
+      methodology_class: type[Methodology],
+  ) -> type[Methodology]:
+    """Registers a methodology so it can be retrieved by name."""
+    logger.info("Registering methodology: %s", methodology_class.__name__)
+    if alias is None:
+      name = methodology_class.__name__
+    else:
+      name = alias
+
+    if name in _METHODOLOGIES and not overwrite:
+      error_message = (
+          f"Methodology {name} is already registered. If you want to"
+          " overwrite it, set overwrite to True."
+      )
+      logger.error(error_message)
+      raise ValueError(error_message)
+    elif name in _METHODOLOGIES:
+      logger.warning(
+          "Overwriting existing methodology with name: %s", name
+      )
+      if name in _DEFAULT_METHODOLOGIES:
+        _DEFAULT_METHODOLOGIES.remove(name)
+      if name in _HIDDEN_METHODOLOGIES:
+        _HIDDEN_METHODOLOGIES.remove(name)
+
+    _METHODOLOGIES[name] = methodology_class
+    if default:
+      _DEFAULT_METHODOLOGIES.append(name)
+    if hidden:
+      _HIDDEN_METHODOLOGIES.append(name)
+    return methodology_class
+
+  return _register_methodology
 
 
 def get_methodology(methodology_name: str) -> Methodology:
@@ -694,13 +760,53 @@ def get_methodology(methodology_name: str) -> Methodology:
   return _METHODOLOGIES[methodology_name]()
 
 
-def list_methodologies() -> list[str]:
-  """Returns a list of all methodologies."""
-  return [
-      methodology_name
-      for methodology_name in _METHODOLOGIES.keys()
-      if "TestingMethodology" not in methodology_name
-  ]
+def list_methodologies(default_only: bool = False) -> list[str]:
+  """Returns a list of all methodologies.
+
+  Args:
+    default_only: Whether to return only the default methodologies.
+
+  Returns:
+    A list of all available methodology names, or only the default methodologies
+    if default_only is True.
+  """
+  if default_only:
+    return deduplicate_methodology_names([
+        methodology_name
+        for methodology_name in _METHODOLOGIES.keys()
+        if methodology_name in _DEFAULT_METHODOLOGIES
+    ])
+  else:
+    return deduplicate_methodology_names([
+        methodology_name
+        for methodology_name in _METHODOLOGIES.keys()
+        if methodology_name not in _HIDDEN_METHODOLOGIES
+    ])
+
+
+def deduplicate_methodology_names(methodologies: list[str]) -> list[str]:
+  """Deduplicates the methodology names.
+
+  If there are multiple methodology names that refer to the same methodology
+  class, this will drop duplicates, keeping only the first one in the list.
+
+  Args:
+    methodologies: The list of methodology names to deduplicate.
+
+  Returns:
+    A list of unique methodology names.
+  """
+  unique_names = []
+  seen_classes = set()
+  for name in methodologies:
+    if name in _METHODOLOGIES:
+      methodology_class = _METHODOLOGIES[name]
+      if methodology_class not in seen_classes:
+        seen_classes.add(methodology_class)
+        unique_names.append(name)
+      else:
+        logger.info("Dropping duplicate methodology name: %s", name)
+  return unique_names
 
 
 def assign_geos(

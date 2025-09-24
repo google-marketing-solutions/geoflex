@@ -57,7 +57,7 @@ class TBRParameters(pydantic.BaseModel):
   model_config = pydantic.ConfigDict(extra="forbid")
 
 
-@register_methodology
+@register_methodology(default=True)
 class TBR(_base.Methodology):
   """Time-Based Regression (TBR) methodology for GeoFleX.
 

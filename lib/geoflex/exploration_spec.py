@@ -18,6 +18,7 @@ import logging
 from typing import Annotated
 from typing import Any
 import geoflex.experiment_design
+import geoflex.methodology
 import pydantic
 
 ExperimentBudget = geoflex.experiment_design.ExperimentBudget
@@ -106,11 +107,28 @@ def check_runtime_weeks_candidates_not_empty(
   return runtime_weeks_candidates
 
 
+@pydantic.BeforeValidator
+def prepare_eligible_methodologies(
+    eligible_methodologies: list[str] | None,
+) -> list[str]:
+  """Prepares the eligible methodologies for the experiment."""
+  if eligible_methodologies is None:
+    eligible_methodologies = geoflex.methodology.list_methodologies(
+        default_only=True
+    )
+
+  return geoflex.methodology.deduplicate_methodology_names(
+      eligible_methodologies
+  )
+
+
 ValidatedSeedList = Annotated[list[int], ensure_seed_is_list_and_not_empty]
 ValidatedRuntimeWeeksCandidates = Annotated[
     list[int], ensure_list, check_runtime_weeks_candidates_not_empty
 ]
-ValidatedEligibleMethodologies = Annotated[list[str], ensure_list]
+ValidatedEligibleMethodologies = Annotated[
+    list[str], prepare_eligible_methodologies
+]
 ValidatedGeoEligibilityCandidates = Annotated[
     list[ValidatedGeoEligibility], ensure_list
 ]
@@ -186,12 +204,9 @@ class ExperimentDesignExplorationSpec(pydantic.BaseModel):
   )
   alternative_hypothesis: ValidatedAlternativeHypothesis = "two-sided"
   alpha: ValidatedAlpha = 0.1
-  eligible_methodologies: ValidatedEligibleMethodologies = [
-      "TBR_MM",
-      "TBR",
-      "TM",
-      "GBR",
-  ]
+  eligible_methodologies: ValidatedEligibleMethodologies = pydantic.Field(
+      default=None, validate_default=True
+  )
   cell_volume_constraint_candidates: ValidatedCellVolumeConstraintCandidates = (
       pydantic.Field(default=[None], validate_default=True)
   )

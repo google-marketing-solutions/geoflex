@@ -35,7 +35,7 @@ CellVolumeConstraintType = geoflex.experiment_design.CellVolumeConstraintType
 register_methodology = _base.register_methodology
 
 
-@register_methodology
+@register_methodology(hidden=True)
 class TestingMethodology(_base.Methodology):
   """A testing methodology for GeoFleX. Used for testing purposes only.
 
@@ -247,7 +247,7 @@ class TestingMethodology(_base.Methodology):
     }
 
 
-@register_methodology
+@register_methodology(hidden=True)
 class PseudoExperimentTestingMethodology(TestingMethodology):
   """A testing methodology for GeoFleX. Used for testing purposes only."""
 

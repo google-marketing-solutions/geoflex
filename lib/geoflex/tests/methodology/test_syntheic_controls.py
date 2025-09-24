@@ -18,6 +18,7 @@ from typing import Any
 from geoflex.data import GeoPerformanceDataset
 from geoflex.experiment_design import ExperimentDesign
 from geoflex.experiment_design import GeoAssignment
+from geoflex.methodology import _base as methodology_base
 from geoflex.methodology.synthetic_controls import SyntheticControls
 from geoflex.metrics import Metric
 import pandas as pd
@@ -113,6 +114,15 @@ def setup_fit_results_and_validation_df(fixtures, aggregated_df):
 @pytest.fixture(name='fit_results_and_validation_df')
 def fit_results_and_validation_df_fixture(fixtures, aggregated_df):
   return setup_fit_results_and_validation_df(fixtures, aggregated_df)
+
+
+def test_can_get_methodology_with_alias():
+  """Tests that the methodology can be retrieved with the alias."""
+  methodology = methodology_base.get_methodology('SC')
+  assert isinstance(methodology, SyntheticControls)
+
+  methodology = methodology_base.get_methodology('SyntheticControls')
+  assert isinstance(methodology, SyntheticControls)
 
 
 def test_aggregate_treatment(aggregated_df):

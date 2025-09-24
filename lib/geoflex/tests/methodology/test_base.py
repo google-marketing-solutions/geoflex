@@ -44,6 +44,7 @@ CellVolumeConstraint = geoflex.experiment_design.CellVolumeConstraint
 # Tests don't need docstrings.
 # pylint: disable=missing-function-docstring
 # pylint: disable=invalid-name
+# pylint: disable=protected-access
 
 
 @pytest.fixture(name="historical_data")
@@ -609,7 +610,7 @@ def test_methodology_analyze_experiment_sets_is_significant_correctly(
 def test_list_methodologies_includes_registered_methodology(
     MockMethodology,
 ):
-  register_methodology(MockMethodology)
+  register_methodology()(MockMethodology)
   assert "MockMethodology" in list_methodologies()
 
 
@@ -1027,3 +1028,97 @@ def test_assign_geos_raises_exception_if_geo_eligibility_is_not_respected(
         default_experiment_design,
         historical_data,
     )
+
+
+def test_deduplicate_methodology_names(MockMethodology):
+  """Tests that deduplicate_methodology_names works correctly."""
+  deduplicate_methodology_names = (
+      geoflex.methodology._base.deduplicate_methodology_names
+  )
+
+  original_methodologies = geoflex.methodology._base._METHODOLOGIES.copy()
+  original_default = geoflex.methodology._base._DEFAULT_METHODOLOGIES.copy()
+  original_hidden = geoflex.methodology._base._HIDDEN_METHODOLOGIES.copy()
+
+  try:
+    geoflex.methodology._base._METHODOLOGIES.clear()
+    geoflex.methodology._base._DEFAULT_METHODOLOGIES.clear()
+    geoflex.methodology._base._HIDDEN_METHODOLOGIES.clear()
+
+    class MethodologyA(MockMethodology):
+      pass
+
+    class MethodologyB(MockMethodology):
+      pass
+
+    register_methodology()(MethodologyA)
+    register_methodology(alias="MethA_alias")(MethodologyA)
+    register_methodology()(MethodologyB)
+    register_methodology(alias="MethB_alias")(MethodologyB)
+
+    names = [
+        "MethodologyA",
+        "MethB_alias",
+        "MethA_alias",
+        "not_registered",
+        "MethodologyB",
+    ]
+    deduped_names = deduplicate_methodology_names(names)
+    assert deduped_names == ["MethodologyA", "MethB_alias"]
+  finally:
+    geoflex.methodology._base._METHODOLOGIES = original_methodologies
+    geoflex.methodology._base._DEFAULT_METHODOLOGIES = original_default
+    geoflex.methodology._base._HIDDEN_METHODOLOGIES = original_hidden
+
+
+def test_register_methodology_flags(MockMethodology):
+  """Tests the default, hidden, and overwrite flags of register_methodology."""
+  original_methodologies = geoflex.methodology._base._METHODOLOGIES.copy()
+  original_default = geoflex.methodology._base._DEFAULT_METHODOLOGIES.copy()
+  original_hidden = geoflex.methodology._base._HIDDEN_METHODOLOGIES.copy()
+
+  try:
+    geoflex.methodology._base._METHODOLOGIES.clear()
+    geoflex.methodology._base._DEFAULT_METHODOLOGIES.clear()
+    geoflex.methodology._base._HIDDEN_METHODOLOGIES.clear()
+
+    # Test default=True
+    @register_methodology(default=True)
+    class DefaultMethodology(MockMethodology):  # pylint: disable=unused-variable
+      pass
+
+    assert (
+        "DefaultMethodology" in geoflex.methodology._base._DEFAULT_METHODOLOGIES
+    )
+    assert "DefaultMethodology" in list_methodologies()
+    assert "DefaultMethodology" in list_methodologies(default_only=True)
+
+    # Test hidden=True
+    @register_methodology(hidden=True)
+    class HiddenMethodology(MockMethodology):  # pylint: disable=unused-variable
+      pass
+
+    assert (
+        "HiddenMethodology" in geoflex.methodology._base._HIDDEN_METHODOLOGIES
+    )
+    assert "HiddenMethodology" not in list_methodologies()
+    assert "HiddenMethodology" not in list_methodologies(default_only=True)
+
+    # Test overwrite
+    @register_methodology(default=True, alias="ToOverwrite")
+    class MethodologyToOverwrite(MockMethodology):  # pylint: disable=unused-variable
+      pass
+
+    assert "ToOverwrite" in geoflex.methodology._base._DEFAULT_METHODOLOGIES
+
+    @register_methodology(alias="ToOverwrite", overwrite=True, hidden=True)
+    class OverwritingMethodology(MockMethodology):  # pylint: disable=unused-variable
+      pass
+
+    assert "ToOverwrite" not in geoflex.methodology._base._DEFAULT_METHODOLOGIES
+    assert "ToOverwrite" in geoflex.methodology._base._HIDDEN_METHODOLOGIES
+    assert "ToOverwrite" not in list_methodologies()
+  finally:
+    geoflex.methodology._base._METHODOLOGIES = original_methodologies
+    geoflex.methodology._base._DEFAULT_METHODOLOGIES = original_default
+    geoflex.methodology._base._HIDDEN_METHODOLOGIES = original_hidden

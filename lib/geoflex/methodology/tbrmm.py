@@ -105,7 +105,7 @@ class TBRMMParameters(pydantic.BaseModel):
   model_config = pydantic.ConfigDict(extra="ignore")
 
 
-@register_methodology
+@register_methodology(default=True)
 class TBRMM(_base.Methodology):
   """Time-Based Regression with Matched Markets (TBRMM) methodology for GeoFleX.
 

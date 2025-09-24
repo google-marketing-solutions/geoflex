@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # pylint: disable=invalid-name
 
 
-@register_methodology
+@register_methodology(default=True)
 class GBR(_base.Methodology):
   """The Geo Based Regression (GBR) methodology.
 
