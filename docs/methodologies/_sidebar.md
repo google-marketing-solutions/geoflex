@@ -4,6 +4,8 @@
 * [UI Guides](/ui_guides/overview.md)
 * [Methodologies](/methodologies/01_overview.md)
   * [Geo Based Regression (GBR)](/methodologies/02_gbr.md)
-  * [Synthetic Controls](/methodologies/03_synthetic_controls.md)
+  * [Synthetic Controls (SC)](/methodologies/03_synthetic_controls.md)
+  * [Time-Based Regression (TBR)](/methodologies/04_tbr.md)
+  * [TBR with Matched Markets (TBRMM)](/methodologies/05_tbrmm.md)
 * [FAQs](/faqs.md)
 

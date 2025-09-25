@@ -2,6 +2,8 @@
 
 The **Geo-Based Regression (GBR)** methodology is a powerful and straightforward approach to analyzing geo-experiments. At its heart, GBR uses a linear model to compare the performance of geographic areas (geos) before and during the experiment, allowing you to estimate the incremental impact of your advertising spend. This method is particularly effective when you are working with a large number of geos.
 
+For a more detailed explanation of the methodology, see the original paper: [Measuring Ad Effectiveness Using Geo Experiments (Vaver and Koehler, 2011)](https://research.google/pubs/measuring-ad-effectiveness-using-geo-experiments/).
+
 ---
 ## How GBR Works
 
